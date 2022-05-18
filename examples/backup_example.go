@@ -1,7 +1,7 @@
 apiVersion: kahu.io/v1beta1
 kind: Backup
 metadata:
-   name: backup-demo-11
+   name: backup-demo6
 spec:
-   includedNamespaces: ["pod1"]
-   excludedNamespaces: ["pod2"]
+   includedNamespaces: ["pod5"]
+   excludedNamespaces: ["pod7"]
