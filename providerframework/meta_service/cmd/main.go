@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package e2e_test
+package main
 
 import (
-	"testing"
+	"math/rand"
+	"os"
+	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
-	_ "github.com/soda-cdm/kahu/test/e2e/meta_service"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/server"
 )
 
-func TestE2e(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "E2e Suite")
+func main() {
+	rand.Seed(time.Now().UnixNano())
+
+	command := server.NewMetaServiceCommand()
+	if err := command.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

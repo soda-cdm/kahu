@@ -1,9 +1,22 @@
+// Copyright 2022 The SODA Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package server
 
 import (
 	"context"
 	"fmt"
-
 	"net"
 	"os"
 
@@ -12,8 +25,9 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
-	metaservice "github.com/soda-cdm/kahu/provider/meta_service/lib/go"
-	"github.com/soda-cdm/kahu/provider/meta_service/server/options"
+	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
+	"github.com/soda-cdm/kahu/providerframework/meta_service/server/options"
+	logOptions "github.com/soda-cdm/kahu/utils/log"
 )
 
 const (
@@ -26,7 +40,7 @@ func NewMetaServiceCommand() *cobra.Command {
 	cleanFlagSet := pflag.NewFlagSet(componentMetaService, pflag.ContinueOnError)
 
 	metaServiceFlags := options.NewMetaServiceFlags()
-	loggingOptions := options.NewLoggingOptions()
+	loggingOptions := logOptions.NewLoggingOptions()
 
 	cmd := &cobra.Command{
 		Use:  componentMetaService,
@@ -60,8 +74,8 @@ func NewMetaServiceCommand() *cobra.Command {
 				return
 			}
 
-			// validate the initial MetaService Flags
-			if err := metaServiceFlags.ValidateFlags(); err != nil {
+			// validate and apply initial MetaService Flags
+			if err := metaServiceFlags.Apply(); err != nil {
 				log.Error("Failed to validate meta service flags ", err)
 				os.Exit(1)
 			}
@@ -85,7 +99,8 @@ func NewMetaServiceCommand() *cobra.Command {
 	}
 
 	metaServiceFlags.AddFlags(cleanFlagSet)
-	loggingOptions.AddLoggingFlags(cleanFlagSet)
+	// add logging flags
+	loggingOptions.AddFlags(cleanFlagSet)
 	cleanFlagSet.BoolP("help", "h", false, fmt.Sprintf("help for %s", cmd.Name()))
 
 	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
@@ -102,7 +117,7 @@ func NewMetaServiceCommand() *cobra.Command {
 }
 
 func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
-	log.Infof("Starting Server ... %+v", serviceOptions)
+	log.Info("Starting Server ...")
 
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d",
 		serviceOptions.Address, serviceOptions.Port))

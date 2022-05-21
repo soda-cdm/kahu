@@ -12,18 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package e2e_test
+package metaservice
 
 import (
-	"testing"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
-	_ "github.com/soda-cdm/kahu/test/e2e/meta_service"
+	"google.golang.org/grpc"
 )
 
-func TestE2e(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "E2e Suite")
+func NewLBDial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	opts = append(opts, grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
+	return grpc.Dial(target, opts...)
 }
