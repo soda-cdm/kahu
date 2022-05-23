@@ -1,0 +1,138 @@
+// Copyright 2022 The SODA Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+package kahu.providerservice;
+
+import "google/protobuf/wrappers.proto";
+
+option go_package = "lib/go;providerservice";
+
+message GetProviderInfoRequest{}
+
+message GetProviderInfoResponse{
+  string provider = 1;
+  string version = 2;
+  map <string, string> manifest = 3;
+}
+
+message GetProviderCapabilitiesRequest{}
+
+message GetProviderCapabilitiesResponse{
+  message Service {
+    enum Type {
+      UNKNOWN = 0;
+      META_BACKUP_SERVICE = 1;
+      VOLUME_BACKUP_SERVICE = 2;
+    }
+    Type type = 1;
+  }
+  message MetaBackupServiceSupport {
+    enum Type {
+      UNKNOWN = 0;
+      NEED_SNAPSHOT = 1;
+    }
+    Type type = 1;
+  }
+  message VolumeBackupServiceSupport {
+    enum Type {
+      UNKNOWN = 0;
+      NEED_SNAPSHOT = 1;
+    }
+    Type type = 1;
+  }
+
+  oneof Data {
+    Service service = 1;
+    MetaBackupServiceSupport meta_backup_service = 2;
+    VolumeBackupServiceSupport volume_backup_service = 3;
+  }
+}
+
+message ProbeRequest{}
+
+message ProbeResponse {
+ google.protobuf.BoolValue ready = 1;
+}
+
+message Empty {}
+
+message UploadRequest {
+  message FileInfo {
+    string file_identifier = 1;
+    map <string, string> attributes = 2;
+  }
+
+  oneof Data {
+    FileInfo info = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message ObjectExistsRequest {
+  string file_identifier = 1;
+  map <string, string> attributes = 2;
+}
+
+message ObjectExistsResponse{
+  bool exists = 1;
+}
+
+message DownloadRequest {
+  string file_identifier = 1;
+  map <string, string> attributes = 2;
+}
+
+message DownloadResponse {
+  message FileInfo {
+    string file_identifier = 1;
+    map <string, string> attributes = 2;
+  }
+
+  oneof Data {
+    FileInfo info = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message DeleteRequest {
+  string file_identifier = 1;
+  map <string, string> attributes = 2;
+}
+
+service Identity {
+  rpc GetProviderInfo(GetProviderInfoRequest)
+      returns (GetProviderInfoResponse) {}
+
+  rpc GetProviderCapabilities(GetProviderCapabilitiesRequest)
+      returns (GetProviderCapabilitiesResponse) {}
+
+  rpc Probe(ProbeRequest)
+      returns (ProbeResponse) {}
+}
+
+
+service MetaBackup {
+  rpc Upload(stream UploadRequest)
+      returns (Empty) {}
+
+  rpc ObjectExists(ObjectExistsRequest)
+      returns (ObjectExistsResponse) {}
+
+  rpc Download(DownloadRequest)
+      returns (stream DownloadResponse) {}
+
+  rpc Delete(DeleteRequest)
+      returns (Empty) {}
+}
