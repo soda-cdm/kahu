@@ -15,15 +15,11 @@
 package main
 
 import (
-	"flag"
-	"path/filepath"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	utils "github.com/soda-cdm/kahu/utils"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 
 	"github.com/soda-cdm/kahu/controllers/backup"
 	kahuClient "github.com/soda-cdm/kahu/controllers/client/clientset/versioned"
@@ -34,20 +30,7 @@ func main() {
 	// enable log with timestamp
 	utils.EnableLogTimeStamp()
 
-	var kubeconfig *string
-
-	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	}
-
-	flag.Parse()
-
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		log.Errorf("Building config from flags failed, %s, trying to build inclusterconfig", err.Error())
-	}
+	config, err := utils.GetConfig()
 
 	klientset, err := kahuClient.NewForConfig(config)
 	if err != nil {
@@ -57,8 +40,10 @@ func main() {
 	log.Debug("kclintset object:", klientset)
 
 	infoFactory := kahuInformer.NewSharedInformerFactory(klientset, 20*time.Minute)
+
 	ch := make(chan struct{})
-	c := backup.NewController(klientset, infoFactory.Kahu().V1beta1().Backups())
+
+	c := backup.NewController(klientset, infoFactory.Kahu().V1beta1().Backups(), config)
 
 	infoFactory.Start(ch)
 	if err := c.Run(ch); err != nil {
