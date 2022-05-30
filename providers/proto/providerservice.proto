@@ -45,18 +45,10 @@ message GetProviderCapabilitiesResponse{
     }
     Type type = 1;
   }
-  message VolumeBackupServiceSupport {
-    enum Type {
-      UNKNOWN = 0;
-      NEED_SNAPSHOT = 1;
-    }
-    Type type = 1;
-  }
 
   oneof Data {
     Service service = 1;
     MetaBackupServiceSupport meta_backup_service = 2;
-    VolumeBackupServiceSupport volume_backup_service = 3;
   }
 }
 

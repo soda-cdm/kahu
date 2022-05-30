@@ -17,23 +17,23 @@ all: build
 ########################################################################
 ##                           BUILD GRPC INTERFACE                     ##
 ########################################################################
-PROVIDER_PROTO := proto/providerservice.proto
-PROVIDER_GO := providerservice.pb.go
-PROVIDER_GO_TMP := proto/$(PROVIDER_GO)
-PROVIDER_INTERFACE := $(shell pwd)/lib/go/$(PROVIDER_GO)
+PROVIDER_SERVICE_PROTO := proto/providerservice.proto
+PROVIDER_SERVICE_GO := providerservice.pb.go
+PROVIDER_SERVICE_GO_TMP := proto/$(PROVIDER_SERVICE_GO)
+PROVIDER_SERVICE_INTERFACE := $(shell pwd)/lib/go/$(PROVIDER_SERVICE_GO)
 
 # This recipe generates the go language bindings to a temp area.
-$(PROVIDER_INTERFACE): HERE := $(shell pwd)
-$(PROVIDER_INTERFACE): GO_OUT := plugins=grpc
-$(PROVIDER_INTERFACE): GO_OUT := $(GO_OUT):"$(HERE)"
-$(PROVIDER_INTERFACE): $(PROVIDER_PROTO)
-	($(PROTOC) --go_out=$(GO_OUT) --plugin=protoc-gen-go=$(PROTOC_GEN_GO) $(PROVIDER_PROTO))
+$(PROVIDER_SERVICE_INTERFACE): HERE := $(shell pwd)
+$(PROVIDER_SERVICE_INTERFACE): GO_OUT := plugins=grpc
+$(PROVIDER_SERVICE_INTERFACE): GO_OUT := $(GO_OUT):"$(HERE)"
+$(PROVIDER_SERVICE_INTERFACE): $(PROVIDER_SERVICE_PROTO)
+	($(PROTOC) --go_out=$(GO_OUT) --plugin=protoc-gen-go=$(PROTOC_GEN_GO) $(PROVIDER_SERVICE_PROTO))
 
-$(PROVIDER_GO): $(PROVIDER_INTERFACE)
+$(PROVIDER_SERVICE_GO): $(PROVIDER_SERVICE_INTERFACE)
 
-build: $(PROVIDER_GO)
+build: $(PROVIDER_SERVICE_GO)
 
 clean:
-	rm $(PROVIDER_INTERFACE)
+	rm $(PROVIDER_SERVICE_INTERFACE)
 
 .PHONY: clean
