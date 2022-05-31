@@ -98,18 +98,18 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 func (server *nfsServer) Download(*pb.DownloadRequest,
 	pb.MetaBackup_DownloadServer) error {
 	log.Info("Download Called")
-	return nil
+	return status.Errorf(codes.Unimplemented, "method Download not implemented")
 }
 
 func (server *nfsServer) Delete(context.Context,
 	*pb.DeleteRequest) (*pb.Empty, error) {
 	log.Info("Delete Called")
 	empty := pb.Empty{}
-	return &empty, nil
+	return &empty, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 
 func (server *nfsServer) ObjectExists(context.Context,
 	*pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
 	log.Info("ObjectExists Called")
-	return nil, nil
+	return nil, status.Errorf(codes.Unimplemented, "method ObjectExists not implemented")
 }
