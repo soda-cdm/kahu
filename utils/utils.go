@@ -17,7 +17,6 @@ package utils
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,24 +28,14 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 )
 
-func GetConfig() (*restclient.Config, error) {
-	var kubeconfig *string
-
-	if home := homedir.HomeDir(); home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
+	if kubeConfig != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeConfig)
 	}
-	flag.Parse()
 
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		log.Errorf("Building config from flags failed, %s, trying to build inclusterconfig", err.Error())
-	}
-	return config, err
+	return restclient.InClusterConfig()
 }
 
 func EnableLogTimeStamp() {
