@@ -1,0 +1,77 @@
+// Copyright 2022 The SODA Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+package kahu.metaservice;
+
+option go_package = "lib/go;metaservice";
+
+// Resource specifies the name of a resource and whether it is namespaced.
+message Resource {
+  // name is the plural name of the resource.
+  string name = 1;
+
+  // namespaced indicates if a resource is namespaced or not.
+  bool namespaced = 2;
+
+  // kind is the kind for the resource (e.g. 'Foo' is the kind for a resource 'foo')
+  string kind = 3;
+
+  // group is the group of the resource.  Empty implies the group of the core resource list.
+  // For subresources, this may have a different value, for example: Scale".
+  string group = 4;
+
+  // version is the version of the resource.
+  // For subresources, this may have a different value, for example: v1 (while inside a v1beta1 version of the core resource's group)".
+  string version = 9;
+}
+
+message BackResource {
+  Resource resource = 1;
+  bytes data = 2;
+}
+
+message BackupIdentifier {
+  string backup_handle = 1;
+  string backup_location = 2;
+  map <string, string> parameters = 9;
+}
+
+message BackupRequest {
+  oneof Backup {
+    BackupIdentifier identifier = 1;
+    BackResource backup_resource = 2;
+  }
+}
+
+message RestoreRequest {
+    BackupIdentifier id = 1;
+}
+
+message GetResponse {
+  oneof Restore {
+    BackupIdentifier identifier = 1;
+    BackResource backup_resource = 2;
+  }
+}
+
+message Empty {}
+
+service MetaService {
+  rpc Backup(stream BackupRequest)
+      returns (Empty) {}
+  rpc Restore(RestoreRequest)
+      returns (stream GetResponse) {}
+}
+

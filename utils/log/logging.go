@@ -23,7 +23,7 @@ import (
 
 const (
 	DefaultLogFormat = "text"
-	DefaultLogLevel = log.InfoLevel
+	DefaultLogLevel  = log.InfoLevel
 )
 
 // LoggingOptions maintains log initialization flags
@@ -31,7 +31,7 @@ type LoggingOptions struct {
 	// Logging format option
 	logFormat string
 	// Log level option
-	logLevel  string
+	logLevel string
 }
 
 // NewLoggingOptions initialize logging with default options and return logging flag object
