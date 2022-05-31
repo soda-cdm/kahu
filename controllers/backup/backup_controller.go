@@ -20,38 +20,34 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
-
 	jsonpatch "github.com/evanphx/json-patch"
-	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/controllers"
-	pkgbackup "github.com/soda-cdm/kahu/controllers"
-	kahuclientset "github.com/soda-cdm/kahu/controllers/client/clientset/versioned"
-	kahuv1client "github.com/soda-cdm/kahu/controllers/client/clientset/versioned/typed/kahu/v1beta1"
-	kinf "github.com/soda-cdm/kahu/controllers/client/informers/externalversions/kahu/v1beta1"
-	kahulister "github.com/soda-cdm/kahu/controllers/client/listers/kahu/v1beta1"
-	collections "github.com/soda-cdm/kahu/utils"
-	utils "github.com/soda-cdm/kahu/utils"
+	"github.com/pkg/errors"
+	"google.golang.org/grpc"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
-	// kbclient "sigs.k8s.io/controller-runtime/pkg/client"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-
+	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	"github.com/soda-cdm/kahu/controllers"
+	pkgbackup "github.com/soda-cdm/kahu/controllers"
+	"github.com/soda-cdm/kahu/controllers/backup/cmd/options"
+	kahuclientset "github.com/soda-cdm/kahu/controllers/client/clientset/versioned"
+	kahuv1client "github.com/soda-cdm/kahu/controllers/client/clientset/versioned/typed/kahu/v1beta1"
+	kinf "github.com/soda-cdm/kahu/controllers/client/informers/externalversions/kahu/v1beta1"
+	kahulister "github.com/soda-cdm/kahu/controllers/client/listers/kahu/v1beta1"
 	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
-	"google.golang.org/grpc"
+	collections "github.com/soda-cdm/kahu/utils"
+	utils "github.com/soda-cdm/kahu/utils"
 )
 
 var (
-	address        = "127.0.0.1"
-	port           = 8181
 	grpcServer     *grpc.Server
 	grpcConnection *grpc.ClientConn
 	metaClient     metaservice.MetaServiceClient
@@ -66,9 +62,14 @@ type Controller struct {
 	clock        clock.Clock
 	config       *restclient.Config
 	kahuC        kahuv1client.BackupsGetter
+	flags        *options.BackupControllerFlags
 }
 
-func NewController(klient kahuclientset.Interface, backupInformer kinf.BackupInformer, config *restclient.Config, kahuC kahuv1client.BackupsGetter) *Controller {
+func NewController(klient kahuclientset.Interface,
+	backupInformer kinf.BackupInformer,
+	config *restclient.Config,
+	kahuC kahuv1client.BackupsGetter,
+	flags *options.BackupControllerFlags) *Controller {
 	// func NewController(klient kahuclientset.Interface, backupInformer kinf.BackupInformer, config *restclient.Config) *Controller {
 
 	c := &Controller{
@@ -79,6 +80,7 @@ func NewController(klient kahuclientset.Interface, backupInformer kinf.BackupInf
 		clock:   &clock.RealClock{},
 		config:  config,
 		kahuC:   kahuC,
+		flags:   flags,
 	}
 
 	backupInformer.Informer().AddEventHandler(
@@ -149,6 +151,7 @@ func (c *Controller) processNextItem() bool {
 		c.Logger.Errorf("error %s, Getting the backup resource from lister", err.Error())
 		return false
 	}
+	c.Logger.Infof("backup from k8s %+v", bkp)
 
 	if apierrors.IsNotFound(err) {
 		c.Logger.Debugf("backup %s not found", name)
@@ -171,8 +174,14 @@ func (c *Controller) processNextItem() bool {
 	if err != nil {
 		errors.Wrapf(err, "error updating Backup status to %s", request.Status.Phase)
 	}
+	c.Logger.Infof("Updated backup %+v", updatedBackup)
 
 	request.Backup = updatedBackup.DeepCopy()
+	c.Logger.Infof("Request status %+v", request)
+
+	if request.Backup == nil {
+		c.Logger.Errorf("request.Status %v", request)
+	}
 
 	if request.Status.Phase == v1beta1.BackupPhaseFailedValidation {
 		return false
@@ -186,7 +195,10 @@ func (c *Controller) processNextItem() bool {
 	return true
 }
 
-func (c *Controller) patchBackup(original, updated *v1beta1.Backup, client kahuv1client.BackupsGetter) (*v1beta1.Backup, error) {
+func (c *Controller) patchBackup(original,
+	updated *v1beta1.Backup,
+	client kahuv1client.BackupsGetter) (*v1beta1.Backup, error) {
+
 	origBytes, err := json.Marshal(original)
 	if err != nil {
 		return nil, errors.Wrap(err, "error marshalling original backup")
@@ -201,15 +213,21 @@ func (c *Controller) patchBackup(original, updated *v1beta1.Backup, client kahuv
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating json merge patch for backup")
 	}
+	c.Logger.Infof("patch bytes  %s", patchBytes)
 
-	res, err := client.Backups(original.Namespace).Patch(context.TODO(), original.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	res, err := client.Backups(original.Namespace).Patch(context.TODO(), original.Name, types.MergePatchType,
+		patchBytes, metav1.PatchOptions{})
 	if err != nil {
+		c.Logger.Errorf("patch response error %s", err)
 		return nil, errors.Wrap(err, "error patching backup")
 	}
+	c.Logger.Infof("patch response  %+v", res)
 
-	_, err1 := client.Backups(original.Namespace).UpdateStatus(context.TODO(), updated, metav1.UpdateOptions{})
-	if err1 != nil {
-		return nil, errors.Wrap(err1, "error patching backup")
+	_, err = client.Backups(original.Namespace).UpdateStatus(context.TODO(), updated,
+		metav1.UpdateOptions{})
+	if err != nil {
+		c.Logger.Errorf("update status response error %s", err)
+		return nil, errors.Wrap(err, "error patching backup")
 	}
 	return res, nil
 }
@@ -217,12 +235,20 @@ func (c *Controller) patchBackup(original, updated *v1beta1.Backup, client kahuv
 func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 	c.Logger.WithField(controllers.Backup, utils.NamespaceAndName(backup)).Info("Setting up backup log")
 
-	grpcConnection, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port),
+	grpcConnection, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", c.flags.MetaServiceAddress,
+		c.flags.MetaServicePort),
 		grpc.WithInsecure())
+	if err != nil {
+		c.Logger.Errorf("grpc connection error %s", err)
+		return err
+	}
 
 	metaClient = metaservice.NewMetaServiceClient(grpcConnection)
-
 	backupClient, err := metaClient.Backup(context.Background())
+	if err != nil {
+		c.Logger.Errorf("backup request error %s", err)
+		return err
+	}
 
 	err = backupClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_Identifier{
@@ -233,9 +259,14 @@ func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 	})
 	if err != nil {
 		c.Logger.Errorf("Unable to connect metadata service %s", err)
+		return err
 	}
 
 	k8sClinet, err := kubernetes.NewForConfig(c.config)
+	if err != nil {
+		c.Logger.Errorf("Unable to connect metadata service %s", err)
+		return err
+	}
 
 	for _, ns := range backup.Backup.Spec.IncludedNamespaces {
 		for _, rs := range backup.Backup.Spec.IncludedResources {

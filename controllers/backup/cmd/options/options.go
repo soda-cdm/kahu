@@ -12,21 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package options
 
-import (
-	"math/rand"
-	"os"
-	"time"
-
-	"github.com/soda-cdm/kahu/controllers/backup/cmd"
-)
-
-func main() {
-	rand.Seed(time.Now().UnixNano())
-
-	command := app.NewBackupControllerCommand()
-	if err := command.Execute(); err != nil {
-		os.Exit(1)
-	}
+type BackupControllerOptions struct {
+	BackupControllerFlags
+	// TODO: Add configuration file options here
 }

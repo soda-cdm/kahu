@@ -44,6 +44,22 @@ spec:
           mountPath: "/data"
         - name: socket
           mountPath: "/tmp"
+      - image: docker.io/library/kahu:v1
+        imagePullPolicy: IfNotPresent
+        name: meta-service
+        command: ["/usr/local/bin/metaservice"]
+        args:
+        - "-p"
+        - "8181"
+        - "-a"
+        - "0.0.0.0"
+        ports:
+        - name: grpc
+          containerPort: 8181
+        volumeMounts:
+          # name must match the volume name below
+          - name: socket
+            mountPath: "/tmp"
       volumes:
       - name: nfs
         persistentVolumeClaim:
@@ -63,4 +79,32 @@ spec:
       port: 8181
   selector:
     provider: nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1024Mi
+  volumeName: nfs
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs
+spec:
+  capacity:
+    storage: 1024Mi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    server: 192.168.20.124
+    path: "/mnt/nfs_share"
+    #  mountOptions:
+    #- nfsvers=4.2
 

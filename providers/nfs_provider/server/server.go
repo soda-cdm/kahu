@@ -28,15 +28,15 @@ import (
 )
 
 type nfsServer struct {
-	ctx            context.Context
-	options        options.NFSProviderOptions
+	ctx     context.Context
+	options options.NFSProviderOptions
 }
 
 func NewMetaBackupServer(ctx context.Context,
 	serviceOptions options.NFSProviderOptions) pb.MetaBackupServer {
 	return &nfsServer{
-		ctx:            ctx,
-		options:        serviceOptions,
+		ctx:     ctx,
+		options: serviceOptions,
 	}
 }
 
@@ -62,10 +62,10 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	// TODO check if filename already exists
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Create(fileName)
-    if err != nil {
+	if err != nil {
 		log.Errorf("failed to open file for upload to NFS: %s", err)
-        return status.Errorf(codes.Internal, "invalid file identifier %s", err)
-    }
+		return status.Errorf(codes.Internal, "invalid file identifier %s", err)
+	}
 
 	for {
 		uploadRequest, err := service.Recv()
