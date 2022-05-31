@@ -23,7 +23,7 @@ spec:
   accessModes:
     - ReadWriteMany
   nfs:
-    server: 192.168.20.124
-    path: "/mnt/nfs_share"
+    server: NFS_SERVER_IP
+    path: NFS_SERVER_PATH
     #  mountOptions:
     #- nfsvers=4.2

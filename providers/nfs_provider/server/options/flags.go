@@ -45,10 +45,6 @@ func (options *NFSServiceFlags) AddFlags(fs *pflag.FlagSet) {
 
 // Apply checks validity of available command line options
 func (options *NFSServiceFlags) Apply() error {
-	// if _, err := os.Stat(options.UnixSocketPath); os.IsNotExist(err) {
-	// 	return fmt.Errorf("unix socket path(%s) does not exist", options.UnixSocketPath)
-	// }
-
 	if _, err := os.Stat(options.DataPath); os.IsNotExist(err) {
 		return fmt.Errorf("nfs mount directory(%s) does not exist", options.DataPath)
 	}
