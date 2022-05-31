@@ -1,7 +1,7 @@
 apiVersion: kahu.io/v1beta1
 kind: Backup
 metadata:
-   name: backup-demo-22
+   name: backup-demo
 spec:
-   includedResources: ["pod", "pvc"]
+   includedResources: ["pod"]
    includedNamespaces: ["default"]
