@@ -1,0 +1,387 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.8.0
+  creationTimestamp: null
+  name: backups.kahu.io
+spec:
+  group: kahu.io
+  names:
+    kind: Backup
+    listKind: BackupList
+    plural: backups
+    singular: backup
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              enableMetadataBackup:
+                description: EnableMetadataBackup tells whether metadata backup should
+                  be taken or not
+                type: boolean
+              enableVolumeBackup:
+                description: EnableMetadataBackup tells whether volumes(PV) backup
+                  should be taken or not
+                type: boolean
+              excludedNamespaces:
+                description: ExcludedNamespaces is a list of all namespaces excluded
+                  for backup
+                items:
+                  type: string
+                type: array
+              excludedProviders:
+                description: ExcludedProviders is a list of all provideres excluded
+                  for backup
+                items:
+                  type: string
+                type: array
+              excludedResources:
+                description: ExcludedResources is a list of all resources excluded
+                  for backup
+                items:
+                  type: string
+                type: array
+              includedNamespaces:
+                description: IncludedNamespaces is a list of all namespaces included
+                  for backup. If empty, all namespaces are included
+                items:
+                  type: string
+                type: array
+              includedProviders:
+                description: IncludedProviders is a list of all provideres included
+                  for backup. If empty, all provideres are included
+                items:
+                  type: string
+                type: array
+              includedResources:
+                description: IncludedResources is a list of all resources included
+                  for backup. If empty, all resources are included
+                items:
+                  type: string
+                type: array
+              label:
+                description: Label is used to filter the resources
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              metadataLocation:
+                description: MetadataLocation is location where backup is going to
+                  be stored
+                nullable: true
+                properties:
+                  apiVersion:
+                    description: 'APIVersion defines the versioned schema of this
+                      representation of an object. Servers should convert recognized
+                      schemas to the latest internal value, and may reject unrecognized
+                      values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+                    type: string
+                  kind:
+                    description: 'Kind is a string value representing the REST resource
+                      this object represents. Servers may infer this from the endpoint
+                      the client submits requests to. Cannot be updated. In CamelCase.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  metadata:
+                    type: object
+                  spec:
+                    description: BackupLocationSpec defines the desired state of BackupLocation
+                    properties:
+                      config:
+                        additionalProperties:
+                          type: string
+                        description: Config is a dictonary which may contains specific
+                          details, like secret key, password etc
+                        type: object
+                      providerName:
+                        description: ProviderName is a 3rd party driver which inernally
+                          connect to respective storage
+                        type: string
+                    type: object
+                type: object
+              postExecHook:
+                description: PostExecHook is a hook(probably, a command or set of
+                  commands or script) which should be executed after backup finished
+                properties:
+                  excludedNamespaces:
+                    description: ExcludedNamespaces is a list of all namespaces excluded
+                      for hook
+                    items:
+                      type: string
+                    type: array
+                  excludedResources:
+                    description: ExcludedResources is a list of all resources excluded
+                      for backup
+                    items:
+                      type: string
+                    type: array
+                  includedNamespaces:
+                    description: IncludedNamespaces is a list of all namespaces included
+                      for hook. If empty, all namespaces are included
+                    items:
+                      type: string
+                    type: array
+                  includedResources:
+                    description: IncludedResources is a list of all resources included
+                      for hook. If empty, all resources are included
+                    items:
+                      type: string
+                    type: array
+                  labelSelector:
+                    description: Label is used to filter the resources
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: A label selector requirement is a selector
+                            that contains values, a key, and an operator that relates
+                            the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: operator represents a key's relationship
+                                to a set of values. Valid operators are In, NotIn,
+                                Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: values is an array of string values. If
+                                the operator is In or NotIn, the values array must
+                                be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced
+                                during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: matchLabels is a map of {key,value} pairs. A
+                          single {key,value} in the matchLabels map is equivalent
+                          to an element of matchExpressions, whose key field is "key",
+                          the operator is "In", and the values array contains only
+                          "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                  name:
+                    type: string
+                type: object
+              preExecHook:
+                description: PreExecHook is a hook(probably, a command or set of commands
+                  or script) which should be executed before backup starts
+                properties:
+                  excludedNamespaces:
+                    description: ExcludedNamespaces is a list of all namespaces excluded
+                      for hook
+                    items:
+                      type: string
+                    type: array
+                  excludedResources:
+                    description: ExcludedResources is a list of all resources excluded
+                      for backup
+                    items:
+                      type: string
+                    type: array
+                  includedNamespaces:
+                    description: IncludedNamespaces is a list of all namespaces included
+                      for hook. If empty, all namespaces are included
+                    items:
+                      type: string
+                    type: array
+                  includedResources:
+                    description: IncludedResources is a list of all resources included
+                      for hook. If empty, all resources are included
+                    items:
+                      type: string
+                    type: array
+                  labelSelector:
+                    description: Label is used to filter the resources
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: A label selector requirement is a selector
+                            that contains values, a key, and an operator that relates
+                            the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: operator represents a key's relationship
+                                to a set of values. Valid operators are In, NotIn,
+                                Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: values is an array of string values. If
+                                the operator is In or NotIn, the values array must
+                                be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced
+                                during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: matchLabels is a map of {key,value} pairs. A
+                          single {key,value} in the matchLabels map is equivalent
+                          to an element of matchExpressions, whose key field is "key",
+                          the operator is "In", and the values array contains only
+                          "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                  name:
+                    type: string
+                type: object
+              reclaimPolicy:
+                description: ReclaimPolicy tells about reclamation of the backup.
+                  It can be either delete or retain
+                properties:
+                  reclaimPolicyDelete:
+                    type: string
+                  reclaimPolicyRetain:
+                    type: string
+                type: object
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Conditions tells the current state of a resource that
+                  is backing up
+                items:
+                  description: BackupCondition indicates the current state of a resource
+                    that is backing up
+                  properties:
+                    apiVersion:
+                      description: 'APIVersion defines the versioned schema of this
+                        representation of an object. Servers should convert recognized
+                        schemas to the latest internal value, and may reject unrecognized
+                        values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+                      type: string
+                    kind:
+                      description: 'Kind is a string value representing the REST resource
+                        this object represents. Servers may infer this from the endpoint
+                        the client submits requests to. Cannot be updated. In CamelCase.
+                        More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                      type: string
+                    metadata:
+                      type: object
+                    resourceName:
+                      description: ResourceName is a one of the item of backup that
+                        is backing up
+                      type: string
+                    status:
+                      description: Status is a state of the resource
+                      type: string
+                  type: object
+                type: array
+              lastBackup:
+                description: LastBackup defines the last backup time
+                format: date-time
+                type: string
+              phase:
+                description: Phase is the current state of the backup
+                enum:
+                - New
+                - FailedValidation
+                - InProgress
+                - Completed
+                - PartiallyFailed
+                - Failed
+                - Deleting
+                type: string
+              startTimestamp:
+                description: StartTimestamp is defines time when backup started
+                format: date-time
+                nullable: true
+                type: string
+              validationErrors:
+                description: ValidationErrors is a list of erros which are founded
+                  during validation of backup spec
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
