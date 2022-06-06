@@ -44,13 +44,11 @@ type BackupSpec struct {
 	// +optional
 	ReclaimPolicy ReclaimPolicyType `json:"reclaimPolicy,omitempty"`
 
-	// PreExecHook is a hook(probably, a command or set of commands or script) which should be
-	// executed before backup starts
+	// PreExecHook is a hook which should be executed before backup starts
 	// +optional
 	PreExecHook ResourceHookSpec `json:"preExecHook,omitempty"`
 
-	// PostExecHook is a hook(probably, a command or set of commands or script) which should be
-	// executed after backup finished
+	// PostExecHook is a hook which should be executed after backup finished
 	// +optional
 	PostExecHook ResourceHookSpec `json:"postExecHook,omitempty"`
 
@@ -94,7 +92,7 @@ type BackupSpec struct {
 	Label *metav1.LabelSelector `json:"label,omitempty"`
 }
 
-// ResourceHookSpec is hook (probably, a command or set of commands or script) which should be executed
+// ResourceHookSpec is hook which should be executed
 // at different phase of backup
 type ResourceHookSpec struct {
 	// +optional
@@ -208,4 +206,3 @@ type BackupList struct {
 	// +optional
 	Items []Backup `json:"items"`
 }
-
