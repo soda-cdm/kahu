@@ -29,21 +29,28 @@ type BackupLocationSpec struct {
 	Config map[string]string `json:"config,omitempty"`
 }
 
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // BackupLocation is the Schema for the backuplocations API
 type BackupLocation struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
 	Spec BackupLocationSpec `json:"spec,omitempty"`
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // BackupLocationList contains a list of BackupLocation
 type BackupLocationList struct {
 	metav1.TypeMeta `json:",inline"`
+
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 
 	// +optional
 	Items []BackupLocation `json:"items"`
 }
-

@@ -156,8 +156,8 @@ spec:
                     type: object
                 type: object
               postExecHook:
-                description: PostExecHook is a hook(probably, a command or set of
-                  commands or script) which should be executed after backup finished
+                description: PostExecHook is a hook which should be executed after
+                  backup finished
                 properties:
                   excludedNamespaces:
                     description: ExcludedNamespaces is a list of all namespaces excluded
@@ -231,8 +231,8 @@ spec:
                     type: string
                 type: object
               preExecHook:
-                description: PreExecHook is a hook(probably, a command or set of commands
-                  or script) which should be executed before backup starts
+                description: PreExecHook is a hook which should be executed before
+                  backup starts
                 properties:
                   excludedNamespaces:
                     description: ExcludedNamespaces is a list of all namespaces excluded
@@ -336,8 +336,6 @@ spec:
                         the client submits requests to. Cannot be updated. In CamelCase.
                         More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
                       type: string
-                    metadata:
-                      type: object
                     resourceName:
                       description: ResourceName is a one of the item of backup that
                         is backing up

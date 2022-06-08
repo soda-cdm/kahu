@@ -134,9 +134,6 @@ type ReclaimPolicyType struct {
 type BackupCondition struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
 	// ResourceName is a one of the item of backup that is backing up
 	// +optional
 	ResourceName string `json:"resourceName,omitempty"`
@@ -151,7 +148,7 @@ type BackupCondition struct {
 type BackupPhase string
 
 const (
-	// BackupPhaseNew indicates that current backup object is New
+	// BackupPhaseInit indicates that current backup object is New
 	BackupPhaseInit BackupPhase = "New"
 
 	// BackupPhaseFailedValidation indicates that backup object has validation issues

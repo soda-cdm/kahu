@@ -32,6 +32,10 @@ func (c *FakeKahuV1beta1) Backups(namespace string) v1beta1.BackupInterface {
 	return &FakeBackups{c, namespace}
 }
 
+func (c *FakeKahuV1beta1) BackupLocations(namespace string) v1beta1.BackupLocationInterface {
+	return &FakeBackupLocations{c, namespace}
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeKahuV1beta1) RESTClient() rest.Interface {

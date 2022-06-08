@@ -29,6 +29,7 @@ import (
 type KahuV1beta1Interface interface {
 	RESTClient() rest.Interface
 	BackupsGetter
+	BackupLocationsGetter
 }
 
 // KahuV1beta1Client is used to interact with features provided by the kahu.io group.
@@ -38,6 +39,10 @@ type KahuV1beta1Client struct {
 
 func (c *KahuV1beta1Client) Backups(namespace string) BackupInterface {
 	return newBackups(c, namespace)
+}
+
+func (c *KahuV1beta1Client) BackupLocations(namespace string) BackupLocationInterface {
+	return newBackupLocations(c, namespace)
 }
 
 // NewForConfig creates a new KahuV1beta1Client for the given config.
