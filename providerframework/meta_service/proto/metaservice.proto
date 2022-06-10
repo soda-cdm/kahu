@@ -37,7 +37,7 @@ message Resource {
   string version = 9;
 }
 
-message BackResource {
+message BackupResource {
   Resource resource = 1;
   bytes data = 2;
 }
@@ -51,7 +51,7 @@ message BackupIdentifier {
 message BackupRequest {
   oneof Backup {
     BackupIdentifier identifier = 1;
-    BackResource backup_resource = 2;
+    BackupResource backup_resource = 2;
   }
 }
 
@@ -62,7 +62,7 @@ message RestoreRequest {
 message GetResponse {
   oneof Restore {
     BackupIdentifier identifier = 1;
-    BackResource backup_resource = 2;
+    BackupResource backup_resource = 2;
   }
 }
 
