@@ -27,6 +27,10 @@ import (
 	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
 )
 
+const (
+	READ_BUFFER_SIZE int = 4096
+)
+
 type nfsServer struct {
 	ctx            context.Context
 	options        options.NFSProviderOptions
@@ -95,21 +99,108 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	return nil
 }
 
-func (server *nfsServer) Download(*pb.DownloadRequest,
-	pb.MetaBackup_DownloadServer) error {
-	log.Info("Download Called")
-	return status.Errorf(codes.Unimplemented, "method Download not implemented")
+func (server *nfsServer) Download(request *pb.DownloadRequest,
+	service pb.MetaBackup_DownloadServer) error {
+	log.Info("Download Called ...")
+
+	fileId := request.GetFileIdentifier()
+	if fileId == "" {
+		return status.Errorf(codes.InvalidArgument, "download file id is empty")
+	}
+
+	log.Printf("Download file id %v", fileId)
+	fileName := server.options.DataPath + "/" + fileId
+	file, err := os.Open(fileName)
+    if err != nil {
+		log.Errorf("failed to open file for download from NFS: %s", err)
+        return status.Errorf(codes.Internal, "file not found %s", err)
+    }
+	defer file.Close()
+
+	buffer := make([]byte, READ_BUFFER_SIZE)
+
+	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
+
+	fid_data := pb.DownloadResponse{
+		Data: &pb.DownloadResponse_Info{Info: &fi},
+	}
+
+	// First, send file identifier
+	err = service.Send(&fid_data)
+	if err != nil {
+		log.Errorf("download response got error %s", err)
+		return status.Errorf(codes.Unknown, "error sending response")
+	}
+
+	// Second, send backup content in loop till file end
+	for  {
+		n, err := file.Read(buffer)
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			log.Errorf("failed to read data from file %s", err)
+			return status.Errorf(codes.Unknown, "error sending response")
+		}
+
+		data := pb.DownloadResponse{Data: &pb.DownloadResponse_ChunkData{ChunkData: buffer[:n]}}
+
+		err = service.Send(&data)
+		if err != nil {
+			log.Errorf("download response got error %s", err)
+			return status.Errorf(codes.Unknown, "error sending response")
+		}
+	}
+
+	log.Info("Download success!")
+
+	return nil
 }
 
-func (server *nfsServer) Delete(context.Context,
-	*pb.DeleteRequest) (*pb.Empty, error) {
-	log.Info("Delete Called")
+func (server *nfsServer) Delete(ctxt context.Context,
+	request *pb.DeleteRequest) (*pb.Empty, error) {
+	log.Info("Delete Called ...")
+
+	fileId := request.GetFileIdentifier()
 	empty := pb.Empty{}
-	return &empty, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+	log.Printf("file to delete %v", fileId)
+	fileName := server.options.DataPath + "/" + fileId
+
+	// Try opening the file for Delete
+	file, err := os.Open(fileName)
+    if err != nil {
+		log.Errorf("failed to open file for delete from NFS: %s", err)
+        return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+    }
+	file.Close()
+
+	err = os.Remove(fileName)
+    if err != nil {
+		log.Errorf("failed to delete file from NFS: %s", err)
+        return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+    }
+
+	return &empty, nil
 }
 
-func (server *nfsServer) ObjectExists(context.Context,
-	*pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
-	log.Info("ObjectExists Called")
-	return nil, status.Errorf(codes.Unimplemented, "method ObjectExists not implemented")
+func (server *nfsServer) ObjectExists(ctxt context.Context,
+	request *pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
+	log.Info("ObjectExists Called...")
+
+	fileId := request.GetFileIdentifier()
+	log.Printf("checking existence for file_id: %v", fileId)
+	fileName := server.options.DataPath + "/" + fileId
+
+	// Try opening the file for checking existence
+	file, err := os.Open(fileName)
+    if err != nil {
+		log.Infof("failed to open file while checking existence: %s", err)
+		response := pb.ObjectExistsResponse{Exists: false}
+        return &response, nil
+    }
+	file.Close()
+
+	response := pb.ObjectExistsResponse{Exists: true}
+	return &response, nil
 }
