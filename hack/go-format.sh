@@ -19,45 +19,36 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+KAHU_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source "${KAHU_ROOT}/build/lib/logging.sh"
+
+MODE='-w'
 if [[ ${1:-} == 'verify' ]]; then
   MODE='-d'
-else
-  MODE='-w'
 fi
 
-files="$(find . -type f -name '*.go' -not -path './.go/*' -not -path '*.pb.go' -not -path './.proto/*' -not -path './vendor/*' -not -path './site/*' -not -path '*/client/*' -not -name 'zz_generated*' -not -path '*/mocks/*')"
-echo "Checking gofmt"
+files="$(find . -type f -name '*.go' -not -path './.go/*' -not -path '*.pb.go' -not -path './.proto/*' -not -path './vendor/*' -not -path './site/*' -not -path '*/client/*' -not -name 'zz_generated*' -not -path '*/mocks/*' -not -path '*/_output/*')"
+log::status "Checking gofmt"
 for file in ${files}; do
   output=$(gofmt "${MODE}" -s "${file}")
   if [[ -n "${output}" ]]; then
-    echo "${output}"
-    echo "gofmt - failed!"
+    log::error "${output}"
+    log::error "gofmt - failed!"
     exit 1
   fi
 done
 
-pkgs=$(go list ./...)
-echo "Checking go vet"
-for pkg in ${pkgs}; do
-  output=$(go vet "${pkg}")
-  if [[ -n "${output}" ]]; then
-    echo "${output}"
-    echo "go vet - failed!"
-    exit 1
-  fi
-done
-
-echo "Checking goimports"
+log::status "Checking goimports"
 if ! command -v goimports > /dev/null; then
-  echo 'goimports is missing - please run "go install golang.org/x/tools/cmd/goimports"'
+  log::error 'goimports is missing - please run "go install golang.org/x/tools/cmd/goimports"'
   exit 1
 fi
 
 for file in ${files}; do
   output=$(goimports "${MODE}" -local github.com/soda-cdm/kahu "${file}")
   if [[ -n "${output}" ]]; then
-    echo "${output}"
-    echo "goimports - failed!"
+    log::error "${output}"
+    log::error "goimports - failed!"
     exit 1
   fi
 done
