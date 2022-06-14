@@ -32,15 +32,15 @@ const (
 )
 
 type nfsServer struct {
-	ctx            context.Context
-	options        options.NFSProviderOptions
+	ctx     context.Context
+	options options.NFSProviderOptions
 }
 
 func NewMetaBackupServer(ctx context.Context,
 	serviceOptions options.NFSProviderOptions) pb.MetaBackupServer {
 	return &nfsServer{
-		ctx:            ctx,
-		options:        serviceOptions,
+		ctx:     ctx,
+		options: serviceOptions,
 	}
 }
 
@@ -66,10 +66,10 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	// TODO check if filename already exists
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Create(fileName)
-    if err != nil {
+	if err != nil {
 		log.Errorf("failed to open file for upload to NFS: %s", err)
-        return status.Errorf(codes.Internal, "invalid file identifier %s", err)
-    }
+		return status.Errorf(codes.Internal, "invalid file identifier %s", err)
+	}
 
 	for {
 		uploadRequest, err := service.Recv()
@@ -111,10 +111,10 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	log.Printf("Download file id %v", fileId)
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Open(fileName)
-    if err != nil {
+	if err != nil {
 		log.Errorf("failed to open file for download from NFS: %s", err)
-        return status.Errorf(codes.Internal, "file not found %s", err)
-    }
+		return status.Errorf(codes.Internal, "file not found %s", err)
+	}
 	defer file.Close()
 
 	buffer := make([]byte, READ_BUFFER_SIZE)
@@ -133,7 +133,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	}
 
 	// Second, send backup content in loop till file end
-	for  {
+	for {
 		n, err := file.Read(buffer)
 		if err == io.EOF {
 			break
@@ -169,17 +169,17 @@ func (server *nfsServer) Delete(ctxt context.Context,
 
 	// Try opening the file for Delete
 	file, err := os.Open(fileName)
-    if err != nil {
+	if err != nil {
 		log.Errorf("failed to open file for delete from NFS: %s", err)
-        return &empty, status.Errorf(codes.Internal, "file not found %s", err)
-    }
+		return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+	}
 	file.Close()
 
 	err = os.Remove(fileName)
-    if err != nil {
+	if err != nil {
 		log.Errorf("failed to delete file from NFS: %s", err)
-        return &empty, status.Errorf(codes.Internal, "file not found %s", err)
-    }
+		return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+	}
 
 	return &empty, nil
 }
@@ -194,11 +194,11 @@ func (server *nfsServer) ObjectExists(ctxt context.Context,
 
 	// Try opening the file for checking existence
 	file, err := os.Open(fileName)
-    if err != nil {
+	if err != nil {
 		log.Infof("failed to open file while checking existence: %s", err)
 		response := pb.ObjectExistsResponse{Exists: false}
-        return &response, nil
-    }
+		return &response, nil
+	}
 	file.Close()
 
 	response := pb.ObjectExistsResponse{Exists: true}

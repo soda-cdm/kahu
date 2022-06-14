@@ -24,14 +24,14 @@ import (
 type CompressionType string
 
 type NFSServiceFlags struct {
-	UnixSocketPath    string
-	DataPath          string
+	UnixSocketPath string
+	DataPath       string
 }
 
 func NewNFSServiceFlags() *NFSServiceFlags {
 	return &NFSServiceFlags{
-		UnixSocketPath:    "/tmp/nfs.sock",
-		DataPath:          "/data",
+		UnixSocketPath: "/tmp/nfs.sock",
+		DataPath:       "/data",
 	}
 }
 
