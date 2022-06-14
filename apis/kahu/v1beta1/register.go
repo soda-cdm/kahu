@@ -40,8 +40,8 @@ func init() {
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion, &Backup{}, &BackupList{})
+	scheme.AddKnownTypes(SchemeGroupVersion, &Restore{}, &RestoreList{})
 
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
 }
-
