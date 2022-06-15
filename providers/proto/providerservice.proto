@@ -16,6 +16,7 @@ syntax = "proto3";
 package kahu.providerservice;
 
 import "google/protobuf/wrappers.proto";
+// import "k8s.io/api/core/v1/generated.proto";
 
 option go_package = "lib/go;providerservice";
 
@@ -30,6 +31,10 @@ message GetProviderInfoResponse{
 message GetProviderCapabilitiesRequest{}
 
 message GetProviderCapabilitiesResponse{
+  repeated ProviderCapability capabilities = 1;
+}
+
+message ProviderCapability {
   message Service {
     enum Type {
       UNKNOWN = 0;
@@ -46,9 +51,18 @@ message GetProviderCapabilitiesResponse{
     Type type = 1;
   }
 
-  oneof Data {
+  message VolumeBackupServiceSupport {
+    enum Type {
+      UNKNOWN = 0;
+      NEED_SNAPSHOT = 1;
+    }
+    Type type = 1;
+  }
+
+  oneof type {
     Service service = 1;
     MetaBackupServiceSupport meta_backup_service = 2;
+    VolumeBackupServiceSupport volume_backup_service = 3;
   }
 }
 
@@ -127,4 +141,177 @@ service MetaBackup {
 
   rpc Delete(DeleteRequest)
       returns (Empty) {}
+}
+
+message BackupIdentifier {
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  string backup_handle = 2;
+  map<string, string> backup_attributes = 3;
+}
+
+message VolumeIdentifier {
+  string volume_handle = 1;
+  map<string, string> volume_attributes = 2;
+}
+
+message OwnPVRequest {
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+}
+
+message OwnPVResponse {
+  google.protobuf.BoolValue success = 1;
+}
+
+
+message StartBackupRequest {
+  // Required field
+  repeated k8s.io.api.core.v1.PersistentVolume pv = 1;
+
+  // Backup name
+  string backup_name = 2;
+
+  // optional
+  map<string, string> parameters = 3;
+}
+
+message StartBackupResponse {
+  // Required field
+  repeated BackupIdentifier backup_info = 1;
+
+  repeated string errors = 2;
+}
+
+message DeleteBackupRequest {
+  // Required field
+  repeated BackupIdentifier backup_info = 1;
+
+  // Backup name
+  string backup_name = 2;
+
+  // optional
+  map<string, string> parameters = 3;
+}
+
+message DeleteBackupResponse {
+  // Required field
+  google.protobuf.BoolValue success = 1;
+
+  repeated string errors = 2;
+}
+
+message CancelRequest {
+  // Backup or restore identifier based on the request
+  string identifier = 1;
+
+  // optional
+  map<string, string> parameters = 2;
+}
+
+message CancelResponse {
+  // Required field
+  google.protobuf.BoolValue success = 1;
+
+  repeated string errors = 2;
+}
+
+message GetBackupStatRequest {
+  // Backup name
+  string backup_name = 1;
+
+  // optional
+  map<string, string> parameters = 2;
+}
+
+message GetBackupStatResponse {
+  // optional
+  int64 total_bytes = 1;
+
+  // optional
+  int64 bytes_done = 2;
+}
+
+message CreateVolumeFromBackupRequest {
+  // Required field
+  repeated BackupIdentifier backup_info = 1;
+
+  // Backup name
+  string backup_name = 2;
+
+  // optional
+  map<string, string> parameters = 3;
+}
+
+message CreateVolumeFromBackupResponse {
+  // Required field
+  repeated VolumeIdentifier volume_identifiers = 1;
+
+  repeated string errors = 2;
+}
+
+message AddVolumeAttributesRequest {
+  // Required field
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+
+  // optional
+  map<string, string> parameters = 2;
+}
+
+message AddVolumeAttributesResponse {
+  // Required field
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+}
+
+message GetRestoreStatRequest {
+  // Restore name
+  string restore_name = 1;
+
+  // optional
+  map<string, string> parameters = 2;
+}
+
+message GetRestoreStatResponse {
+  // optional
+  int64 total_bytes = 1;
+
+  // optional
+  int64 bytes_done = 2;
+}
+
+service VolumeBackup {
+  // Check if volume is owned by given driver
+  rpc IsOwnPV(OwnPVRequest)
+      returns (OwnPVResponse) {}
+
+  // Create backup of the provided volumes
+  rpc StartBackup(StartBackupRequest)
+      returns (StartBackupResponse) {}
+
+  // Delete given backup
+  rpc DeleteBackup(DeleteBackupRequest)
+      returns (DeleteBackupResponse) {}
+
+  // Cancel given backup
+  rpc CancelBackup(CancelRequest)
+      returns (CancelResponse) {}
+
+  // Get backup statistics
+  rpc GetBackupStat(GetBackupStatRequest)
+      returns (GetBackupStatResponse) {}
+
+  // Create volume from backup (for restore)
+  rpc CreateVolumeFromBackup(CreateVolumeFromBackupRequest)
+      returns (CreateVolumeFromBackupResponse) {}
+
+  // Add attributes to the given volume
+  rpc AddVolumeAttributes(AddVolumeAttributesRequest)
+      returns (AddVolumeAttributesResponse) {}
+
+  // Cancel given restore
+  rpc CancelRestore(CancelRequest)
+      returns (CancelResponse) {}
+
+  // Get restore statistics
+  rpc GetRestoreStat(GetRestoreStatRequest)
+      returns (GetRestoreStatResponse) {}
+
 }
