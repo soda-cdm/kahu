@@ -13,8 +13,8 @@ jobs:
           cd providerframework/meta_service/lib/go
           ls -l
           go version
-          go vet
           go imports
+          go fmt
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
