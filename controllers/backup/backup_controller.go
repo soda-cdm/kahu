@@ -25,10 +25,12 @@ import (
 	"google.golang.org/grpc"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -268,25 +270,31 @@ func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 		return err
 	}
 
+
 	for _, ns := range backup.Backup.Spec.IncludedNamespaces {
 		for _, rs := range backup.Backup.Spec.IncludedResources {
 			if rs == "pod" {
 				pods, _ := k8sClinet.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{})
 				for _, item := range pods.Items {
-					resource_data, err := k8sClinet.CoreV1().Pods(ns).Get(context.TODO(), item.Name, metav1.GetOptions{})
+					itemCopy := item.DeepCopy()
+					err := addTypeInformationToObject(itemCopy)
 					if err != nil {
 						c.Logger.Errorf("Unable to get resource content: %s", err)
 					}
 
-					resourceData, err := json.Marshal(resource_data)
+					resourceData, err := json.Marshal(itemCopy)
+					if err != nil {
+						c.Logger.Errorf("Unable to get resource content: %s", err)
+						return err
+					}
 					err = backupClient.Send(&metaservice.BackupRequest{
 						Backup: &metaservice.BackupRequest_BackupResource{
 							BackupResource: &metaservice.BackResource{
 								Resource: &metaservice.Resource{
-									Name:    backup.Name,
-									Group:   backup.GroupVersionKind().Group,
-									Version: backup.APIVersion,
-									Kind:    backup.Kind,
+									Name:    itemCopy.Name,
+									Group:   itemCopy.GroupVersionKind().Group,
+									Version: itemCopy.GroupVersionKind().Version,
+									Kind:    itemCopy.GroupVersionKind().Kind,
 								},
 								Data: resourceData,
 							},
@@ -300,6 +308,28 @@ func (c *Controller) runBackup(backup *pkgbackup.Request) error {
 
 	_, err = backupClient.CloseAndRecv()
 	return err
+}
+
+// addTypeInformationToObject adds TypeMeta information to a runtime.Object based upon the loaded scheme.Scheme
+// inspired by: https://github.com/kubernetes/cli-runtime/blob/v0.19.2/pkg/printers/typesetter.go#L41
+func addTypeInformationToObject(obj runtime.Object) error {
+	gvks, _, err := scheme.Scheme.ObjectKinds(obj)
+	if err != nil {
+		return fmt.Errorf("missing apiVersion or kind and cannot assign it; %w", err)
+	}
+
+	for _, gvk := range gvks {
+		if len(gvk.Kind) == 0 {
+			continue
+		}
+		if len(gvk.Version) == 0 || gvk.Version == runtime.APIVersionInternal {
+			continue
+		}
+		obj.GetObjectKind().SetGroupVersionKind(gvk)
+		break
+	}
+
+	return nil
 }
 
 func (c *Controller) prepareBackupRequest(backup *kahuv1beta1.Backup) *pkgbackup.Request {

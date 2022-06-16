@@ -79,32 +79,3 @@ spec:
       port: 8181
   selector:
     provider: nfs
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nfs
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 1024Mi
-  volumeName: nfs
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: nfs
-spec:
-  capacity:
-    storage: 1024Mi
-  accessModes:
-    - ReadWriteMany
-  nfs:
-    server: 192.168.20.124
-    path: "/mnt/nfs_share"
-    #  mountOptions:
-    #- nfsvers=4.2
-
