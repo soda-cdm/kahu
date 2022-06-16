@@ -15,7 +15,8 @@ jobs:
           go get golang.org/x/tools/cmd/goimports
           go get -u
           go mod tidy
-          go vet .
+          govet .
+          go fmt .
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
