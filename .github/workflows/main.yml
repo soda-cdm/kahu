@@ -12,7 +12,8 @@ jobs:
       - run: |
           cd providerframework/meta_service/lib/go
           ls -l
-          go version
+          go get golang.org/x/tools/cmd/goimports
+          goimports .
           go fmt
           go vet
   sonarcloud:
