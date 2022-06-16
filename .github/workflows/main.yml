@@ -13,6 +13,8 @@ jobs:
           cd providerframework/meta_service/lib/go
           ls -l
           go get golang.org/x/tools/cmd/goimports
+          go get golang.org/x/tools/cmd/gofmt
+          go get golang.org/x/tools/cmd/govet
           goimports .
           go fmt
           go vet
