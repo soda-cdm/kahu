@@ -10,7 +10,7 @@ jobs:
         with:
           go-version: '>=1.17.0'
       - run: |
-          cd providerframework/meta_service
+          cd providerframework/meta_service/lib/go
           ls -l
           go get golang.org/x/tools/cmd/goimports
           go get -u
