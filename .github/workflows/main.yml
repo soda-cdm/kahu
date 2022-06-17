@@ -16,7 +16,7 @@ jobs:
           go get -u
           go mod tidy
           echo "Running go vet"
-          govet .
+          go vet .
           echo "Running go fmt"
           go fmt .
           echo "Running go imports"
