@@ -15,8 +15,12 @@ jobs:
           go get golang.org/x/tools/cmd/goimports
           go get -u
           go mod tidy
+          echo "Running go vet"
           govet .
+          echo "Running go fmt"
           go fmt .
+          echo "Running go imports"
+          go imports .
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
