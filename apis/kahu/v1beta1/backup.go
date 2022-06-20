@@ -38,7 +38,7 @@ type BackupSpec struct {
 	// MetadataLocation is location where backup is going to be stored
 	// +nullable
 	// +optional
-	MetadataLocation BackupLocation `json:"metadataLocation,omitempty"`
+	MetadataLocation *BackupLocation `json:"metadataLocation"`
 
 	// ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
 	// +optional
