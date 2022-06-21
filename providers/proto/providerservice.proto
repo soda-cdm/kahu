@@ -1,40 +1,50 @@
-// Copyright 2022 The SODA Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+Copyright 2022 The SODA Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 syntax = "proto3";
 package kahu.providerservice;
 
 import "google/protobuf/wrappers.proto";
-// import "k8s.io/api/core/v1/generated.proto";
+import "k8s.io/api/core/v1/generated.proto";
 
 option go_package = "lib/go;providerservice";
 
+// Get basic information about provider
 message GetProviderInfoRequest{}
 
+// Response with basic provider information
 message GetProviderInfoResponse{
+  // Provider name which is mandatory
   string provider = 1;
+
+  // Provider version which is mandatory
   string version = 2;
+
+  // Optional provider specific parameters
   map <string, string> manifest = 3;
 }
 
+// Get different feature level capabilities from provider
 message GetProviderCapabilitiesRequest{}
 
+// Response with supported feature level capabilities from provider
 message GetProviderCapabilitiesResponse{
   repeated ProviderCapability capabilities = 1;
 }
 
+// Supported provider capability
 message ProviderCapability {
+  // Service types supported
   message Service {
     enum Type {
       UNKNOWN = 0;
@@ -43,6 +53,8 @@ message ProviderCapability {
     }
     Type type = 1;
   }
+
+  // Supported capabilities specific to metadata backup service
   message MetaBackupServiceSupport {
     enum Type {
       UNKNOWN = 0;
@@ -51,6 +63,7 @@ message ProviderCapability {
     Type type = 1;
   }
 
+  // Supported capabilities specific to volume backup service
   message VolumeBackupServiceSupport {
     enum Type {
       UNKNOWN = 0;
@@ -66,99 +79,137 @@ message ProviderCapability {
   }
 }
 
+// Probe request to check health/availability
 message ProbeRequest{}
 
+// Response to indicate health/availability status
 message ProbeResponse {
+ // Indicates if healthy/available or not
  google.protobuf.BoolValue ready = 1;
 }
 
 message Empty {}
 
 message UploadRequest {
+  // File information and attributes
   message FileInfo {
     string file_identifier = 1;
     map <string, string> attributes = 2;
   }
 
   oneof Data {
+    // File information and attributes
     FileInfo info = 1;
+
+    // File content
     bytes chunk_data = 2;
   }
 }
 
 message ObjectExistsRequest {
+  // File identifier
   string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
   map <string, string> attributes = 2;
 }
 
 message ObjectExistsResponse{
+  // Indicates if file exists
   bool exists = 1;
 }
 
 message DownloadRequest {
+  // File identifier
   string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
   map <string, string> attributes = 2;
 }
 
 message DownloadResponse {
   message FileInfo {
+    // File identifier
     string file_identifier = 1;
+
+    // Provider specific parameters passed in as opaque key-value pairs
     map <string, string> attributes = 2;
   }
 
   oneof Data {
     FileInfo info = 1;
+
+    // File content being downloaded
     bytes chunk_data = 2;
   }
 }
 
 message DeleteRequest {
+  // File identifier
   string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
   map <string, string> attributes = 2;
 }
 
 service Identity {
+  // Get basic information from the provider
   rpc GetProviderInfo(GetProviderInfoRequest)
       returns (GetProviderInfoResponse) {}
 
+  // Get capabilities from the provider
   rpc GetProviderCapabilities(GetProviderCapabilitiesRequest)
       returns (GetProviderCapabilitiesResponse) {}
 
+  // Probe provider for availability check
   rpc Probe(ProbeRequest)
       returns (ProbeResponse) {}
 }
 
-
 service MetaBackup {
+  // Upload input metadata info to configured repo
   rpc Upload(stream UploadRequest)
       returns (Empty) {}
 
+  // Check if the input metadata object exists at configured repo
   rpc ObjectExists(ObjectExistsRequest)
       returns (ObjectExistsResponse) {}
 
+  // Download input metadata info from configured repo
   rpc Download(DownloadRequest)
       returns (stream DownloadResponse) {}
 
+  // Delete input metadata info from configured repo
   rpc Delete(DeleteRequest)
       returns (Empty) {}
 }
 
 message BackupIdentifier {
+  // Persistent volume info
   k8s.io.api.core.v1.PersistentVolume pv = 1;
+
+   // Backup handle generated at provider
   string backup_handle = 2;
+
+  // Provider specific parameters passed in as opaque key-value pairs
   map<string, string> backup_attributes = 3;
 }
 
 message VolumeIdentifier {
+  // volume handle created at provider
   string volume_handle = 1;
+
+  // Associated volume attributes
   map<string, string> volume_attributes = 2;
 }
 
 message OwnPVRequest {
+  // Persistent volume info
   k8s.io.api.core.v1.PersistentVolume pv = 1;
 }
 
 message OwnPVResponse {
+  // Indicates if PV is owned by given provider or not
   google.protobuf.BoolValue success = 1;
 }
 
@@ -170,7 +221,7 @@ message StartBackupRequest {
   // Backup name
   string backup_name = 2;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 3;
 }
 
@@ -188,7 +239,7 @@ message DeleteBackupRequest {
   // Backup name
   string backup_name = 2;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 3;
 }
 
@@ -203,7 +254,7 @@ message CancelRequest {
   // Backup or restore identifier based on the request
   string identifier = 1;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 2;
 }
 
@@ -218,7 +269,7 @@ message GetBackupStatRequest {
   // Backup name
   string backup_name = 1;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 2;
 }
 
@@ -237,7 +288,7 @@ message CreateVolumeFromBackupRequest {
   // Backup name
   string backup_name = 2;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 3;
 }
 
@@ -252,7 +303,7 @@ message AddVolumeAttributesRequest {
   // Required field
   k8s.io.api.core.v1.PersistentVolume pv = 1;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 2;
 }
 
@@ -265,15 +316,15 @@ message GetRestoreStatRequest {
   // Restore name
   string restore_name = 1;
 
-  // optional
+  // Optional provider specific parameters passed in as opaque key-value pairs
   map<string, string> parameters = 2;
 }
 
 message GetRestoreStatResponse {
-  // optional
+  // Total bytes to be restored, optional
   int64 total_bytes = 1;
 
-  // optional
+  // Total bytes restored, optional
   int64 bytes_done = 2;
 }
 
