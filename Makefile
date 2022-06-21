@@ -17,6 +17,9 @@ SHELL = /usr/bin/env bash -o pipefail
 # Constants used throughout.
 .EXPORT_ALL_VARIABLES:
 OUT_DIR ?= _output
+BIN_DIR := $(OUT_DIR)/bin
+
+CODE_GENERATOR_VERSION="v0.22.2"
 
 ########################################################################
 ##                             PROTOC                                 ##
@@ -97,11 +100,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# Setting SHELL to bash allows bash commands to be executed by recipes.
-# This is a requirement for 'setup-envtest.sh' in the test target.
-# Options are set to exit when a recipe line exits non-zero or a piped command fails.
-
-##@ Development
+codegen:
+	@echo "Generating CRD auto generated code"
+	(GOFLAGS="" CODE_GENERATOR_VERSION=$(CODE_GENERATOR_VERSION) hack/update-codegen.sh)
 
 CONTROLLER_GEN = $(shell pwd)/${OUT_DIR}/bin/controller-gen
 .PHONY: controller-gen
@@ -111,11 +112,6 @@ controller-gen: ## Download controller-gen locally if necessary.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./apis/..." output:crd:artifacts:config=config/crd/v1beta1/bases
-
-.PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./apis/..."
-
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
