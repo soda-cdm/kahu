@@ -2,7 +2,7 @@ name: Build
 on: [push, pull_request_target, workflow_dispatch]
 jobs:
   go_tools:
-    name: build
+    name: GO FMT
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -14,7 +14,19 @@ jobs:
           echo "Running go fmt"
           go fmt ./...
           exit $?
-
+  go_vet:
+     name: GO vet
+     runs-on: ubuntu-latest
+     steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.17.19'
+      - run: |
+          ls -l
+          echo "Running go vet"
+          go vet ./...
+          exit $?
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
