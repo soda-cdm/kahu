@@ -20,7 +20,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: nfs
-  namespace: kube-system
+  namespace: default 
 spec:
   accessModes:
     - ReadWriteMany
@@ -41,7 +41,7 @@ spec:
     - ReadWriteMany
   nfs:
     #server: nfs-server.default.svc.cluster.local
-    server: 10.96.14.158 
+    server: <nfs-server-service-ip-addr>
     path: "/"
   mountOptions:
     - nfsvers=4.2

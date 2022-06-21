@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kahu-backup-controller
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -12,6 +13,7 @@ spec:
       labels:
         provider: backup
     spec:
+      serviceAccountName: kahu
       containers:
         - image: docker.io/library/kahu:v1
           imagePullPolicy: IfNotPresent
@@ -26,14 +28,13 @@ metadata:
   labels:
     provisioner: kahu
   name: kahu-backup-clusterrole-binding
-  namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: kahu-backup-clusterrole
 subjects:
   - kind: ServiceAccount
-    name: default
+    name: kahu
     namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -42,7 +43,6 @@ metadata:
   labels:
     provisioner: kahu
   name: kahu-backup-clusterrole
-  namespace: default
 rules:
   - apiGroups:
     - "kahu.io"
@@ -55,6 +55,11 @@ rules:
       - list
       - patch
       - update
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs:
+      - get
+      - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -69,19 +74,11 @@ roleRef:
   name: kahu-backup-role
 subjects:
   - kind: ServiceAccount
-    name: default
+    name: kahu
     namespace: default
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  labels:
-    provisioner: kahu
-  name: kahu-backup-role
+  name: kahu
   namespace: default
-rules:
-  - apiGroups: ["*"]
-    resources: ["*"]
-    verbs:
-      - get
-      - list
