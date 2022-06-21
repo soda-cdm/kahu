@@ -9,14 +9,13 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: '>=1.17.19'
-  name: go_fmt
       - run: |
           ls -l
           echo "Running go fmt"
           go fmt ./...
           exit $?
-  name: go_vet
-      - run: |
+      - name: go_vet
+        run: |
            echo "Running go vet"
           go vet ./...
   sonarcloud:
