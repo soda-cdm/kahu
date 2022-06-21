@@ -13,7 +13,7 @@ jobs:
           ls -l
           echo "Running go fmt"
           go fmt ./...
-          gofmt -d .
+          gofmt .
           exit $?
   go_vet:
      name: GO vet
@@ -26,7 +26,7 @@ jobs:
       - run: |
           ls -l
           echo "Running go vet"
-          go vet -json ./...
+          go vet -json -c=2 ./...
           exit $?
   sonarcloud:
     name: SonarCloud
