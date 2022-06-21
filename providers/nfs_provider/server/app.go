@@ -1,16 +1,18 @@
-// Copyright 2022 The SODA Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+Copyright 2022 The SODA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package server
 
@@ -87,7 +89,8 @@ func NewNFSProviderCommand() *cobra.Command {
 			}
 
 			// TODO: Setup signal handler with context
-			ctx, _ := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			// run the meta service
 			if err := Run(ctx, options.NFSProviderOptions{NFSServiceFlags: *nfsServiceFlags}); err != nil {
@@ -121,11 +124,11 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 
 	server_addr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
 	if err != nil {
-		log.Fatal("fialed to resolve unix addr")
+		log.Fatal("failed to resolve unix addr")
 	}
 	lis, err := net.ListenUnix("unix", server_addr)
 	if err != nil {
-		log.Fatal("failed to listen: %v", err)
+		log.Fatal("failed to listen: ", err)
 	}
 
 	var opts []grpc.ServerOption

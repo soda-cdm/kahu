@@ -23,7 +23,21 @@ spec:
   accessModes:
     - ReadWriteMany
   nfs:
+    # replace NFS_SERVER_IP with NFS Server service IP
     server: NFS_SERVER_IP
-    path: NFS_SERVER_PATH
-    #  mountOptions:
-    #- nfsvers=4.2
+    path: "/"
+  mountOptions:
+    - nfsvers=4.2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1024Mi
+  volumeName: nfs
