@@ -14,10 +14,7 @@ jobs:
           echo "Running go fmt"
           go fmt ./...
           exit $?
-      - name: go_vet
-        run: |
-           echo "Running go vet"
-          go vet ./...
+
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
