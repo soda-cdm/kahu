@@ -17,4 +17,3 @@
 // +groupName=kahu.io
 
 package v1beta1
-
