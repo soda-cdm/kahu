@@ -9,14 +9,16 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: '>=1.17.19'
+  name: go_fmt
       - run: |
           ls -l
-          echo "Running go vet"
-          go vet ./...
           echo "Running go fmt"
           go fmt ./...
-          echo "Running go imports"
-          go imports ./...
+          exit $?
+  name: go_vet
+      - run: |
+           echo "Running go vet"
+          go vet ./...
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
