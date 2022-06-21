@@ -12,7 +12,7 @@ jobs:
       - run: |
           ls -l
           echo "Running go fmt"
-          go fmt ./...
+          go fmt -e ./...
           exit $?
   go_vet:
      name: GO vet
