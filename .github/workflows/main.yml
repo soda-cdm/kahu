@@ -11,8 +11,6 @@ jobs:
           go-version: '>=1.17.0'
       - run: |
           ls -l
-          go get -u
-          go mod tidy
           echo "Running go vet"
           go vet ./...
           echo "Running go fmt"
