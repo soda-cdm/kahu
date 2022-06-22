@@ -110,7 +110,6 @@ func (c *Controller) Run(ch chan struct{}) error {
 
 func (c *Controller) worker() {
 	for c.processNextItem() {
-
 	}
 }
 
@@ -126,6 +125,7 @@ func (c *Controller) processNextItem() bool {
 	}
 
 	defer c.Workqueue.Forget(item)
+
 	key, err := cache.MetaNamespaceKeyFunc(item)
 	if err != nil {
 		c.Logger.Errorf("error %s calling Namespace key func on cache for item", err.Error())
@@ -141,15 +141,10 @@ func (c *Controller) processNextItem() bool {
 	backup, err := c.kLister.Backups(namespace).Get(name)
 	if err != nil {
 		c.Logger.Errorf("error %s, Getting the backup resource from lister", err.Error())
-		return false
-	}
-	c.Logger.Infof("backup from k8s %+v", backup)
 
-	if apierrors.IsNotFound(err) {
-		c.Logger.Debugf("backup %s not found", name)
-		return false
-	}
-	if err != nil {
+		if apierrors.IsNotFound(err) {
+			c.Logger.Debugf("backup %s not found", name)
+		}
 		return false
 	}
 

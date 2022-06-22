@@ -74,7 +74,7 @@ func NewBackupControllerCommand() *cobra.Command {
 				return
 			}
 
-			// validate and apply initial MetaService Flags
+			// validate and apply initial backup controller Flags
 			if err := backupControllerFlags.Apply(); err != nil {
 				log.Error("Failed to validate meta service flags ", err)
 				os.Exit(1)
