@@ -26,7 +26,7 @@ jobs:
       - run: |
           ls -l
           echo "Running go vet"
-          go vet -json -c=2 ./...
+          go vet ./...
           exit $?
   go_imports:
      name: GO Imports
