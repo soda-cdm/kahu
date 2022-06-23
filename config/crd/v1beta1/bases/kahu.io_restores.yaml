@@ -13,7 +13,7 @@ spec:
     listKind: RestoreList
     plural: restores
     singular: restore
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1beta1
     schema:

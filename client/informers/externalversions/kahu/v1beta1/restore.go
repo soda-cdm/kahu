@@ -32,58 +32,58 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// BackupLocationInformer provides access to a shared informer and lister for
-// BackupLocations.
-type BackupLocationInformer interface {
+// RestoreInformer provides access to a shared informer and lister for
+// Restores.
+type RestoreInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.BackupLocationLister
+	Lister() v1beta1.RestoreLister
 }
 
-type backupLocationInformer struct {
+type restoreInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 }
 
-// NewBackupLocationInformer constructs a new informer for BackupLocation type.
+// NewRestoreInformer constructs a new informer for Restore type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewBackupLocationInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredBackupLocationInformer(client, resyncPeriod, indexers, nil)
+func NewRestoreInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredRestoreInformer(client, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredBackupLocationInformer constructs a new informer for BackupLocation type.
+// NewFilteredRestoreInformer constructs a new informer for Restore type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredBackupLocationInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredRestoreInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KahuV1beta1().BackupLocations().List(context.TODO(), options)
+				return client.KahuV1beta1().Restores().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KahuV1beta1().BackupLocations().Watch(context.TODO(), options)
+				return client.KahuV1beta1().Restores().Watch(context.TODO(), options)
 			},
 		},
-		&kahuv1beta1.BackupLocation{},
+		&kahuv1beta1.Restore{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *backupLocationInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredBackupLocationInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *restoreInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredRestoreInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *backupLocationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&kahuv1beta1.BackupLocation{}, f.defaultInformer)
+func (f *restoreInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&kahuv1beta1.Restore{}, f.defaultInformer)
 }
 
-func (f *backupLocationInformer) Lister() v1beta1.BackupLocationLister {
-	return v1beta1.NewBackupLocationLister(f.Informer().GetIndexer())
+func (f *restoreInformer) Lister() v1beta1.RestoreLister {
+	return v1beta1.NewRestoreLister(f.Informer().GetIndexer())
 }

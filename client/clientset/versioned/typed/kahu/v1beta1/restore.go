@@ -29,41 +29,41 @@ import (
 	rest "k8s.io/client-go/rest"
 )
 
-// BackupsGetter has a method to return a BackupInterface.
+// RestoresGetter has a method to return a RestoreInterface.
 // A group's client should implement this interface.
-type BackupsGetter interface {
-	Backups() BackupInterface
+type RestoresGetter interface {
+	Restores() RestoreInterface
 }
 
-// BackupInterface has methods to work with Backup resources.
-type BackupInterface interface {
-	Create(ctx context.Context, backup *v1beta1.Backup, opts v1.CreateOptions) (*v1beta1.Backup, error)
-	UpdateStatus(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (*v1beta1.Backup, error)
+// RestoreInterface has methods to work with Restore resources.
+type RestoreInterface interface {
+	Create(ctx context.Context, restore *v1beta1.Restore, opts v1.CreateOptions) (*v1beta1.Restore, error)
+	UpdateStatus(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (*v1beta1.Restore, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.Backup, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.BackupList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.Restore, error)
+	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.RestoreList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	BackupExpansion
+	RestoreExpansion
 }
 
-// backups implements BackupInterface
-type backups struct {
+// restores implements RestoreInterface
+type restores struct {
 	client rest.Interface
 }
 
-// newBackups returns a Backups
-func newBackups(c *KahuV1beta1Client) *backups {
-	return &backups{
+// newRestores returns a Restores
+func newRestores(c *KahuV1beta1Client) *restores {
+	return &restores{
 		client: c.RESTClient(),
 	}
 }
 
-// Get takes name of the backup, and returns the corresponding backup object, and an error if there is any.
-func (c *backups) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.Backup, err error) {
-	result = &v1beta1.Backup{}
+// Get takes name of the restore, and returns the corresponding restore object, and an error if there is any.
+func (c *restores) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.Restore, err error) {
+	result = &v1beta1.Restore{}
 	err = c.client.Get().
-		Resource("backups").
+		Resource("restores").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
 		Do(ctx).
@@ -71,15 +71,15 @@ func (c *backups) Get(ctx context.Context, name string, options v1.GetOptions) (
 	return
 }
 
-// List takes label and field selectors, and returns the list of Backups that match those selectors.
-func (c *backups) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.BackupList, err error) {
+// List takes label and field selectors, and returns the list of Restores that match those selectors.
+func (c *restores) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.RestoreList, err error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	}
-	result = &v1beta1.BackupList{}
+	result = &v1beta1.RestoreList{}
 	err = c.client.Get().
-		Resource("backups").
+		Resource("restores").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Do(ctx).
@@ -87,27 +87,27 @@ func (c *backups) List(ctx context.Context, opts v1.ListOptions) (result *v1beta
 	return
 }
 
-// Watch returns a watch.Interface that watches the requested backups.
-func (c *backups) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+// Watch returns a watch.Interface that watches the requested restores.
+func (c *restores) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Resource("backups").
+		Resource("restores").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Watch(ctx)
 }
 
-// Create takes the representation of a backup and creates it.  Returns the server's representation of the backup, and an error, if there is any.
-func (c *backups) Create(ctx context.Context, backup *v1beta1.Backup, opts v1.CreateOptions) (result *v1beta1.Backup, err error) {
-	result = &v1beta1.Backup{}
+// Create takes the representation of a restore and creates it.  Returns the server's representation of the restore, and an error, if there is any.
+func (c *restores) Create(ctx context.Context, restore *v1beta1.Restore, opts v1.CreateOptions) (result *v1beta1.Restore, err error) {
+	result = &v1beta1.Restore{}
 	err = c.client.Post().
-		Resource("backups").
+		Resource("restores").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(backup).
+		Body(restore).
 		Do(ctx).
 		Into(result)
 	return
@@ -115,23 +115,23 @@ func (c *backups) Create(ctx context.Context, backup *v1beta1.Backup, opts v1.Cr
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *backups) UpdateStatus(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (result *v1beta1.Backup, err error) {
-	result = &v1beta1.Backup{}
+func (c *restores) UpdateStatus(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (result *v1beta1.Restore, err error) {
+	result = &v1beta1.Restore{}
 	err = c.client.Put().
-		Resource("backups").
-		Name(backup.Name).
+		Resource("restores").
+		Name(restore.Name).
 		SubResource("status").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(backup).
+		Body(restore).
 		Do(ctx).
 		Into(result)
 	return
 }
 
-// Delete takes name of the backup and deletes it. Returns an error if one occurs.
-func (c *backups) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+// Delete takes name of the restore and deletes it. Returns an error if one occurs.
+func (c *restores) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
-		Resource("backups").
+		Resource("restores").
 		Name(name).
 		Body(&opts).
 		Do(ctx).
@@ -139,13 +139,13 @@ func (c *backups) Delete(ctx context.Context, name string, opts v1.DeleteOptions
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *backups) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+func (c *restores) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	var timeout time.Duration
 	if listOpts.TimeoutSeconds != nil {
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Resource("backups").
+		Resource("restores").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(&opts).
