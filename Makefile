@@ -88,6 +88,16 @@ clean:
 
 .PHONY: clean
 
+verify-fmt:
+	bash hack/go-format.sh verify
+
+.PHONY: verify-fmt
+
+update-fmt:
+	bash hack/go-format.sh update
+
+.PHONY: update-fmt
+
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
