@@ -30,7 +30,10 @@ type BackupLocationSpec struct {
 }
 
 // +genclient
+// +genclient:nonNamespaced
+// +genclient:skipVerbs=update,patch
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Cluster
 
 // BackupLocation is the Schema for the backuplocations API
 type BackupLocation struct {

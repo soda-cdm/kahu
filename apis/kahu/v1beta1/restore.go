@@ -107,8 +107,12 @@ type RestoreStatus struct {
 	FailureReason []string `json:"failureReason,omitempty"`
 }
 
+// +genclient
+// +genclient:nonNamespaced
+// +genclient:skipVerbs=update,patch
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // Restore is the Schema for the restores API
 type Restore struct {

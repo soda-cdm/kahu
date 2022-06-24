@@ -22,14 +22,10 @@ package v1beta1
 // BackupLister.
 type BackupListerExpansion interface{}
 
-// BackupNamespaceListerExpansion allows custom methods to be added to
-// BackupNamespaceLister.
-type BackupNamespaceListerExpansion interface{}
-
 // BackupLocationListerExpansion allows custom methods to be added to
 // BackupLocationLister.
 type BackupLocationListerExpansion interface{}
 
-// BackupLocationNamespaceListerExpansion allows custom methods to be added to
-// BackupLocationNamespaceLister.
-type BackupLocationNamespaceListerExpansion interface{}
+// RestoreListerExpansion allows custom methods to be added to
+// RestoreLister.
+type RestoreListerExpansion interface{}

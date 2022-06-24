@@ -25,44 +25,44 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-// BackupLister helps list Backups.
+// RestoreLister helps list Restores.
 // All objects returned here must be treated as read-only.
-type BackupLister interface {
-	// List lists all Backups in the indexer.
+type RestoreLister interface {
+	// List lists all Restores in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.Backup, err error)
-	// Get retrieves the Backup from the index for a given name.
+	List(selector labels.Selector) (ret []*v1beta1.Restore, err error)
+	// Get retrieves the Restore from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1beta1.Backup, error)
-	BackupListerExpansion
+	Get(name string) (*v1beta1.Restore, error)
+	RestoreListerExpansion
 }
 
-// backupLister implements the BackupLister interface.
-type backupLister struct {
+// restoreLister implements the RestoreLister interface.
+type restoreLister struct {
 	indexer cache.Indexer
 }
 
-// NewBackupLister returns a new BackupLister.
-func NewBackupLister(indexer cache.Indexer) BackupLister {
-	return &backupLister{indexer: indexer}
+// NewRestoreLister returns a new RestoreLister.
+func NewRestoreLister(indexer cache.Indexer) RestoreLister {
+	return &restoreLister{indexer: indexer}
 }
 
-// List lists all Backups in the indexer.
-func (s *backupLister) List(selector labels.Selector) (ret []*v1beta1.Backup, err error) {
+// List lists all Restores in the indexer.
+func (s *restoreLister) List(selector labels.Selector) (ret []*v1beta1.Restore, err error) {
 	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.Backup))
+		ret = append(ret, m.(*v1beta1.Restore))
 	})
 	return ret, err
 }
 
-// Get retrieves the Backup from the index for a given name.
-func (s *backupLister) Get(name string) (*v1beta1.Backup, error) {
+// Get retrieves the Restore from the index for a given name.
+func (s *restoreLister) Get(name string) (*v1beta1.Restore, error) {
 	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("backup"), name)
+		return nil, errors.NewNotFound(v1beta1.Resource("restore"), name)
 	}
-	return obj.(*v1beta1.Backup), nil
+	return obj.(*v1beta1.Restore), nil
 }

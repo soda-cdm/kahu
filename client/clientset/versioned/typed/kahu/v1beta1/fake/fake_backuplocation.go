@@ -25,7 +25,6 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 )
@@ -33,7 +32,6 @@ import (
 // FakeBackupLocations implements BackupLocationInterface
 type FakeBackupLocations struct {
 	Fake *FakeKahuV1beta1
-	ns   string
 }
 
 var backuplocationsResource = schema.GroupVersionResource{Group: "kahu.io", Version: "v1beta1", Resource: "backuplocations"}
@@ -43,8 +41,7 @@ var backuplocationsKind = schema.GroupVersionKind{Group: "kahu.io", Version: "v1
 // Get takes name of the backupLocation, and returns the corresponding backupLocation object, and an error if there is any.
 func (c *FakeBackupLocations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.BackupLocation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(backuplocationsResource, c.ns, name), &v1beta1.BackupLocation{})
-
+		Invokes(testing.NewRootGetAction(backuplocationsResource, name), &v1beta1.BackupLocation{})
 	if obj == nil {
 		return nil, err
 	}
@@ -54,8 +51,7 @@ func (c *FakeBackupLocations) Get(ctx context.Context, name string, options v1.G
 // List takes label and field selectors, and returns the list of BackupLocations that match those selectors.
 func (c *FakeBackupLocations) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.BackupLocationList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(backuplocationsResource, backuplocationsKind, c.ns, opts), &v1beta1.BackupLocationList{})
-
+		Invokes(testing.NewRootListAction(backuplocationsResource, backuplocationsKind, opts), &v1beta1.BackupLocationList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -76,26 +72,13 @@ func (c *FakeBackupLocations) List(ctx context.Context, opts v1.ListOptions) (re
 // Watch returns a watch.Interface that watches the requested backupLocations.
 func (c *FakeBackupLocations) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(backuplocationsResource, c.ns, opts))
-
+		InvokesWatch(testing.NewRootWatchAction(backuplocationsResource, opts))
 }
 
 // Create takes the representation of a backupLocation and creates it.  Returns the server's representation of the backupLocation, and an error, if there is any.
 func (c *FakeBackupLocations) Create(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.CreateOptions) (result *v1beta1.BackupLocation, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(backuplocationsResource, c.ns, backupLocation), &v1beta1.BackupLocation{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.BackupLocation), err
-}
-
-// Update takes the representation of a backupLocation and updates it. Returns the server's representation of the backupLocation, and an error, if there is any.
-func (c *FakeBackupLocations) Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (result *v1beta1.BackupLocation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(backuplocationsResource, c.ns, backupLocation), &v1beta1.BackupLocation{})
-
+		Invokes(testing.NewRootCreateAction(backuplocationsResource, backupLocation), &v1beta1.BackupLocation{})
 	if obj == nil {
 		return nil, err
 	}
@@ -105,26 +88,14 @@ func (c *FakeBackupLocations) Update(ctx context.Context, backupLocation *v1beta
 // Delete takes name of the backupLocation and deletes it. Returns an error if one occurs.
 func (c *FakeBackupLocations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(backuplocationsResource, c.ns, name), &v1beta1.BackupLocation{})
-
+		Invokes(testing.NewRootDeleteAction(backuplocationsResource, name), &v1beta1.BackupLocation{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeBackupLocations) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(backuplocationsResource, c.ns, listOpts)
+	action := testing.NewRootDeleteCollectionAction(backuplocationsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1beta1.BackupLocationList{})
 	return err
-}
-
-// Patch applies the patch and returns the patched backupLocation.
-func (c *FakeBackupLocations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(backuplocationsResource, c.ns, name, pt, data, subresources...), &v1beta1.BackupLocation{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.BackupLocation), err
 }
