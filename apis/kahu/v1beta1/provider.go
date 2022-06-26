@@ -52,10 +52,12 @@ type ProviderSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Version is version of the provider getting registered
-	Version string `json:"version,omitempty"`
+	// +required
+	Version string `json:"version"`
 
 	// Type is type of the provider getting registered
-	Type ProviderType `json:"type,omitempty"`
+	// +required
+	Type ProviderType `json:"type"`
 
 	// Manifest is the optional set of provider specific configurations
 	// +optional
