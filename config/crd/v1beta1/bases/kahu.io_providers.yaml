@@ -13,7 +13,7 @@ spec:
     listKind: ProviderList
     plural: providers
     singular: provider
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1beta1
     schema:
@@ -35,14 +35,16 @@ spec:
           spec:
             description: ProviderSpec defines the specification of provider CRD
             properties:
+              capabilities:
+                additionalProperties:
+                  type: boolean
+                description: Capabilities is the optional set of provider capabilities
+                type: object
               manifest:
                 additionalProperties:
                   type: string
                 description: Manifest is the optional set of provider specific configurations
                 type: object
-              provider:
-                description: Provider is name of the provider getting registered
-                type: string
               type:
                 description: Type is type of the provider getting registered
                 enum:
