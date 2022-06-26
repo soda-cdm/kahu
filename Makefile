@@ -11,8 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
 
-all: build
+# Constants used throughout.
+.EXPORT_ALL_VARIABLES:
+OUT_DIR ?= _output
+BIN_DIR := $(OUT_DIR)/bin
+
+CODE_GENERATOR_VERSION="v0.22.2"
 
 ########################################################################
 ##                             PROTOC                                 ##
@@ -80,3 +87,52 @@ clean:
 	rm -rf $(PROTO_DIR)
 
 .PHONY: clean
+
+verify-fmt:
+	bash hack/go-format.sh verify
+
+.PHONY: verify-fmt
+
+update-fmt:
+	bash hack/go-format.sh update
+
+.PHONY: update-fmt
+
+# Image URL to use all building/pushing image targets
+IMG ?= controller:latest
+# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+ENVTEST_K8S_VERSION = 1.22
+
+# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
+ifeq (,$(shell go env GOBIN))
+GOBIN=$(shell go env GOPATH)/bin
+else
+GOBIN=$(shell go env GOBIN)
+endif
+
+codegen:
+	@echo "Generating CRD auto generated code"
+	(GOFLAGS="" CODE_GENERATOR_VERSION=$(CODE_GENERATOR_VERSION) hack/update-codegen.sh)
+
+CONTROLLER_GEN = $(shell pwd)/${OUT_DIR}/bin/controller-gen
+.PHONY: controller-gen
+controller-gen: ## Download controller-gen locally if necessary.
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.8.0)
+
+.PHONY: manifests
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./apis/..." output:crd:artifacts:config=config/crd/v1beta1/bases
+
+# go-get-tool will 'go get' any package $2 and install it to $1.
+PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
+define go-get-tool
+@[ -f $(1) ] || { \
+set -e ;\
+TMP_DIR=$$(mktemp -d) ;\
+cd $$TMP_DIR ;\
+go mod init tmp ;\
+echo "Downloading $(2)" ;\
+GOBIN=$(PROJECT_DIR)/${OUT_DIR}/bin go get $(2) ;\
+rm -rf $$TMP_DIR ;\
+}
+endef
