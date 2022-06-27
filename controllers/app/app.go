@@ -211,7 +211,7 @@ func Run(ctx context.Context, config *config.CompletedConfig) error {
 		if !synced {
 			return errors.Errorf("cache was not synced for informer %v", informer)
 		}
-		log.WithField("informer", informer).Info("Informer cache synced")
+		log.WithField("resource", informer).Info("Informer cache synced")
 	}
 
 	return controllerManager.RunControllers(controllerMap)

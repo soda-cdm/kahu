@@ -26,21 +26,34 @@ const (
 	GZipType archiver.CompressionType = "gzip"
 )
 
-type gzipCompressor struct {
+type gzipWriter struct {
 	writer archiver.Writer
 	gzip   *gzip.Writer
 }
 
+type gzipReader struct {
+	reader archiver.Reader
+	gzip   *gzip.Reader
+}
+
 func init() {
-	manager.RegisterCompressionPlugins(GZipType, func(writer archiver.Writer) archiver.Writer {
-		return &gzipCompressor{
+	manager.RegisterCompressionWriterPlugins(GZipType, func(writer archiver.Writer) archiver.Writer {
+		return &gzipWriter{
 			writer: writer,
 			gzip:   gzip.NewWriter(writer),
 		}
 	})
+
+	manager.RegisterCompressionReaderPlugins(GZipType, func(reader archiver.Reader) archiver.Reader {
+		newReader, _ := gzip.NewReader(reader)
+		return &gzipReader{
+			reader: reader,
+			gzip:   newReader,
+		}
+	})
 }
 
-func (compressor gzipCompressor) Close() error {
+func (compressor gzipWriter) Close() error {
 	err := compressor.gzip.Close()
 	if err != nil {
 		return err
@@ -54,6 +67,24 @@ func (compressor gzipCompressor) Close() error {
 	return nil
 }
 
-func (compressor gzipCompressor) Write(data []byte) (int, error) {
+func (compressor gzipWriter) Write(data []byte) (int, error) {
 	return compressor.gzip.Write(data)
+}
+
+func (compressor gzipReader) Read(data []byte) (int, error) {
+	return compressor.gzip.Read(data)
+}
+
+func (compressor gzipReader) Close() error {
+	err := compressor.gzip.Close()
+	if err != nil {
+		return err
+	}
+
+	err = compressor.reader.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

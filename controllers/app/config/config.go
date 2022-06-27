@@ -18,16 +18,18 @@ package config
 
 import (
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 
 	"github.com/soda-cdm/kahu/client"
+	"github.com/soda-cdm/kahu/client/clientset/versioned"
+	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	"github.com/soda-cdm/kahu/controllers/backup"
+	"github.com/soda-cdm/kahu/discovery"
 )
 
 const (
@@ -45,11 +47,13 @@ type Config struct {
 
 type CompletedConfig struct {
 	*Config
-	EventRecorder record.EventRecorder
-	ClientFactory client.Factory
-	KubeClient    kubernetes.Interface
-	KahuClient    versioned.Interface
-	KahuInformer  externalversions.SharedInformerFactory
+	EventRecorder   record.EventRecorder
+	ClientFactory   client.Factory
+	KubeClient      kubernetes.Interface
+	KahuClient      versioned.Interface
+	KahuInformer    externalversions.SharedInformerFactory
+	DynamicClient   dynamic.Interface
+	DiscoveryHelper discovery.DiscoveryHelper
 }
 
 func (cfg *Config) Complete() (*CompletedConfig, error) {
@@ -65,18 +69,31 @@ func (cfg *Config) Complete() (*CompletedConfig, error) {
 		return nil, err
 	}
 
+	dynamicClient, err := clientFactory.DynamicClient()
+	if err != nil {
+		return nil, err
+	}
+
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: eventComponentName})
 
+	discoveryHelper, err := discovery.NewDiscoveryHelper(kahuClient.Discovery(),
+		log.WithField("client", "discovery"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &CompletedConfig{
-		Config:        cfg,
-		EventRecorder: recorder,
-		ClientFactory: clientFactory,
-		KubeClient:    kubeClient,
-		KahuClient:    kahuClient,
-		KahuInformer:  externalversions.NewSharedInformerFactoryWithOptions(kahuClient, 0),
+		Config:          cfg,
+		EventRecorder:   recorder,
+		ClientFactory:   clientFactory,
+		KubeClient:      kubeClient,
+		KahuClient:      kahuClient,
+		DynamicClient:   dynamicClient,
+		DiscoveryHelper: discoveryHelper,
+		KahuInformer:    externalversions.NewSharedInformerFactoryWithOptions(kahuClient, 0),
 	}, nil
 }
 

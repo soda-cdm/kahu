@@ -19,20 +19,23 @@ package manager
 import (
 	"context"
 	"fmt"
-	"github.com/soda-cdm/kahu/controllers"
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	"github.com/soda-cdm/kahu/client/informers/externalversions"
+	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/controllers/app/config"
 	"github.com/soda-cdm/kahu/controllers/backup"
+	"github.com/soda-cdm/kahu/controllers/restore"
+	"github.com/soda-cdm/kahu/discovery"
 )
 
 type ControllerManager struct {
@@ -42,6 +45,8 @@ type ControllerManager struct {
 	completeConfig           *config.CompletedConfig
 	informerFactory          externalversions.SharedInformerFactory
 	kahuClient               versioned.Interface
+	kubeClient               kubernetes.Interface
+	discoveryHelper          discovery.DiscoveryHelper
 }
 
 func NewControllerManager(ctx context.Context,
@@ -57,7 +62,7 @@ func NewControllerManager(ctx context.Context,
 		return nil, err
 	}
 
-	ctrlRuntimeManager, err := ctrl.NewManager(clientConfig, ctrl.Options{
+	ctrlRuntimeManager, err := controllerruntime.NewManager(clientConfig, controllerruntime.Options{
 		Scheme: scheme,
 	})
 	if err != nil {
@@ -70,14 +75,16 @@ func NewControllerManager(ctx context.Context,
 		controllerRuntimeManager: ctrlRuntimeManager,
 		completeConfig:           completeConfig,
 		kahuClient:               completeConfig.KahuClient,
+		kubeClient:               completeConfig.KubeClient,
 		informerFactory:          informerFactory,
+		discoveryHelper:          completeConfig.DiscoveryHelper,
 	}, nil
 }
 
 func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controller, error) {
 	availableControllers := make(map[string]controllers.Controller, 0)
 	// add controllers here
-
+	// integrate backup controller
 	backupController, err := backup.NewController(&mgr.completeConfig.BackupControllerConfig,
 		mgr.restConfig,
 		mgr.kahuClient,
@@ -86,6 +93,19 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 		return nil, fmt.Errorf("failed to initialize backup controller. %s", err)
 	}
 	availableControllers[backupController.Name()] = backupController
+
+	// integrate restore controller
+	restoreController, err := restore.NewController(mgr.completeConfig.KubeClient,
+		mgr.kahuClient,
+		mgr.completeConfig.DynamicClient,
+		mgr.completeConfig.DiscoveryHelper,
+		mgr.informerFactory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize restore controller. %s", err)
+	}
+	availableControllers[restoreController.Name()] = restoreController
+
+	log.Infof("Available controllers %+v", availableControllers)
 
 	return availableControllers, nil
 }
@@ -100,15 +120,16 @@ func (mgr *ControllerManager) RemoveDisabledControllers(controllers map[string]c
 	return nil
 }
 
-func (mgr *ControllerManager) RunControllers(controllers map[string]controllers.Controller) error {
-	for _, controller := range controllers {
+func (mgr *ControllerManager) RunControllers(controllerMap map[string]controllers.Controller) error {
+	for _, ctrl := range controllerMap {
 		mgr.controllerRuntimeManager.
-			Add(manager.RunnableFunc(
-				func(ctx context.Context) error {
-					return controller.Run(ctx, mgr.completeConfig.ControllerWorkers)
-				}))
+			Add(manager.RunnableFunc(func(c controllers.Controller, workers int) func(ctx context.Context) error {
+				return func(ctx context.Context) error {
+					return c.Run(ctx, mgr.completeConfig.ControllerWorkers)
+				}
+			}(ctrl, mgr.completeConfig.ControllerWorkers)))
 	}
 
-	log.Info("Server starting...")
+	log.Info("Controllers starting...")
 	return mgr.controllerRuntimeManager.Start(mgr.ctx)
 }

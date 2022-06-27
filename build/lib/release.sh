@@ -35,6 +35,7 @@ build::get_docker_wrapped_binaries() {
   ### If you change any of these lists, please also update DOCKERIZED_BINARIES
   ### in build/BUILD. And golang::targets
   local targets=(
+    controller-manager
     meta-service
   )
 

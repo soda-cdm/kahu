@@ -32,7 +32,8 @@ type archivalManager struct {
 
 type compressorPluginManager struct {
 	sync.Mutex
-	compressionPlugins map[archiver.CompressionType]func(archiver.Writer) archiver.Writer
+	compressionWriterPlugins map[archiver.CompressionType]func(archiver.Writer) archiver.Writer
+	compressionReaderPlugins map[archiver.CompressionType]func(reader archiver.Reader) archiver.Reader
 }
 
 var cpm *compressorPluginManager
@@ -45,17 +46,26 @@ func init() {
 func initManager() {
 	dbConnOnce.Do(func() {
 		cpm = &compressorPluginManager{
-			compressionPlugins: make(map[archiver.CompressionType]func(archiver.Writer) archiver.Writer),
+			compressionWriterPlugins: make(map[archiver.CompressionType]func(archiver.Writer) archiver.Writer),
+			compressionReaderPlugins: make(map[archiver.CompressionType]func(reader archiver.Reader) archiver.Reader),
 		}
 	})
 }
 
-func RegisterCompressionPlugins(name archiver.CompressionType,
+func RegisterCompressionWriterPlugins(name archiver.CompressionType,
 	invoke func(archiver.Writer) archiver.Writer) {
 	cpm.Lock()
 	defer cpm.Unlock()
 
-	cpm.compressionPlugins[name] = invoke
+	cpm.compressionWriterPlugins[name] = invoke
+}
+
+func RegisterCompressionReaderPlugins(name archiver.CompressionType,
+	invoke func(reader archiver.Reader) archiver.Reader) {
+	cpm.Lock()
+	defer cpm.Unlock()
+
+	cpm.compressionReaderPlugins[name] = invoke
 }
 
 func GetCompressionPluginsNames() []string {
@@ -63,15 +73,20 @@ func GetCompressionPluginsNames() []string {
 	defer cpm.Unlock()
 
 	var plugins []string
-	for plugin := range cpm.compressionPlugins {
+	for plugin := range cpm.compressionWriterPlugins {
 		plugins = append(plugins, string(plugin))
 	}
 
 	return plugins
 }
 
-func CheckCompressor(compressor string) bool {
-	_, ok := cpm.compressionPlugins[archiver.CompressionType(compressor)]
+func CheckWriterCompressor(compressor string) bool {
+	_, ok := cpm.compressionWriterPlugins[archiver.CompressionType(compressor)]
+	return ok
+}
+
+func CheckReaderCompressor(compressor string) bool {
+	_, ok := cpm.compressionReaderPlugins[archiver.CompressionType(compressor)]
 	return ok
 }
 
@@ -85,7 +100,7 @@ func (mgr *archivalManager) GetArchiver(typ archiver.CompressionType,
 	archiveFileName string) (archiver.Archiver, string, error) {
 
 	cpm.Lock()
-	compressorFunc, ok := cpm.compressionPlugins[typ]
+	compressorFunc, ok := cpm.compressionWriterPlugins[typ]
 	cpm.Unlock()
 	if !ok {
 		return nil, "", fmt.Errorf("archival plugin[%s] not available", typ)
@@ -103,4 +118,27 @@ func (mgr *archivalManager) GetArchiver(typ archiver.CompressionType,
 	}
 
 	return tar.NewArchiver(compressorFunc(file)), archiveFile, nil
+}
+
+func (mgr *archivalManager) GetArchiveReader(typ archiver.CompressionType,
+	archiveFilePath string) (archiver.ArchiveReader, error) {
+
+	cpm.Lock()
+	compressorFunc, ok := cpm.compressionReaderPlugins[typ]
+	cpm.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("archival plugin[%s] not available", typ)
+	}
+
+	// check file existence
+	if _, err := os.Stat(archiveFilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("archival file(%s) do not exist", archiveFilePath)
+	}
+
+	file, err := os.Open(archiveFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return tar.NewArchiveReader(compressorFunc(file)), nil
 }

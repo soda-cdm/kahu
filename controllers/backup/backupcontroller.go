@@ -43,11 +43,11 @@ type Config struct {
 	MetaServiceAddress string
 }
 
-type Controller struct {
+type controller struct {
 	config               *Config
 	logger               log.FieldLogger
 	restClientconfig     *restclient.Config
-	controller           controllers.Controller
+	genericController    controllers.Controller
 	client               kubernetes.Interface
 	kahuClient           versioned.Interface
 	backupLister         kahulister.BackupLister
@@ -61,7 +61,7 @@ func NewController(config *Config,
 	backupInformer kahuinformer.BackupInformer) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
-	backupController := &Controller{
+	backupController := &controller{
 		kahuClient:           kahuClient,
 		backupLister:         backupInformer.Lister(),
 		restClientconfig:     restClientconfig,
@@ -80,7 +80,7 @@ func NewController(config *Config,
 	)
 
 	// construct controller interface to process worker queue
-	controller, err := controllers.NewControllerBuilder(controllerName).
+	genericController, err := controllers.NewControllerBuilder(controllerName).
 		SetLogger(logger).
 		SetHandler(backupController.runBackup).
 		Build()
@@ -89,11 +89,11 @@ func NewController(config *Config,
 	}
 
 	// reference back
-	backupController.controller = controller
-	return controller, err
+	backupController.genericController = genericController
+	return genericController, err
 }
 
-func (c *Controller) handleAdd(obj interface{}) {
+func (c *controller) handleAdd(obj interface{}) {
 	backup := obj.(*v1beta1.Backup)
 
 	switch backup.Status.Phase {
@@ -105,14 +105,14 @@ func (c *Controller) handleAdd(obj interface{}) {
 		}).Infof("Backup: %s is not New, so will not be processed", backup.Name)
 		return
 	}
-	c.controller.Enqueue(obj)
+	c.genericController.Enqueue(obj)
 }
 
-func (c *Controller) handleDel(obj interface{}) {
-	c.controller.Enqueue(obj)
+func (c *controller) handleDel(obj interface{}) {
+	c.genericController.Enqueue(obj)
 }
 
-func (c *Controller) runBackup(key string) error {
+func (c *controller) runBackup(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Errorf("splitting key into namespace and name, error %s\n", err.Error())

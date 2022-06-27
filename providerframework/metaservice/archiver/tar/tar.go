@@ -18,8 +18,10 @@ package tar
 
 import (
 	"archive/tar"
-	log "github.com/sirupsen/logrus"
+	"io"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver"
 )
@@ -29,10 +31,22 @@ type tarArchiver struct {
 	tar    *tar.Writer
 }
 
+type tarArchiveReader struct {
+	reader archiver.Reader
+	tar    *tar.Reader
+}
+
 func NewArchiver(writer archiver.Writer) archiver.Archiver {
 	return &tarArchiver{
 		writer: writer,
 		tar:    tar.NewWriter(writer),
+	}
+}
+
+func NewArchiveReader(reader archiver.Reader) archiver.ArchiveReader {
+	return &tarArchiveReader{
+		reader: reader,
+		tar:    tar.NewReader(reader),
 	}
 }
 
@@ -64,6 +78,23 @@ func (archiver *tarArchiver) Close() error {
 	}
 
 	err = archiver.writer.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (archiver *tarArchiveReader) ReadNext() (*tar.Header, io.Reader, error) {
+	header, err := archiver.tar.Next()
+	if err != nil {
+		return nil, nil, err
+	}
+	return header, archiver.tar, err
+}
+
+func (archiver *tarArchiveReader) Close() error {
+	err := archiver.reader.Close()
 	if err != nil {
 		return err
 	}
