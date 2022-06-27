@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package log
+package logoptions
 
 import (
 	"fmt"
@@ -28,17 +28,17 @@ const (
 	DefaultLogLevel  = log.InfoLevel
 )
 
-// LoggingOptions maintains log initialization flags
-type LoggingOptions struct {
+// LogOptions maintains log initialization flags
+type LogOptions struct {
 	// Logging format option
 	logFormat string
 	// Log level option
 	logLevel string
 }
 
-// NewLoggingOptions initialize logging with default options and return logging flag object
-func NewLoggingOptions() *LoggingOptions {
-	loggingOptions := &LoggingOptions{
+// NewLogOptions initialize logging with default options and return logging flag object
+func NewLogOptions() *LogOptions {
+	loggingOptions := &LogOptions{
 		logFormat: DefaultLogFormat,
 		logLevel:  DefaultLogLevel.String(),
 	}
@@ -47,7 +47,7 @@ func NewLoggingOptions() *LoggingOptions {
 }
 
 // AddFlags adds logging flags in framework
-func (options *LoggingOptions) AddFlags(fs *pflag.FlagSet) {
+func (options *LogOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.logLevel, "logLevel", options.logLevel,
 		"Set logging level. options(debug, info, warning, fatal)")
 	fs.StringVar(&options.logFormat, "logFormat", options.logFormat,
@@ -55,7 +55,7 @@ func (options *LoggingOptions) AddFlags(fs *pflag.FlagSet) {
 }
 
 // Apply initializes logging module with logging options
-func (options *LoggingOptions) Apply() error {
+func (options *LogOptions) Apply() error {
 	err := options.setLoggingLevel()
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func (options *LoggingOptions) Apply() error {
 	return nil
 }
 
-func (options *LoggingOptions) setLoggingLevel() error {
+func (options *LogOptions) setLoggingLevel() error {
 	var loggingLevel log.Level
 
 	switch options.logLevel {
@@ -89,7 +89,7 @@ func (options *LoggingOptions) setLoggingLevel() error {
 	return nil
 }
 
-func (options *LoggingOptions) setLoggingFormat() error {
+func (options *LogOptions) setLoggingFormat() error {
 	var formatter log.Formatter
 	switch options.logFormat {
 	case "text":

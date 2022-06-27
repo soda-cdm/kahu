@@ -47,36 +47,63 @@ type Factory interface {
 	ClientConfig() (*rest.Config, error)
 }
 
+
+type Config struct {
+	KubeConfig    string
+	ClientQPS     float32
+	ClientBurst   int
+}
+
+
 type factory struct {
 	agentBaseName string
-	kubeConfig    string
-	clientQPS     float32
-	clientBurst   int
+	*Config
+}
+
+// NewFactoryConfig returns factory configuration.
+func NewFactoryConfig() *Config {
+	cfg := &Config{
+		ClientQPS:     defaultClientQPS,
+		ClientBurst:   defaultClientBurst,
+	}
+
+	return cfg
 }
 
 // NewFactory returns a Factory.
-func NewFactory(agentBaseName string) Factory {
+func NewFactory(agentBaseName string, cfg *Config) Factory {
 	f := &factory{
 		agentBaseName: agentBaseName,
-		clientQPS:     defaultClientQPS,
-		clientBurst:   defaultClientBurst,
+		Config: cfg,
 	}
 
 	return f
 }
 
-func (f *factory) AddFlags(fs *pflag.FlagSet) {
-	fs.StringVarP(&f.kubeConfig, "kubeconfig", "k", f.kubeConfig,
+func (cfg *Config) AddFlags(fs *pflag.FlagSet) {
+	fs.StringVarP(&cfg.KubeConfig, "kubeconfig", "k", cfg.KubeConfig,
 		"Path to the kubeconfig file to use to talk to the Kubernetes apiserver. "+
 			"If unset, try the environment variable KUBECONFIG, as well as in-cluster configuration")
-	fs.Float32VarP(&f.clientQPS, "clientqps", "q", f.clientQPS,
+	fs.Float32VarP(&cfg.ClientQPS, "clientqps", "q", cfg.ClientQPS,
 		"Indicates the maximum QPS in kubernetes client")
-	fs.IntVarP(&f.clientBurst, "clientburst", "b", f.clientBurst,
+	fs.IntVarP(&cfg.ClientBurst, "clientburst", "b", cfg.ClientBurst,
 		"Maximum burst for throttle in Kubernetes client")
 }
 
+func (cfg *Config) Validate() error {
+	if cfg.ClientBurst < 0 {
+		return fmt.Errorf("invalid client burst value %d", cfg.ClientBurst)
+	}
+
+	if cfg.ClientQPS < 0 {
+		return fmt.Errorf("invalid client QPS value %f", cfg.ClientQPS)
+	}
+
+	return nil
+}
+
 func (f *factory) ClientConfig() (*rest.Config, error) {
-	return f.config(f.kubeConfig, f.agentBaseName, f.clientQPS, f.clientBurst)
+	return f.config(f.KubeConfig, f.agentBaseName, f.ClientQPS, f.ClientBurst)
 }
 
 func (f *factory) KahuClient() (clientset.Interface, error) {

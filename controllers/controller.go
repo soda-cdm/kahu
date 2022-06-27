@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ const (
 
 type Controller interface {
 	Run(ctx context.Context, workers int) error
+	Name() string
 	Enqueue(obj interface{})
 }
 
@@ -42,7 +44,7 @@ type ControllerBuilder interface {
 	SetLogger(logger log.FieldLogger) ControllerBuilder
 	SetReSyncHandler(handler func()) ControllerBuilder
 	SetReSyncPeriod(period time.Duration) ControllerBuilder
-	Build() Controller
+	Build() (Controller, error)
 }
 
 type controller struct {
@@ -90,16 +92,18 @@ func (ctrl *controller) SetInformerSyncWaiters(waiters ...cache.InformerSynced) 
 	return ctrl
 }
 
-func (ctrl *controller) Build() Controller {
-	return ctrl
+func (ctrl *controller) Build() (Controller, error) {
+	if ctrl.handler == nil && ctrl.reSyncHandler == nil {
+		return nil, fmt.Errorf("both handler and resync handler canot be empty")
+	}
+	return ctrl, nil
+}
+
+func (ctrl *controller) Name() string {
+	return ctrl.name
 }
 
 func (ctrl *controller) Run(ctx context.Context, workers int) error {
-	if ctrl.handler == nil && ctrl.reSyncHandler == nil {
-		// programmer error
-		panic("at least one of syncHandler or handle is required")
-	}
-
 	var wg sync.WaitGroup
 
 	defer func() {

@@ -22,20 +22,24 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/soda-cdm/kahu/controllers"
+	"github.com/soda-cdm/kahu/controllers/backup"
+)
+
+const (
+	defaultMetaServiceAddress = "127.0.0.1"
+	defaultMetaServicePort    = 8181
 )
 
 type BackupControllerFlags struct {
-	MetaServicePort    uint
-	MetaServiceAddress string
-	KubeConfig         string
+	*backup.Config
 }
 
 func NewBackupControllerFlags() *BackupControllerFlags {
 	return &BackupControllerFlags{
-		MetaServicePort:    controllers.DefaultMetaServicePort,
-		MetaServiceAddress: controllers.DefaultMetaServiceAddress,
-		KubeConfig:         "",
+		&backup.Config{
+			MetaServicePort:    defaultMetaServicePort,
+			MetaServiceAddress: defaultMetaServiceAddress,
+		},
 	}
 }
 
@@ -45,24 +49,26 @@ func (options *BackupControllerFlags) AddFlags(fs *pflag.FlagSet) {
 		"Meta service port")
 	fs.StringVarP(&options.MetaServiceAddress, "meta-address", "A",
 		options.MetaServiceAddress, "meta service Address")
-	fs.StringVarP(&options.KubeConfig, "kubeconfig", "k",
-		options.KubeConfig, "kube config path")
 }
 
-// Apply checks validity of available command line options
-func (options *BackupControllerFlags) Apply() error {
-	if options.MetaServicePort <= 0 {
-		return fmt.Errorf("invalid port %d", options.MetaServicePort)
-	}
-
+// ApplyTo checks validity of available command line options
+func (options *BackupControllerFlags) ApplyTo(cfg *backup.Config) error {
+	cfg.MetaServicePort = options.MetaServicePort
+	cfg.MetaServiceAddress = options.MetaServiceAddress
 	if net.ParseIP(options.MetaServiceAddress) == nil {
 		// if not IP, try dns
-		options.MetaServiceAddress = "dns:///" + options.MetaServiceAddress
+		cfg.MetaServiceAddress = "dns:///" + options.MetaServiceAddress
 	}
 
 	return nil
 }
 
-func (options *BackupControllerFlags) Print() string {
-	return fmt.Sprintf("%+v", options)
+// Validate checks validity of available command line options
+func (options *BackupControllerFlags) Validate() []error {
+	errs := make([]error, 0)
+	if options.MetaServicePort <= 0 {
+		errs = append(errs, fmt.Errorf("invalid port %d", options.MetaServicePort))
+	}
+
+	return errs
 }
