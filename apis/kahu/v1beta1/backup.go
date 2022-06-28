@@ -26,7 +26,7 @@ import (
 // +kubebuilder:resource:scope=Cluster
 
 type Backup struct {
-	  metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
