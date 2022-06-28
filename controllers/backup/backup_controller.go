@@ -160,14 +160,6 @@ func (c *Controller) runBackup(backup *v1beta1.Backup) error {
 	return nil
 }
 
-// NamespaceAndName returns a string in the format <namespace>/<name>
-func NamespaceAndName(objMeta metav1.Object) string {
-	if objMeta.GetNamespace() == "" {
-		return objMeta.GetName()
-	}
-	return fmt.Sprintf("%s/%s", objMeta.GetNamespace(), objMeta.GetName())
-}
-
 func (c *Controller) handleAdd(obj interface{}) {
 	backup := obj.(*v1beta1.Backup)
 
