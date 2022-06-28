@@ -36,6 +36,10 @@ func (c *FakeKahuV1beta1) BackupLocations() v1beta1.BackupLocationInterface {
 	return &FakeBackupLocations{c}
 }
 
+func (c *FakeKahuV1beta1) Providers() v1beta1.ProviderInterface {
+	return &FakeProviders{c}
+}
+
 func (c *FakeKahuV1beta1) Restores() v1beta1.RestoreInterface {
 	return &FakeRestores{c}
 }

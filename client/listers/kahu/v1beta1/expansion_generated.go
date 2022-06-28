@@ -26,6 +26,10 @@ type BackupListerExpansion interface{}
 // BackupLocationLister.
 type BackupLocationListerExpansion interface{}
 
+// ProviderListerExpansion allows custom methods to be added to
+// ProviderLister.
+type ProviderListerExpansion interface{}
+
 // RestoreListerExpansion allows custom methods to be added to
 // RestoreLister.
 type RestoreListerExpansion interface{}
