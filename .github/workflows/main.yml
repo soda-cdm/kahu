@@ -1,8 +1,8 @@
 name: Build
 on: [push, pull_request_target, workflow_dispatch]
 jobs:
-  go_tools:
-    name: GO FMT
+  GO_CI:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -11,6 +11,7 @@ jobs:
           go-version: '>=1.17.19'
       - run: |
           ls -l
+          make -version
           make all        
   sonarcloud:
     name: SonarCloud
