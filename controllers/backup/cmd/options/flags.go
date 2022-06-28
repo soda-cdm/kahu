@@ -20,8 +20,9 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/soda-cdm/kahu/controllers"
 	"github.com/spf13/pflag"
+
+	"github.com/soda-cdm/kahu/controllers"
 )
 
 type BackupControllerFlags struct {
