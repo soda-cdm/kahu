@@ -11,37 +11,7 @@ jobs:
           go-version: '>=1.17.19'
       - run: |
           ls -l
-          echo "Running go fmt"
-          go fmt ./...
-          gofmt .
-          exit $?
-  go_vet:
-     name: GO vet
-     runs-on: ubuntu-latest
-     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: '>=1.17.19'
-      - run: |
-          ls -l
-          echo "Running go vet"
-          go vet ./...
-          exit $?
-  go_imports:
-     name: GO Imports
-     runs-on: ubuntu-latest
-     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: '>=1.17.19'
-      - run: |
-          ls -l
-          go get golang.org/x/tools/cmd/goimports
-          echo "Running go imports"
-          goimports ./...
-          exit $?        
+          make all        
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
