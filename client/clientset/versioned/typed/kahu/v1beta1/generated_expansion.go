@@ -21,3 +21,5 @@ package v1beta1
 type BackupExpansion interface{}
 
 type BackupLocationExpansion interface{}
+
+type RestoreExpansion interface{}

@@ -13,7 +13,7 @@ spec:
     listKind: BackupLocationList
     plural: backuplocations
     singular: backuplocation
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1beta1
     schema:

@@ -25,7 +25,6 @@ import (
 	v1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	scheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 )
@@ -33,33 +32,29 @@ import (
 // BackupLocationsGetter has a method to return a BackupLocationInterface.
 // A group's client should implement this interface.
 type BackupLocationsGetter interface {
-	BackupLocations(namespace string) BackupLocationInterface
+	BackupLocations() BackupLocationInterface
 }
 
 // BackupLocationInterface has methods to work with BackupLocation resources.
 type BackupLocationInterface interface {
 	Create(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.CreateOptions) (*v1beta1.BackupLocation, error)
-	Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (*v1beta1.BackupLocation, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
 	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.BackupLocation, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.BackupLocationList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error)
 	BackupLocationExpansion
 }
 
 // backupLocations implements BackupLocationInterface
 type backupLocations struct {
 	client rest.Interface
-	ns     string
 }
 
 // newBackupLocations returns a BackupLocations
-func newBackupLocations(c *KahuV1beta1Client, namespace string) *backupLocations {
+func newBackupLocations(c *KahuV1beta1Client) *backupLocations {
 	return &backupLocations{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -67,7 +62,6 @@ func newBackupLocations(c *KahuV1beta1Client, namespace string) *backupLocations
 func (c *backupLocations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.BackupLocation, err error) {
 	result = &v1beta1.BackupLocation{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("backuplocations").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -84,7 +78,6 @@ func (c *backupLocations) List(ctx context.Context, opts v1.ListOptions) (result
 	}
 	result = &v1beta1.BackupLocationList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("backuplocations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -101,7 +94,6 @@ func (c *backupLocations) Watch(ctx context.Context, opts v1.ListOptions) (watch
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("backuplocations").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -112,22 +104,7 @@ func (c *backupLocations) Watch(ctx context.Context, opts v1.ListOptions) (watch
 func (c *backupLocations) Create(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.CreateOptions) (result *v1beta1.BackupLocation, err error) {
 	result = &v1beta1.BackupLocation{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("backuplocations").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(backupLocation).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a backupLocation and updates it. Returns the server's representation of the backupLocation, and an error, if there is any.
-func (c *backupLocations) Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (result *v1beta1.BackupLocation, err error) {
-	result = &v1beta1.BackupLocation{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("backuplocations").
-		Name(backupLocation.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(backupLocation).
 		Do(ctx).
@@ -138,7 +115,6 @@ func (c *backupLocations) Update(ctx context.Context, backupLocation *v1beta1.Ba
 // Delete takes name of the backupLocation and deletes it. Returns an error if one occurs.
 func (c *backupLocations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("backuplocations").
 		Name(name).
 		Body(&opts).
@@ -153,26 +129,10 @@ func (c *backupLocations) DeleteCollection(ctx context.Context, opts v1.DeleteOp
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("backuplocations").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(&opts).
 		Do(ctx).
 		Error()
-}
-
-// Patch applies the patch and returns the patched backupLocation.
-func (c *backupLocations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error) {
-	result = &v1beta1.BackupLocation{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("backuplocations").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }
