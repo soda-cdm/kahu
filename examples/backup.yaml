@@ -1,0 +1,8 @@
+apiVersion: kahu.io/v1beta1
+kind: Backup
+metadata:
+   name: backup-demo
+spec:
+   includedResources: []
+   includedNamespaces: ["default"]
+   metadataLocation: nfs
