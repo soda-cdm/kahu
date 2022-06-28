@@ -31,8 +31,9 @@ type BackupLocationLister interface {
 	// List lists all BackupLocations in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1beta1.BackupLocation, err error)
-	// BackupLocations returns an object that can list and get BackupLocations.
-	BackupLocations(namespace string) BackupLocationNamespaceLister
+	// Get retrieves the BackupLocation from the index for a given name.
+	// Objects returned here must be treated as read-only.
+	Get(name string) (*v1beta1.BackupLocation, error)
 	BackupLocationListerExpansion
 }
 
@@ -54,41 +55,9 @@ func (s *backupLocationLister) List(selector labels.Selector) (ret []*v1beta1.Ba
 	return ret, err
 }
 
-// BackupLocations returns an object that can list and get BackupLocations.
-func (s *backupLocationLister) BackupLocations(namespace string) BackupLocationNamespaceLister {
-	return backupLocationNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// BackupLocationNamespaceLister helps list and get BackupLocations.
-// All objects returned here must be treated as read-only.
-type BackupLocationNamespaceLister interface {
-	// List lists all BackupLocations in the indexer for a given namespace.
-	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.BackupLocation, err error)
-	// Get retrieves the BackupLocation from the indexer for a given namespace and name.
-	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1beta1.BackupLocation, error)
-	BackupLocationNamespaceListerExpansion
-}
-
-// backupLocationNamespaceLister implements the BackupLocationNamespaceLister
-// interface.
-type backupLocationNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all BackupLocations in the indexer for a given namespace.
-func (s backupLocationNamespaceLister) List(selector labels.Selector) (ret []*v1beta1.BackupLocation, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.BackupLocation))
-	})
-	return ret, err
-}
-
-// Get retrieves the BackupLocation from the indexer for a given namespace and name.
-func (s backupLocationNamespaceLister) Get(name string) (*v1beta1.BackupLocation, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the BackupLocation from the index for a given name.
+func (s *backupLocationLister) Get(name string) (*v1beta1.BackupLocation, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

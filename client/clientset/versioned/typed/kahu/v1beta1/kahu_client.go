@@ -28,6 +28,7 @@ type KahuV1beta1Interface interface {
 	RESTClient() rest.Interface
 	BackupsGetter
 	BackupLocationsGetter
+	RestoresGetter
 }
 
 // KahuV1beta1Client is used to interact with features provided by the kahu.io group.
@@ -35,12 +36,16 @@ type KahuV1beta1Client struct {
 	restClient rest.Interface
 }
 
-func (c *KahuV1beta1Client) Backups(namespace string) BackupInterface {
-	return newBackups(c, namespace)
+func (c *KahuV1beta1Client) Backups() BackupInterface {
+	return newBackups(c)
 }
 
-func (c *KahuV1beta1Client) BackupLocations(namespace string) BackupLocationInterface {
-	return newBackupLocations(c, namespace)
+func (c *KahuV1beta1Client) BackupLocations() BackupLocationInterface {
+	return newBackupLocations(c)
+}
+
+func (c *KahuV1beta1Client) Restores() RestoreInterface {
+	return newRestores(c)
 }
 
 // NewForConfig creates a new KahuV1beta1Client for the given config.

@@ -28,12 +28,16 @@ type FakeKahuV1beta1 struct {
 	*testing.Fake
 }
 
-func (c *FakeKahuV1beta1) Backups(namespace string) v1beta1.BackupInterface {
-	return &FakeBackups{c, namespace}
+func (c *FakeKahuV1beta1) Backups() v1beta1.BackupInterface {
+	return &FakeBackups{c}
 }
 
-func (c *FakeKahuV1beta1) BackupLocations(namespace string) v1beta1.BackupLocationInterface {
-	return &FakeBackupLocations{c, namespace}
+func (c *FakeKahuV1beta1) BackupLocations() v1beta1.BackupLocationInterface {
+	return &FakeBackupLocations{c}
+}
+
+func (c *FakeKahuV1beta1) Restores() v1beta1.RestoreInterface {
+	return &FakeRestores{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
