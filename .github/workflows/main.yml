@@ -10,9 +10,7 @@ jobs:
         with:
           go-version: '>=1.17.19'
       - run: |
-          go mod tidy
-          go get -t .
-          go install golang.org/x/tools/cmd/goimports
+          go get golang.org/x/tools/cmd/goimports
           make all        
   sonarcloud:
     name: SonarCloud
