@@ -144,7 +144,7 @@ func (ctrl *controller) Run(ctx context.Context, workers int) error {
 		wg.Add(1)
 		go func() {
 			wait.Until(ctrl.reSyncHandler, ctrl.reSyncPeriod, ctx.Done())
-			wg.Done()
+			wg.Done(
 		}()
 	}
 
