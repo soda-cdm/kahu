@@ -32,7 +32,7 @@ type Backup struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
-	Spec BackupSpec `json:"spec,omitempty"`
+	Spec BackupSpec `json:"spec"`
 
 	// +optional
 	Status BackupStatus `json:"status,omitempty"`
@@ -40,9 +40,9 @@ type Backup struct {
 
 type BackupSpec struct {
 	// MetadataLocation is location where backup is going to be stored
-	// +nullable
-	// +optional
-	MetadataLocation *BackupLocation `json:"metadataLocation"`
+	// +kubebuilder:validation:Required
+	// +required
+	MetadataLocation string `json:"metadataLocation"`
 
 	// ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
 	// +optional

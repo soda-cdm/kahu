@@ -21,8 +21,9 @@ import (
 // BackupLocationSpec defines the desired state of BackupLocation
 type BackupLocationSpec struct {
 	// ProviderName is a 3rd party driver which inernally connect to respective storage
-	// +optional
-	ProviderName string `json:"providerName,omitempty"`
+	// +kubebuilder:validation:Required
+	// +required
+	ProviderName string `json:"providerName"`
 
 	// Config is a dictonary which may contains specific details, like secret key, password etc
 	// +optional

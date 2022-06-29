@@ -45,6 +45,8 @@ spec:
                 description: ProviderName is a 3rd party driver which inernally connect
                   to respective storage
                 type: string
+            required:
+            - providerName
             type: object
         type: object
     served: true
