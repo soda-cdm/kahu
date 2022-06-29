@@ -131,13 +131,13 @@ func (c *Controller) processNextItem() bool {
 		return false
 	}
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.Logger.Errorf("splitting key into namespace and name, error %s\n", err.Error())
 		return false
 	}
 
-	backup, err := c.kLister.Backups(namespace).Get(name)
+	backup, err := c.kLister.Get(name)
 	if err != nil {
 		c.Logger.Errorf("error %s, Getting the backup resource from lister", err.Error())
 
