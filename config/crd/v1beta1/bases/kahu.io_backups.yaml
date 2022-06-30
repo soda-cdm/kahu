@@ -59,6 +59,175 @@ spec:
                 items:
                   type: string
                 type: array
+              hook:
+                description: Hook is pre or post operations which should be executed
+                  during backup
+                properties:
+                  resources:
+                    items:
+                      description: ResourceHookSpec is hook which should be executed
+                        at different phase of backup
+                      properties:
+                        excludedNamespaces:
+                          description: ExcludedNamespaces is a list of all namespaces
+                            excluded for hook
+                          items:
+                            type: string
+                          type: array
+                        excludedResources:
+                          description: ExcludedResources is a list of all resources
+                            excluded for backup
+                          items:
+                            type: string
+                          type: array
+                        includedNamespaces:
+                          description: IncludedNamespaces is a list of all namespaces
+                            included for hook. If empty, all namespaces are included
+                          items:
+                            type: string
+                          type: array
+                        includedResources:
+                          description: IncludedResources is a list of all resources
+                            included for hook. If empty, all resources are included
+                          items:
+                            type: string
+                          type: array
+                        labelSelector:
+                          description: Label is used to filter the resources
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: A label selector requirement is a selector
+                                  that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: operator represents a key's relationship
+                                      to a set of values. Valid operators are In,
+                                      NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: values is an array of string values.
+                                      If the operator is In or NotIn, the values array
+                                      must be non-empty. If the operator is Exists
+                                      or DoesNotExist, the values array must be empty.
+                                      This array is replaced during a strategic merge
+                                      patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: matchLabels is a map of {key,value} pairs.
+                                A single {key,value} in the matchLabels map is equivalent
+                                to an element of matchExpressions, whose key field
+                                is "key", the operator is "In", and the values array
+                                contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                        name:
+                          type: string
+                        post:
+                          description: PostHooks is a list of ResourceHooks to execute
+                            after storing the item in the backup. These are executed
+                            after all "additional items" from item actions are processed.
+                          items:
+                            description: ResourceHook defines a hook for a resource.
+                            properties:
+                              exec:
+                                description: Exec defines an exec hook.
+                                properties:
+                                  command:
+                                    description: Command is the command and arguments
+                                      to execute.
+                                    items:
+                                      type: string
+                                    minItems: 1
+                                    type: array
+                                  container:
+                                    description: Container is the container in the
+                                      pod where the command should be executed. If
+                                      not specified, the pod's first container is
+                                      used.
+                                    type: string
+                                  onError:
+                                    description: OnError specifies how to behave if
+                                      it encounters an error executing this hook.
+                                    enum:
+                                    - Continue
+                                    - Fail
+                                    type: string
+                                  timeout:
+                                    description: Timeout defines the maximum amount
+                                      of time service should wait for the hook to
+                                      complete before considering the execution a
+                                      failure.
+                                    type: string
+                                required:
+                                - command
+                                type: object
+                            required:
+                            - exec
+                            type: object
+                          type: array
+                        pre:
+                          description: PreHooks is a list of ResourceHooks to execute
+                            prior to storing the item in the backup. These are executed
+                            before any "additional items" from item actions are processed.
+                          items:
+                            description: ResourceHook defines a hook for a resource.
+                            properties:
+                              exec:
+                                description: Exec defines an exec hook.
+                                properties:
+                                  command:
+                                    description: Command is the command and arguments
+                                      to execute.
+                                    items:
+                                      type: string
+                                    minItems: 1
+                                    type: array
+                                  container:
+                                    description: Container is the container in the
+                                      pod where the command should be executed. If
+                                      not specified, the pod's first container is
+                                      used.
+                                    type: string
+                                  onError:
+                                    description: OnError specifies how to behave if
+                                      it encounters an error executing this hook.
+                                    enum:
+                                    - Continue
+                                    - Fail
+                                    type: string
+                                  timeout:
+                                    description: Timeout defines the maximum amount
+                                      of time service should wait for the hook to
+                                      complete before considering the execution a
+                                      failure.
+                                    type: string
+                                required:
+                                - command
+                                type: object
+                            required:
+                            - exec
+                            type: object
+                          type: array
+                      type: object
+                    type: array
+                type: object
               includedNamespaces:
                 description: IncludedNamespaces is a list of all namespaces included
                   for backup. If empty, all namespaces are included
@@ -154,156 +323,6 @@ spec:
                           connect to respective storage
                         type: string
                     type: object
-                type: object
-              postExecHook:
-                description: PostExecHook is a hook which should be executed after
-                  backup finished
-                properties:
-                  excludedNamespaces:
-                    description: ExcludedNamespaces is a list of all namespaces excluded
-                      for hook
-                    items:
-                      type: string
-                    type: array
-                  excludedResources:
-                    description: ExcludedResources is a list of all resources excluded
-                      for backup
-                    items:
-                      type: string
-                    type: array
-                  includedNamespaces:
-                    description: IncludedNamespaces is a list of all namespaces included
-                      for hook. If empty, all namespaces are included
-                    items:
-                      type: string
-                    type: array
-                  includedResources:
-                    description: IncludedResources is a list of all resources included
-                      for hook. If empty, all resources are included
-                    items:
-                      type: string
-                    type: array
-                  labelSelector:
-                    description: Label is used to filter the resources
-                    properties:
-                      matchExpressions:
-                        description: matchExpressions is a list of label selector
-                          requirements. The requirements are ANDed.
-                        items:
-                          description: A label selector requirement is a selector
-                            that contains values, a key, and an operator that relates
-                            the key and values.
-                          properties:
-                            key:
-                              description: key is the label key that the selector
-                                applies to.
-                              type: string
-                            operator:
-                              description: operator represents a key's relationship
-                                to a set of values. Valid operators are In, NotIn,
-                                Exists and DoesNotExist.
-                              type: string
-                            values:
-                              description: values is an array of string values. If
-                                the operator is In or NotIn, the values array must
-                                be non-empty. If the operator is Exists or DoesNotExist,
-                                the values array must be empty. This array is replaced
-                                during a strategic merge patch.
-                              items:
-                                type: string
-                              type: array
-                          required:
-                          - key
-                          - operator
-                          type: object
-                        type: array
-                      matchLabels:
-                        additionalProperties:
-                          type: string
-                        description: matchLabels is a map of {key,value} pairs. A
-                          single {key,value} in the matchLabels map is equivalent
-                          to an element of matchExpressions, whose key field is "key",
-                          the operator is "In", and the values array contains only
-                          "value". The requirements are ANDed.
-                        type: object
-                    type: object
-                  name:
-                    type: string
-                type: object
-              preExecHook:
-                description: PreExecHook is a hook which should be executed before
-                  backup starts
-                properties:
-                  excludedNamespaces:
-                    description: ExcludedNamespaces is a list of all namespaces excluded
-                      for hook
-                    items:
-                      type: string
-                    type: array
-                  excludedResources:
-                    description: ExcludedResources is a list of all resources excluded
-                      for backup
-                    items:
-                      type: string
-                    type: array
-                  includedNamespaces:
-                    description: IncludedNamespaces is a list of all namespaces included
-                      for hook. If empty, all namespaces are included
-                    items:
-                      type: string
-                    type: array
-                  includedResources:
-                    description: IncludedResources is a list of all resources included
-                      for hook. If empty, all resources are included
-                    items:
-                      type: string
-                    type: array
-                  labelSelector:
-                    description: Label is used to filter the resources
-                    properties:
-                      matchExpressions:
-                        description: matchExpressions is a list of label selector
-                          requirements. The requirements are ANDed.
-                        items:
-                          description: A label selector requirement is a selector
-                            that contains values, a key, and an operator that relates
-                            the key and values.
-                          properties:
-                            key:
-                              description: key is the label key that the selector
-                                applies to.
-                              type: string
-                            operator:
-                              description: operator represents a key's relationship
-                                to a set of values. Valid operators are In, NotIn,
-                                Exists and DoesNotExist.
-                              type: string
-                            values:
-                              description: values is an array of string values. If
-                                the operator is In or NotIn, the values array must
-                                be non-empty. If the operator is Exists or DoesNotExist,
-                                the values array must be empty. This array is replaced
-                                during a strategic merge patch.
-                              items:
-                                type: string
-                              type: array
-                          required:
-                          - key
-                          - operator
-                          type: object
-                        type: array
-                      matchLabels:
-                        additionalProperties:
-                          type: string
-                        description: matchLabels is a map of {key,value} pairs. A
-                          single {key,value} in the matchLabels map is equivalent
-                          to an element of matchExpressions, whose key field is "key",
-                          the operator is "In", and the values array contains only
-                          "value". The requirements are ANDed.
-                        type: object
-                    type: object
-                  name:
-                    type: string
                 type: object
               reclaimPolicy:
                 description: ReclaimPolicy tells about reclamation of the backup.
