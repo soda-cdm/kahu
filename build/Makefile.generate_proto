@@ -69,7 +69,7 @@ $(PROTOC_GEN_GO): $(PROTO_DIR)
 	go build -o "$@" $(PROTOC_GEN_GO_PKG)
 
 build_meta_service_grpc: $(PROTOC) $(PROTOC_GEN_GO)
-	$(MAKE) -C providerframework/meta_service metaservice.pb.go PROTOC=$(PROTOC) PROTOC_GEN_GO=$(PROTOC_GEN_GO)
+	$(MAKE) -C providerframework/metaservice metaservice.pb.go PROTOC=$(PROTOC) PROTOC_GEN_GO=$(PROTOC_GEN_GO)
 
 build_provider_service_grpc: $(PROTOC) $(PROTOC_GEN_GO)
 	$(MAKE) -C providers providerservice.pb.go PROTOC=$(PROTOC) PROTOC_GEN_GO=$(PROTOC_GEN_GO)

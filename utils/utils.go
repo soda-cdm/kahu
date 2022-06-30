@@ -17,7 +17,12 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
+	log "github.com/sirupsen/logrus"
+	"os"
+	"os/signal"
+	"syscall"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	restclient "k8s.io/client-go/rest"
@@ -37,4 +42,15 @@ func NamespaceAndName(objMeta metav1.Object) string {
 		return objMeta.GetName()
 	}
 	return fmt.Sprintf("%s/%s", objMeta.GetNamespace(), objMeta.GetName())
+}
+
+func SetupSignalHandler(cancel context.CancelFunc) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		log.Infof("Received signal %s, shutting down", sig)
+		cancel()
+	}()
 }
