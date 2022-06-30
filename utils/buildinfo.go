@@ -42,8 +42,8 @@ type BuildInfo struct {
 	Platform     string `json:"platform"`
 }
 
-// Get returns the overall code build info
-func Get() BuildInfo {
+// GetBuildInfo returns the overall code build info
+func GetBuildInfo() BuildInfo {
 	// These variables typically come from -ldflags settings
 	return BuildInfo{
 		GitVersion:   gitVersion,

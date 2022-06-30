@@ -14,27 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package main
 
 import (
-	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
+	"math/rand"
+	"os"
+	"time"
+
+	"github.com/soda-cdm/kahu/controllers/app"
 )
 
-type BaseController struct {
-	Name      string
-	Workqueue workqueue.RateLimitingInterface
-	Recorder  record.EventRecorder
-	Logger    logrus.FieldLogger
-}
+func main() {
+	rand.Seed(time.Now().UnixNano())
 
-func NewBaseController(name string) *BaseController {
-	c := &BaseController{
-		Name:      name,
-		Workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name),
-		Logger:    logrus.WithField("controller", name),
+	command := app.NewControllersCommand()
+	if err := command.Execute(); err != nil {
+		os.Exit(1)
 	}
-
-	return c
 }

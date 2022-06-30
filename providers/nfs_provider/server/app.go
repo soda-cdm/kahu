@@ -29,7 +29,7 @@ import (
 
 	nfs_provider "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
-	logOptions "github.com/soda-cdm/kahu/utils/log"
+	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
 
 const (
@@ -42,7 +42,7 @@ func NewNFSProviderCommand() *cobra.Command {
 	cleanFlagSet := pflag.NewFlagSet(componentNFSService, pflag.ContinueOnError)
 
 	nfsServiceFlags := options.NewNFSServiceFlags()
-	loggingOptions := logOptions.NewLoggingOptions()
+	loggingOptions := logOptions.NewLogOptions()
 
 	cmd := &cobra.Command{
 		Use:  componentNFSService,
