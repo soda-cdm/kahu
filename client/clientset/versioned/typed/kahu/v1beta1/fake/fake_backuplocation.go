@@ -34,9 +34,9 @@ type FakeBackupLocations struct {
 	Fake *FakeKahuV1beta1
 }
 
-var backuplocationsResource = schema.GroupVersionResource{Group: "kahu.io", Version: "v1beta1", Resource: "backuplocations"}
+var backuplocationsResource = schema.GroupVersionResource{Group: "kahu", Version: "v1beta1", Resource: "backuplocations"}
 
-var backuplocationsKind = schema.GroupVersionKind{Group: "kahu.io", Version: "v1beta1", Kind: "BackupLocation"}
+var backuplocationsKind = schema.GroupVersionKind{Group: "kahu", Version: "v1beta1", Kind: "BackupLocation"}
 
 // Get takes name of the backupLocation, and returns the corresponding backupLocation object, and an error if there is any.
 func (c *FakeBackupLocations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.BackupLocation, err error) {
@@ -88,7 +88,7 @@ func (c *FakeBackupLocations) Create(ctx context.Context, backupLocation *v1beta
 // Delete takes name of the backupLocation and deletes it. Returns an error if one occurs.
 func (c *FakeBackupLocations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(backuplocationsResource, name), &v1beta1.BackupLocation{})
+		Invokes(testing.NewRootDeleteActionWithOptions(backuplocationsResource, name, opts), &v1beta1.BackupLocation{})
 	return err
 }
 

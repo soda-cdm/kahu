@@ -34,9 +34,9 @@ type FakeRestores struct {
 	Fake *FakeKahuV1beta1
 }
 
-var restoresResource = schema.GroupVersionResource{Group: "kahu.io", Version: "v1beta1", Resource: "restores"}
+var restoresResource = schema.GroupVersionResource{Group: "kahu", Version: "v1beta1", Resource: "restores"}
 
-var restoresKind = schema.GroupVersionKind{Group: "kahu.io", Version: "v1beta1", Kind: "Restore"}
+var restoresKind = schema.GroupVersionKind{Group: "kahu", Version: "v1beta1", Kind: "Restore"}
 
 // Get takes name of the restore, and returns the corresponding restore object, and an error if there is any.
 func (c *FakeRestores) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.Restore, err error) {
@@ -99,7 +99,7 @@ func (c *FakeRestores) UpdateStatus(ctx context.Context, restore *v1beta1.Restor
 // Delete takes name of the restore and deletes it. Returns an error if one occurs.
 func (c *FakeRestores) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(restoresResource, name), &v1beta1.Restore{})
+		Invokes(testing.NewRootDeleteActionWithOptions(restoresResource, name, opts), &v1beta1.Restore{})
 	return err
 }
 

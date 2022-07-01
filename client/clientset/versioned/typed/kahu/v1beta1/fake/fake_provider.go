@@ -34,9 +34,9 @@ type FakeProviders struct {
 	Fake *FakeKahuV1beta1
 }
 
-var providersResource = schema.GroupVersionResource{Group: "kahu.io", Version: "v1beta1", Resource: "providers"}
+var providersResource = schema.GroupVersionResource{Group: "kahu", Version: "v1beta1", Resource: "providers"}
 
-var providersKind = schema.GroupVersionKind{Group: "kahu.io", Version: "v1beta1", Kind: "Provider"}
+var providersKind = schema.GroupVersionKind{Group: "kahu", Version: "v1beta1", Kind: "Provider"}
 
 // Get takes name of the provider, and returns the corresponding provider object, and an error if there is any.
 func (c *FakeProviders) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.Provider, err error) {
@@ -99,7 +99,7 @@ func (c *FakeProviders) UpdateStatus(ctx context.Context, provider *v1beta1.Prov
 // Delete takes name of the provider and deletes it. Returns an error if one occurs.
 func (c *FakeProviders) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(providersResource, name), &v1beta1.Provider{})
+		Invokes(testing.NewRootDeleteActionWithOptions(providersResource, name, opts), &v1beta1.Provider{})
 	return err
 }
 
