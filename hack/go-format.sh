@@ -38,18 +38,3 @@ for file in ${files}; do
   fi
 done
 
-log::status "Checking goimports"
-if ! command -v goimports > /dev/null; then
-  log::error 'goimports is missing - please run "go install golang.org/x/tools/cmd/goimports"'
-  exit 1
-fi
-
-for file in ${files}; do
-  output=$(goimports "${MODE}" -local github.com/soda-cdm/kahu "${file}")
-  if [[ -n "${output}" ]]; then
-    log::error "${output}"
-    log::error "goimports - failed!"
-    exit 1
-  fi
-done
-

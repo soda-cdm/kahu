@@ -18,7 +18,6 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -27,11 +26,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/labels"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
@@ -48,6 +46,7 @@ import (
 	metaservice "github.com/soda-cdm/kahu/providerframework/meta_service/lib/go"
 	utils "github.com/soda-cdm/kahu/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -95,9 +94,6 @@ func NewController(klient kahuclientset.Interface,
 
 	return c
 }
-
-// var KindList map[string]int
-var KindList = make(map[string]GroupResouceVersion)
 
 func (c *Controller) Run(ch chan struct{}) error {
 	// only want to log about cache sync waiters if there are any
@@ -219,6 +215,9 @@ func (c *Controller) prepareBackupRequest(backup *kahuv1beta1.Backup) *PrepareBa
 		backupRequest.Status.ValidationErrors = append(backupRequest.Status.ValidationErrors, fmt.Sprintf("Include/Exclude namespace list is not valid: %v", err))
 	}
 
+	ResultantNamespace = utils.GetResultantItems(backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces)
+	ResultantResource = utils.GetResultantItems(backupRequest.Spec.IncludedResources, backupRequest.Spec.ExcludedResources)
+
 	// till now validation is ok. Set the backupphase as New to start backup
 	backupRequest.Status.Phase = v1beta1.BackupPhaseInit
 
@@ -244,7 +243,6 @@ func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 
 func (c *Controller) runBackup(backup *PrepareBackup) error {
 	c.Logger.Infoln("starting to run backup")
-	var resourcesList []*KubernetesResource
 
 	k8sClinet, err := utils.GetK8sClient(c.config)
 	if err != nil {
@@ -253,74 +251,128 @@ func (c *Controller) runBackup(backup *PrepareBackup) error {
 	}
 
 	_, resource, _ := k8sClinet.ServerGroupsAndResources()
+
 	for _, group := range resource {
-		groupItems, err := c.getGroupItems(group)
-
-		if err != nil {
-			c.Logger.WithError(err).WithField("apiGroup", group.String()).Error("Error collecting resources from API group")
-			continue
-		}
-
-		resourcesList = append(resourcesList, groupItems...)
+		c.getGroupItems(group)
 
 	}
 
-	for _, kind := range KindList {
-		err := c.backup(kind.group, kind.version, kind.resourceName, backup)
-		if err != nil {
-			// c.Logger.Errorf("backup was not successful. %s", err)
-			// return err
-			continue
+	backupClient := utils.GetMetaserviceBackupClient("127.0.0.1", 8181)
+
+	err = backupClient.Send(&metaservice.BackupRequest{
+		Backup: &metaservice.BackupRequest_Identifier{
+			Identifier: &metaservice.BackupIdentifier{
+				BackupHandle: backup.Name,
+			},
+		},
+	})
+
+	if err != nil {
+		c.Logger.Errorf("Unable to connect metadata service %s", err)
+		return err
+	}
+
+	resultantResource := sets.NewString(ResultantResource...)
+
+	for _, ns := range ResultantNamespace {
+		for _, gvr := range gvrList {
+			if len(resultantResource) == 0 || resultantResource.Has(gvr.resourceName) {
+				switch gvr.resourceName {
+				case "deployments":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+					c.deploymentBackup(gvr, ns, backup, backupClient)
+				case "pods":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "replicasets":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "configmaps":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "secrets":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "services":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "endpoints":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "storageclasses":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "persistentvolumeclaims":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				case "statefulsets":
+					c.resourcesBackup(gvr, ns, backup, backupClient)
+				default:
+					continue
+				}
+			}
 		}
 	}
 
 	return nil
 }
 
+func (c *Controller) getResourceObjects(backup *PrepareBackup,
+	gvr GroupResouceVersion, ns string,
+	labelSelectors map[string]string) (*unstructured.UnstructuredList, error) {
+	dynamicClient, err := utils.GetDynamicClient(c.config)
+	if err != nil {
+		c.Logger.Errorf("error creating dynamic client: %v\n", err)
+		return nil, err
+	}
+
+	res_gvr := schema.GroupVersionResource{
+		Group:    gvr.group,
+		Version:  gvr.version,
+		Resource: gvr.resourceName,
+	}
+	if backup.Spec.Label != nil {
+		labelSelectors = backup.Spec.Label.MatchLabels
+	}
+
+	var ObjectList *unstructured.UnstructuredList
+	selectors := labels.Set(labelSelectors).String()
+
+	if ns != "" {
+		ObjectList, err = dynamicClient.Resource(res_gvr).Namespace(ns).List(context.Background(), metav1.ListOptions{
+			LabelSelector: selectors,
+		})
+	} else {
+		ObjectList, err = dynamicClient.Resource(res_gvr).List(context.Background(), metav1.ListOptions{})
+	}
+	return ObjectList, nil
+}
+
 // getGroupItems collects all relevant items from a single API group.
-func (c *Controller) getGroupItems(group *metav1.APIResourceList) ([]*KubernetesResource, error) {
+func (c *Controller) getGroupItems(group *metav1.APIResourceList) error {
 	c.Logger.WithField("group", group.GroupVersion)
 
 	// Parse so we can check if this is the core group
 	gv, err := schema.ParseGroupVersion(group.GroupVersion)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing GroupVersion %q", group.GroupVersion)
+		return errors.Wrapf(err, "error parsing GroupVersion %q", group.GroupVersion)
 	}
 	if gv.Group == "" {
 		sortCoreGroup(group)
 	}
 
-	var items []*KubernetesResource
 	for _, resource := range group.APIResources {
-		resourceItems, err := c.getResourceItems(gv, resource)
-		if err != nil {
-			c.Logger.WithError(err).WithField("resource", resource.String()).Error("Error getting items for resource")
-			continue
-		}
-
-		items = append(items, resourceItems...)
+		c.getResourceItems(gv, resource)
 	}
 
-	return items, nil
+	return nil
 }
 
 // getResourceItems collects all relevant items for a given group-version-resource.
-func (c *Controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource) ([]*KubernetesResource, error) {
+func (c *Controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource) {
 	gvr := gv.WithResource(resource.Name)
 
-	_, ok := KindList[resource.Kind]
+	_, ok := gvrList[resource.Kind]
 	if !ok {
 		groupResourceVersion := GroupResouceVersion{
 			resourceName: gvr.Resource,
 			version:      gvr.Version,
 			group:        gvr.Group,
 		}
-		KindList[resource.Kind] = groupResourceVersion
+		gvrList[resource.Kind] = groupResourceVersion
 	}
-
-	var items []*KubernetesResource
-
-	return items, nil
 }
 
 // sortCoreGroup sorts the core API group.
@@ -330,78 +382,24 @@ func sortCoreGroup(group *metav1.APIResourceList) {
 	})
 }
 
-func (c *Controller) backup(group, version, resource string, backup *PrepareBackup) error {
+func (c *Controller) backupSend(gvr GroupResouceVersion,
+	resourceData []byte, metadataName string,
+	backupSendClient metaservice.MetaService_BackupClient) error {
 
-	dynamicClient, err := dynamic.NewForConfig(c.config)
-	if err != nil {
-		c.Logger.Errorf("error creating dynamic client: %v\n", err)
-		return err
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    group,
-		Version:  version,
-		Resource: resource,
-	}
-
-	c.Logger.Debugf("group:%s, version:%s, resource:%s", gvr.Group, gvr.Version, gvr.Resource)
-	objectsList, err := dynamicClient.Resource(gvr).List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		c.Logger.Debugf("error getting %s, %v\n", resource, err)
-	}
-
-	resourceObjects, err := meta.ExtractList(objectsList)
-	if err != nil {
-		return err
-	}
-
-	// TODO: Get address and port from backup location
-	grpcConnection, err := utils.GetgrpcConn("127.0.0.1", 8181)
-	if err != nil {
-		c.Logger.Errorf("grpc connection error %s", err)
-		return err
-	}
-
-	metaClient = utils.GetMetaserviceClient(grpcConnection)
-	backupClient, err := metaClient.Backup(context.Background())
-	if err != nil {
-		c.Logger.Errorf("backup request error %s", err)
-		return err
-	}
-
-	for _, o := range resourceObjects {
-		runtimeObject, ok := o.(runtime.Unstructured)
-		if !ok {
-			c.Logger.Errorf("error casting object: %v", o)
-			return err
-		}
-
-		metadata, err := meta.Accessor(runtimeObject)
-		if err != nil {
-			return err
-		}
-
-		resourceData, err := json.Marshal(metadata)
-		if err != nil {
-			c.Logger.Errorf("Unable to get resource content: %s", err)
-			return err
-		}
-		err = backupClient.Send(&metaservice.BackupRequest{
-			Backup: &metaservice.BackupRequest_BackupResource{
-				BackupResource: &metaservice.BackupResource{
-					Resource: &metaservice.Resource{
-						Name:    metadata.GetName(),
-						Group:   runtimeObject.GetObjectKind().GroupVersionKind().Group,
-						Version: runtimeObject.GetObjectKind().GroupVersionKind().Version,
-						Kind:    runtimeObject.GetObjectKind().GroupVersionKind().Kind,
-					},
-					Data: resourceData,
+	err := backupSendClient.Send(&metaservice.BackupRequest{
+		Backup: &metaservice.BackupRequest_BackupResource{
+			BackupResource: &metaservice.BackupResource{
+				Resource: &metaservice.Resource{
+					Name:    metadataName,
+					Group:   gvr.group,
+					Version: gvr.version,
+					Kind:    gvr.resourceName,
 				},
+				Data: resourceData,
 			},
-		})
-
-	}
-	return nil
+		},
+	})
+	return err
 }
 
 func (c *Controller) handleAdd(obj interface{}) {

@@ -83,3 +83,16 @@ func validateNamespaceName(ns string) []error {
 
 	return errs
 }
+
+func GetResultantItems(includeList, excludeList []string) []string {
+	var resultedItems []string
+	for _, itm := range includeList {
+		resultedItems = append(resultedItems, string(itm))
+	}
+
+	for _, itm := range excludeList {
+		resultedItems = append(resultedItems, string(itm))
+	}
+
+	return resultedItems
+}

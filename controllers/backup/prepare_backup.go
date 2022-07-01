@@ -23,6 +23,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+var ResultantNamespace = []string{}
+
+var ResultantResource = []string{}
+
+// var gvrList map[string]int
+var gvrList = make(map[string]GroupResouceVersion)
+
 type itemKey struct {
 	resource  string
 	namespace string
@@ -49,7 +56,8 @@ type GroupResouceVersion struct {
 }
 
 const (
-	pod = iota
+	deployments = iota
+	pod
 	pvc
 	pv
 	other
@@ -57,6 +65,8 @@ const (
 
 func CoreGroupResourcePriority(resource string) int {
 	switch strings.ToLower(resource) {
+	case "deployments":
+		return deployments
 	case "pods":
 		return pod
 	case "persistentvolumeclaims":
