@@ -18,6 +18,7 @@ package compressors
 
 import (
 	"compress/gzip"
+
 	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver/manager"
 )

@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
+	providerIdentity "github.com/soda-cdm/kahu/providerframework/identityservice"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
 	repo "github.com/soda-cdm/kahu/providerframework/metaservice/backuprespository"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
@@ -133,8 +134,15 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	}
 
 	// initialize backup repository
-	repository, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
+	repository, grpcConn, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
 	if err != nil {
+		return err
+	}
+
+	// Register the metadata provider
+	err = providerIdentity.RegisterMetadataProvider(ctx, &grpcConn)
+	if err != nil {
+		log.Error("Failed to get provider info: ", err)
 		return err
 	}
 

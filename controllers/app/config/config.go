@@ -18,13 +18,14 @@ package config
 
 import (
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
+
+	"github.com/soda-cdm/kahu/client/clientset/versioned"
+	"github.com/soda-cdm/kahu/client/informers/externalversions"
 
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/controllers/backup"
