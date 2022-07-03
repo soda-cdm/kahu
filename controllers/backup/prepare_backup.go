@@ -27,9 +27,6 @@ var ResultantNamespace = []string{}
 
 var ResultantResource = []string{}
 
-// var gvrList map[string]int
-var gvrList = make(map[string]GroupResouceVersion)
-
 type itemKey struct {
 	resource  string
 	namespace string
