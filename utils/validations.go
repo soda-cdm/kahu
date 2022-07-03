@@ -25,6 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+var SupportedResourceList = []string{"deployments", "replicasets", "configmaps", "secrets", "servicesr",
+	"endpoints", "storageclasses", "persistentvolumeclaims", "statefulsets",
+}
+
 func ValidateIncludesExcludes(includesList, excludesList []string) []error {
 	var errs []error
 
@@ -84,15 +88,38 @@ func validateNamespaceName(ns string) []error {
 	return errs
 }
 
-func GetResultantItems(includeList, excludeList []string) []string {
+func GetResultantItems(allList, includeList, excludeList []string) []string {
 	var resultedItems []string
-	for _, itm := range includeList {
-		resultedItems = append(resultedItems, string(itm))
+
+	resultedItems = includeList
+	if len(includeList) == 0 {
+		resultedItems = allList
 	}
 
 	for _, itm := range excludeList {
-		resultedItems = append(resultedItems, string(itm))
+		if Contains(resultedItems, itm) {
+			RemoveItem(resultedItems, string(itm))
+		}
 	}
 
 	return resultedItems
+}
+
+func Contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
+}
+
+func RemoveItem(s []string, r string) []string {
+	for i, v := range s {
+		if v == r {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+	return s
 }

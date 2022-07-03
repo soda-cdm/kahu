@@ -22,7 +22,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -52,9 +51,6 @@ const (
 	controllerName = "BackupController"
 	controllerOps  = "Backup"
 )
-
-// var KindList map[string]int
-var KindList = make(map[string]GroupResouceVersion)
 
 type Config struct {
 	MetaServicePort    uint
@@ -133,8 +129,8 @@ func (c *Controller) doBackup(key string) error {
 
 	// Validate the Metadatalocation
 	backupProvider := backup.Spec.MetadataLocation
-	c.logger.Infof("preparing backup for provider %s: ", backupProvider)
-	backuplocation, err := c.backupClient.Get(context.Background(), backupProvider, metav1.GetOptions{})
+	c.logger.Infof("preparing backup for provider: %s ", backupProvider)
+	backuplocation, err := c.backupLocationClient.Get(context.Background(), backupProvider, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to validate backup location, reason: %s", err)
 		backup.Status.Phase = kahuv1beta1.BackupPhaseFailedValidation
@@ -149,6 +145,8 @@ func (c *Controller) doBackup(key string) error {
 
 	if len(prepareBackupReq.Status.ValidationErrors) > 0 {
 		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseFailedValidation
+		c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+		return err
 	} else {
 		prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseInProgress
@@ -156,15 +154,16 @@ func (c *Controller) doBackup(key string) error {
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
 
-	// prepare and run backup
+	// start taking backup
 	err = c.runBackup(prepareBackupReq)
 	if err != nil {
 		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseFailed
+	} else {
+		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseCompleted
 	}
+	prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
 
-	prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseCompleted
-	c.logger.Infof("updating the final status of backup %s", prepareBackupReq.Status.Phase)
-	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+	c.logger.Infof("completed backup with status: %s", prepareBackupReq.Status.Phase)
 	return err
 }
 
@@ -191,8 +190,13 @@ func (c *Controller) prepareBackupRequest(backup *kahuv1beta1.Backup) *PrepareBa
 		backupRequest.Status.ValidationErrors = append(backupRequest.Status.ValidationErrors, fmt.Sprintf("Include/Exclude namespace list is not valid: %v", err))
 	}
 
-	ResultantNamespace = utils.GetResultantItems(backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces)
-	ResultantResource = utils.GetResultantItems(backupRequest.Spec.IncludedResources, backupRequest.Spec.ExcludedResources)
+	var allNamespace []string
+	if len(backupRequest.Spec.IncludedNamespaces) == 0 {
+		allNamespace, _ = c.ListNamespaces(backupRequest)
+	}
+	ResultantNamespace = utils.GetResultantItems(allNamespace, backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces)
+
+	ResultantResource = utils.GetResultantItems(utils.SupportedResourceList, backupRequest.Spec.IncludedResources, backupRequest.Spec.ExcludedResources)
 
 	// till now validation is ok. Set the backupphase as New to start backup
 	backupRequest.Status.Phase = v1beta1.BackupPhaseInit
@@ -207,7 +211,13 @@ func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 		return
 	}
 
-	backup.Status.Phase = phase
+	if backup.Status.Phase == v1beta1.BackupPhaseCompleted && phase == kahuv1beta1.BackupPhaseFailed {
+		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
+	} else if backup.Status.Phase == v1beta1.BackupPhasePartiallyFailed {
+		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
+	} else {
+		backup.Status.Phase = phase
+	}
 	backup.Status.ValidationErrors = bkp.Status.ValidationErrors
 	_, err = client.UpdateStatus(context.Background(), backup, metav1.UpdateOptions{})
 	if err != nil {
@@ -217,25 +227,43 @@ func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 	return
 }
 
-func (c *Controller) runBackup(backup *PrepareBackup) error {
-	c.logger.Infoln("starting to run backup")
-
+func (c *Controller) getGVR(input string) (GroupResouceVersion, error) {
+	var gvr GroupResouceVersion
 	k8sClinet, err := utils.GetK8sClient(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("unable to get k8s client:%s", err)
-		return err
+		return gvr, err
 	}
 
 	_, resource, _ := k8sClinet.ServerGroupsAndResources()
 
 	for _, group := range resource {
-		c.getGroupItems(group)
+		// Parse so we can check if this is the core group
+		gv, err := schema.ParseGroupVersion(group.GroupVersion)
+		if err != nil {
+			return gvr, err
+		}
+		if gv.Group == "" {
+			sortCoreGroup(group)
+		}
+
+		for _, resource := range group.APIResources {
+			gvr = c.getResourceItems(gv, resource, input)
+			if gvr.resourceName == input {
+				return gvr, nil
+			}
+		}
 
 	}
+	return gvr, err
+}
 
-	backupClient := utils.GetMetaserviceBackupClient("127.0.0.1", 8181)
+func (c *Controller) runBackup(backup *PrepareBackup) error {
+	c.logger.Infoln("starting to run backup")
 
-	err = backupClient.Send(&metaservice.BackupRequest{
+	backupClient := utils.GetMetaserviceBackupClient(c.config.MetaServiceAddress, c.config.MetaServicePort)
+
+	err := backupClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_Identifier{
 			Identifier: &metaservice.BackupIdentifier{
 				BackupHandle: backup.Name,
@@ -249,40 +277,68 @@ func (c *Controller) runBackup(backup *PrepareBackup) error {
 	}
 
 	resultantResource := sets.NewString(ResultantResource...)
+	resultantNamespace := sets.NewString(ResultantNamespace...)
+	c.logger.Infof("backup will be taken for these resources:%s", resultantResource)
+	c.logger.Infof("backup will be taken for these namespaces:%s", resultantNamespace)
 
-	for _, ns := range ResultantNamespace {
-		for _, gvr := range gvrList {
-			if len(resultantResource) == 0 || resultantResource.Has(gvr.resourceName) {
-				switch gvr.resourceName {
-				case "deployments":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-					c.deploymentBackup(gvr, ns, backup, backupClient)
-				case "pods":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "replicasets":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "configmaps":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "secrets":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "services":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "endpoints":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "storageclasses":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "persistentvolumeclaims":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				case "statefulsets":
-					c.resourcesBackup(gvr, ns, backup, backupClient)
-				default:
-					continue
+	for ns, nsVal := range resultantNamespace {
+		c.logger.Infof("started backup for namespace:%s", ns)
+		for name, val := range resultantResource {
+			c.logger.Debug(nsVal, val)
+			switch name {
+			case "deployments":
+				gvr, err := c.getGVR("deployments")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
 				}
+				err = c.deploymentBackup(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+				c.updateStatus(backup.Backup, c.backupClient, backup.Status.Phase)
+			case "configmaps":
+				gvr, err := c.getGVR("configmaps")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getConfigMapS(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "persistentvolumeclaims":
+				gvr, err := c.getGVR("persistentvolumeclaims")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getPersistentVolumeClaims(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "storageclasses":
+				gvr, err := c.getGVR("storageclasses")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getStorageClass(gvr, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			default:
+				continue
 			}
 		}
 	}
+	_, err = backupClient.CloseAndRecv()
 
-	return nil
+	return err
 }
 
 func (c *Controller) getResourceObjects(backup *PrepareBackup,
@@ -316,39 +372,19 @@ func (c *Controller) getResourceObjects(backup *PrepareBackup,
 	return ObjectList, nil
 }
 
-// getGroupItems collects all relevant items from a single API group.
-func (c *Controller) getGroupItems(group *metav1.APIResourceList) error {
-	c.logger.WithField("group", group.GroupVersion)
-
-	// Parse so we can check if this is the core group
-	gv, err := schema.ParseGroupVersion(group.GroupVersion)
-	if err != nil {
-		return errors.Wrapf(err, "error parsing GroupVersion %q", group.GroupVersion)
-	}
-	if gv.Group == "" {
-		sortCoreGroup(group)
-	}
-
-	for _, resource := range group.APIResources {
-		c.getResourceItems(gv, resource)
-	}
-
-	return nil
-}
-
 // getResourceItems collects all relevant items for a given group-version-resource.
-func (c *Controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource) {
+func (c *Controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource, input string) GroupResouceVersion {
 	gvr := gv.WithResource(resource.Name)
 
-	_, ok := gvrList[resource.Kind]
-	if !ok {
-		groupResourceVersion := GroupResouceVersion{
+	var groupResourceVersion GroupResouceVersion
+	if input == gvr.Resource {
+		groupResourceVersion = GroupResouceVersion{
 			resourceName: gvr.Resource,
 			version:      gvr.Version,
 			group:        gvr.Group,
 		}
-		gvrList[resource.Kind] = groupResourceVersion
 	}
+	return groupResourceVersion
 }
 
 // sortCoreGroup sorts the core API group.
@@ -361,6 +397,7 @@ func sortCoreGroup(group *metav1.APIResourceList) {
 func (c *Controller) backupSend(gvr GroupResouceVersion,
 	resourceData []byte, metadataName string,
 	backupSendClient metaservice.MetaService_BackupClient) error {
+	c.logger.Infof("sending metadata for namespace:%s and resources:%s", metadataName, gvr.resourceName)
 
 	err := backupSendClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_BackupResource{
@@ -376,6 +413,12 @@ func (c *Controller) backupSend(gvr GroupResouceVersion,
 		},
 	})
 	return err
+}
+
+func (c *Controller) deleteBackup(name string, backup *v1beta1.Backup) {
+	// TODO: delete need to be added
+	c.logger.Infof("delete is called for backup:%s", name)
+
 }
 
 func (c *Controller) handleAdd(obj interface{}) {
@@ -394,5 +437,8 @@ func (c *Controller) handleAdd(obj interface{}) {
 }
 
 func (c *Controller) handleDel(obj interface{}) {
-	c.controller.Enqueue(obj)
+	backup := obj.(*v1beta1.Backup)
+	backupName := utils.NamespaceAndName(backup)
+	c.deleteBackup(backupName, backup)
+
 }
