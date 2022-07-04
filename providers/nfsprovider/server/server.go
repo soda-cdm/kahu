@@ -27,7 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
 )
 
 const (

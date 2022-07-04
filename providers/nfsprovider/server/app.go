@@ -28,14 +28,14 @@ import (
 	"google.golang.org/grpc"
 
 	nfs_provider "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
 
 const (
 	// NFSService component name
-	componentNFSService = "nfs_provider"
+	componentNFSService = "nfsprovider"
 )
 
 // NewNFSProviderCommand creates a *cobra.Command object with default parameters
