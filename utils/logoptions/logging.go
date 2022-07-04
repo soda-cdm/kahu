@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package logoptions defines NFSProvider log options
 package logoptions
 
 import (
@@ -24,8 +25,8 @@ import (
 )
 
 const (
-	DefaultLogFormat = "text"
-	DefaultLogLevel  = log.InfoLevel
+	defaultLogFormat = "text"
+	defaultLogLevel  = log.InfoLevel
 )
 
 // LogOptions maintains log initialization flags
@@ -39,8 +40,8 @@ type LogOptions struct {
 // NewLogOptions initialize logging with default options and return logging flag object
 func NewLogOptions() *LogOptions {
 	loggingOptions := &LogOptions{
-		logFormat: DefaultLogFormat,
-		logLevel:  DefaultLogLevel.String(),
+		logFormat: defaultLogFormat,
+		logLevel:  defaultLogLevel.String(),
 	}
 	_ = loggingOptions.Apply()
 	return loggingOptions

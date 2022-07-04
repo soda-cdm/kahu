@@ -11,6 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package utils provide utility function for k8s clients
 package utils
 
 import (
@@ -34,6 +35,7 @@ import (
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
+// GetConfig provide rest config from k8s config
 func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
 	if kubeConfig != "" {
 		return clientcmd.BuildConfigFromFlags("", kubeConfig)
@@ -42,6 +44,7 @@ func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
 	return restclient.InClusterConfig()
 }
 
+// NamespaceAndName provide namespace and name from object
 func NamespaceAndName(objMeta metav1.Object) string {
 	if objMeta.GetNamespace() == "" {
 		return objMeta.GetName()
@@ -49,6 +52,7 @@ func NamespaceAndName(objMeta metav1.Object) string {
 	return fmt.Sprintf("%s/%s", objMeta.GetNamespace(), objMeta.GetName())
 }
 
+// SetupSignalHandler helps to create cancel signal handler
 func SetupSignalHandler(cancel context.CancelFunc) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

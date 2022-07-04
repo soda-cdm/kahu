@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//Package server defines nfs provider server
 package server
 
 import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -55,7 +55,7 @@ func NewNFSProviderCommand() *cobra.Command {
 			if err := cleanFlagSet.Parse(args); err != nil {
 				log.Error("Failed to parse nfs provider service flag ", err)
 				_ = cmd.Usage()
-				os.Exit(1)
+				return
 			}
 
 			// check if there are non-flag arguments in the command line
@@ -63,14 +63,14 @@ func NewNFSProviderCommand() *cobra.Command {
 			if len(cmds) > 0 {
 				log.Error("Unknown command ", cmds[0])
 				_ = cmd.Usage()
-				os.Exit(1)
+				return
 			}
 
 			// short-circuit on help
 			help, err := cleanFlagSet.GetBool("help")
 			if err != nil {
 				log.Error(`"help" flag is non-bool`)
-				os.Exit(1)
+				return
 			}
 			if help {
 				_ = cmd.Help()
@@ -80,16 +80,15 @@ func NewNFSProviderCommand() *cobra.Command {
 			// validate and apply initial NFSService Flags
 			if err := nfsServiceFlags.Apply(); err != nil {
 				log.Error("Failed to validate nfs provider service flags ", err)
-				os.Exit(1)
+				return
 			}
 
 			// validate and apply logging flags
 			if err := loggingOptions.Apply(); err != nil {
 				log.Error("Failed to apply logging flags ", err)
-				os.Exit(1)
+				return
 			}
 
-			// TODO: Setup signal handler with context
 			ctx, cancel := context.WithCancel(context.Background())
 			// setup signal handler
 			utils.SetupSignalHandler(cancel)
@@ -97,7 +96,7 @@ func NewNFSProviderCommand() *cobra.Command {
 			// run the meta service
 			if err := Run(ctx, options.NFSProviderOptions{NFSServiceFlags: *nfsServiceFlags}); err != nil {
 				log.Error("Failed to run nfs provider service", err)
-				os.Exit(1)
+				return
 			}
 
 		},
@@ -121,14 +120,15 @@ func NewNFSProviderCommand() *cobra.Command {
 	return cmd
 }
 
+// Run starts and runs nfs provider service
 func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	log.Info("Starting Server ...")
 
-	server_addr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
+	serverAddr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
 	}
-	lis, err := net.ListenUnix("unix", server_addr)
+	lis, err := net.ListenUnix("unix", serverAddr)
 	if err != nil {
 		log.Fatal("failed to listen: ", err)
 	}

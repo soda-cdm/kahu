@@ -33,7 +33,8 @@ import (
 const (
 	defaultProviderName        = "kahu-nfs-provider"
 	defaultProviderVersion     = "v1"
-	READ_BUFFER_SIZE       int = 4096
+	// ReadBufferSize is file read size in bytes
+	ReadBufferSize int = 4096
 )
 
 type nfsServer struct {
@@ -41,6 +42,7 @@ type nfsServer struct {
 	options options.NFSProviderOptions
 }
 
+// NewMetaBackupServer creates a new meta backup service
 func NewMetaBackupServer(ctx context.Context,
 	serviceOptions options.NFSProviderOptions) pb.MetaBackupServer {
 	return &nfsServer{
@@ -90,8 +92,6 @@ func (server *nfsServer) Probe(ctx context.Context, probeRequest *pb.ProbeReques
 
 // Upload pushes the input data to the specified location at provider
 func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
-	log.Info("Upload Called .... ")
-
 	uploadRequest, err := service.Recv()
 	if err != nil {
 		return status.Errorf(codes.Unknown, "failed with error %s", err)
@@ -147,7 +147,6 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 // Download pulls the input file from the specified location at provider
 func (server *nfsServer) Download(request *pb.DownloadRequest,
 	service pb.MetaBackup_DownloadServer) error {
-	log.Info("Download Called ...")
 
 	fileId := request.GetFileIdentifier()
 	if fileId == "" {
@@ -163,7 +162,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	}
 	defer file.Close()
 
-	buffer := make([]byte, READ_BUFFER_SIZE)
+	buffer := make([]byte, ReadBufferSize)
 
 	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
 	fid_data := pb.DownloadResponse{
@@ -206,7 +205,6 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 // Delete removes the input file from the specified location at provider
 func (server *nfsServer) Delete(ctxt context.Context,
 	request *pb.DeleteRequest) (*pb.Empty, error) {
-	log.Info("Delete Called ...")
 
 	fileId := request.GetFileIdentifier()
 	empty := pb.Empty{}
@@ -233,7 +231,6 @@ func (server *nfsServer) Delete(ctxt context.Context,
 // ObjectExists checks if input file exists at provider
 func (server *nfsServer) ObjectExists(ctxt context.Context,
 	request *pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
-	log.Info("ObjectExists Called...")
 
 	fileId := request.GetFileIdentifier()
 	log.Printf("checking existence for file_id: %v", fileId)

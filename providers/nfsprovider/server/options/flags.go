@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package options defines nfs provider flag options
 package options
 
 import (
@@ -29,16 +30,20 @@ const (
 	DataPath       = "/data"
 )
 
+// CompressionType defines type of compression for archival
 type CompressionType string
 
+// NFSServiceFlags defines flags for nfs services
 type NFSServiceFlags struct {
 	UnixSocketPath string
 	DataPath       string
 }
 
+// NFSServiceFlags creats new nfs services
 func NewNFSServiceFlags() *NFSServiceFlags {
 	return &NFSServiceFlags{
 		UnixSocketPath: unixSocketPath,
+		// DataPath defines directory of backup files
 		DataPath:       DataPath,
 	}
 }
