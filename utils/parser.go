@@ -28,3 +28,17 @@ func ResourceToFile(resource *pb.Resource) string {
 		resource.Kind,
 		resource.Name)
 }
+
+func FileToResource(filePath string) *pb.Resource {
+	resource := &pb.Resource{}
+	dir, file := filepath.Split(filePath)
+	resource.Name = file
+	dir, file = filepath.Split(dir)
+	resource.Kind = file
+	dir, file = filepath.Split(dir)
+	resource.Version = file
+	dir, file = filepath.Split(dir)
+	resource.Version = file
+
+	return resource
+}

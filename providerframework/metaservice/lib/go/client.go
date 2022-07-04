@@ -15,10 +15,25 @@
 package metaservice
 
 import (
+	"net"
+
 	"google.golang.org/grpc"
 )
 
 func NewLBDial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	opts = append(opts, grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
 	return grpc.Dial(target, opts...)
+}
+
+func GetMetaServiceClient(target string) (MetaServiceClient, error) {
+	if net.ParseIP(target) == nil {
+		// if not IP, try dns
+		target = "dns:///" + target
+	}
+
+	grpcConn, err := NewLBDial(target, grpc.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+	return NewMetaServiceClient(grpcConn), nil
 }

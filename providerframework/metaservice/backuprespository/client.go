@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -33,6 +34,7 @@ import (
 
 type BackupRepository interface {
 	Upload(filePath string) error
+	Download(fileID string, attributes map[string]string) (string, error)
 }
 
 type backupRepository struct {
@@ -120,4 +122,57 @@ func (repo *backupRepository) Upload(filePath string) error {
 		return err
 	}
 	return nil
+}
+
+func (repo *backupRepository) Download(fileID string, attributes map[string]string) (string, error) {
+	downloadReq := &pb.DownloadRequest{
+		FileIdentifier: fileID,
+		Attributes:     attributes,
+	}
+
+	repoClient, err := repo.client.Download(context.Background(), downloadReq)
+	if err != nil {
+		return "", err
+	}
+
+	downloadRes, err := repoClient.Recv()
+	if err != nil {
+		return "", err
+	}
+
+	// the first response should be file info
+	fileInfo := downloadRes.GetInfo()
+	fileName := fileInfo.GetFileIdentifier()
+
+	fileLocation := filepath.Join("/tmp", fileName)
+	file, err := os.Create(fileLocation)
+	if err != nil {
+		log.Errorf("cannot open backup file: %s", err)
+		return "", err
+	}
+	defer file.Close()
+	log.Infof("Archive file path %s", fileLocation)
+
+	writer := bufio.NewWriter(file)
+	for {
+		downloadRes, err := repoClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Errorf("Failed to download file. %s", err)
+			return "", err
+		}
+
+		data := downloadRes.GetChunkData()
+		_, err = writer.Write(data)
+		if err != nil {
+			log.Errorf("cannot write buffer: %s", err)
+			return "", err
+		}
+	}
+
+	writer.Flush()
+	repoClient.CloseSend()
+	return fileLocation, nil
 }
