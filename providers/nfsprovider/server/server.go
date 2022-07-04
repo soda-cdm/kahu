@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	defaultProviderName        = "kahu-nfs-provider"
-	defaultProviderVersion     = "v1"
+	defaultProviderName    = "kahu-nfs-provider"
+	defaultProviderVersion = "v1"
 	// ReadBufferSize is file read size in bytes
 	ReadBufferSize int = 4096
 )
@@ -94,51 +94,54 @@ func (server *nfsServer) Probe(ctx context.Context, probeRequest *pb.ProbeReques
 func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	uploadRequest, err := service.Recv()
 	if err != nil {
-		return status.Errorf(codes.Unknown, "failed with error %s", err)
+		return status.Error(codes.Unknown, "upload request failed")
 	}
 
 	fileInfo := uploadRequest.GetInfo()
 	if fileInfo == nil {
-		return status.Errorf(codes.InvalidArgument, "first request is not upload file info")
+		return status.Error(codes.InvalidArgument, "first request is not upload file info")
 	}
 
 	// use backup handle name for file
 	fileId := fileInfo.GetFileIdentifier()
 	if fileId == "" {
 		log.Errorf("failed to create archiver %s", err)
-		return status.Errorf(codes.Internal, "invalid file identifier %s", err)
+		return status.Error(codes.Internal, "upload failed,invalid file identifier")
 	}
 	// TODO check if filename already exists
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Create(fileName)
 	if err != nil {
-		log.Errorf("failed to open file for upload to NFS: %s", err)
-		return status.Errorf(codes.Internal, "invalid file identifier %s", err)
+		log.Error("failed to open file for upload to NFS")
+		return status.Error(codes.Internal, "upload failed, invalid file identifier")
 	}
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Error("failed to close backup file")
+		}
+	}()
 
 	for {
 		uploadRequest, err := service.Recv()
 		// If there are no more requests
 		if err == io.EOF {
-			file.Close()
 			break
 		}
 		if err != nil {
 			log.Errorf("uploadRequest received error %s", err)
-			file.Close()
-			return status.Errorf(codes.Unknown, "error receiving request")
+			return status.Error(codes.Unknown, "error receiving request")
 		}
 
 		_, err = file.Write(uploadRequest.GetChunkData())
 		if err != nil {
-			file.Close()
-			return status.Errorf(codes.Unknown, "failed to write to file %s", err)
+			return status.Error(codes.Unknown, "failed to write to file")
 		}
 	}
 
 	err = service.SendAndClose(&pb.Empty{})
 	if err != nil {
-		return status.Errorf(codes.Unknown, "failed to close and flush file. %s", err)
+		return status.Error(codes.Unknown, "failed to close and flush file.")
 	}
 
 	return nil
@@ -150,30 +153,36 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 
 	fileId := request.GetFileIdentifier()
 	if fileId == "" {
-		return status.Errorf(codes.InvalidArgument, "download file id is empty")
+		return status.Error(codes.InvalidArgument, "download file id is empty")
 	}
 
 	log.Printf("Download file id %v", fileId)
 	fileName := filepath.Join(server.options.DataPath, fileId)
 	file, err := os.Open(fileName)
 	if err != nil {
-		log.Errorf("failed to open file for download from NFS: %s", err)
-		return status.Errorf(codes.Internal, "file not found %s", err)
+		log.Error("failed to open file for download from NFS")
+		return status.Error(codes.Internal, "backup file not found")
 	}
-	defer file.Close()
+	defer func() {
+		err := file.Close()
+		if err != nil {
+			log.Error("failed to close backup file")
+		}
+	}()
 
 	buffer := make([]byte, ReadBufferSize)
 
 	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
-	fid_data := pb.DownloadResponse{
+
+	fidData := pb.DownloadResponse{
 		Data: &pb.DownloadResponse_Info{Info: &fi},
 	}
 
 	// First, send file identifier
-	err = service.Send(&fid_data)
+	err = service.Send(&fidData)
 	if err != nil {
 		log.Errorf("download response got error %s", err)
-		return status.Errorf(codes.Unknown, "error sending response")
+		return status.Error(codes.Unknown, "error sending response")
 	}
 
 	size := 0
@@ -185,7 +194,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		}
 		if err != nil {
 			log.Errorf("failed to read data from file %s", err)
-			return status.Errorf(codes.Unknown, "error sending response")
+			return status.Error(codes.Unknown, "error sending response")
 		}
 
 		size += n
@@ -193,7 +202,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		err = service.Send(&data)
 		if err != nil {
 			log.Errorf("download response got error %s", err)
-			return status.Errorf(codes.Unknown, "error sending response")
+			return status.Error(codes.Unknown, "error sending response")
 		}
 	}
 
@@ -214,15 +223,18 @@ func (server *nfsServer) Delete(ctxt context.Context,
 	// Try opening the file for Delete
 	file, err := os.Open(fileName)
 	if err != nil {
-		log.Errorf("failed to open file for delete from NFS: %s", err)
-		return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+		log.Error("failed to open file for delete from NFS")
+		return &empty, status.Error(codes.Internal, "backup file not found")
 	}
-	file.Close()
+	err = file.Close()
+	if err != nil {
+		log.Errorf("failed to close backup file from NFS")
+	}
 
 	err = os.Remove(fileName)
 	if err != nil {
-		log.Errorf("failed to delete file from NFS: %s", err)
-		return &empty, status.Errorf(codes.Internal, "file not found %s", err)
+		log.Errorf("failed to delete file from NFS")
+		return &empty, status.Error(codes.Internal, "remove backup file not found")
 	}
 
 	return &empty, nil
@@ -239,11 +251,14 @@ func (server *nfsServer) ObjectExists(ctxt context.Context,
 	// Try opening the file for checking existence
 	file, err := os.Open(fileName)
 	if err != nil {
-		log.Infof("failed to open file while checking existence: %s", err)
+		log.Infof("failed to open file while checking existence")
 		response := pb.ObjectExistsResponse{Exists: false}
 		return &response, nil
 	}
-	file.Close()
+	err = file.Close()
+	if err != nil {
+		log.Error("failed to close backup file")
+	}
 
 	response := pb.ObjectExistsResponse{Exists: true}
 	return &response, nil

@@ -19,8 +19,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -51,29 +53,8 @@ func NewNFSProviderCommand() *cobra.Command {
 		// Disabled flag parsing from cobra framework
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			// initial flag parse, since we disable cobra's flag parsing
-			if err := cleanFlagSet.Parse(args); err != nil {
-				log.Error("Failed to parse nfs provider service flag ", err)
-				_ = cmd.Usage()
-				return
-			}
-
-			// check if there are non-flag arguments in the command line
-			cmds := cleanFlagSet.Args()
-			if len(cmds) > 0 {
-				log.Error("Unknown command ", cmds[0])
-				_ = cmd.Usage()
-				return
-			}
-
-			// short-circuit on help
-			help, err := cleanFlagSet.GetBool("help")
-			if err != nil {
-				log.Error(`"help" flag is non-bool`)
-				return
-			}
-			if help {
-				_ = cmd.Help()
+			// validate flags
+			if err := validateFlags(cmd, cleanFlagSet, args); err != nil {
 				return
 			}
 
@@ -120,6 +101,36 @@ func NewNFSProviderCommand() *cobra.Command {
 	return cmd
 }
 
+// validateFlags validates nfs provider arguments
+func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []string) error {
+	// initial flag parse, since we disable cobra's flag parsing
+	if err := cleanFlagSet.Parse(args); err != nil {
+		log.Error("Failed to parse nfs provider service flag ", err)
+		_ = cmd.Usage()
+		return err
+	}
+
+	// check if there are non-flag arguments in the command line
+	cmds := cleanFlagSet.Args()
+	if len(cmds) > 0 {
+		log.Error("unknown command ", cmds[0])
+		_ = cmd.Usage()
+		return errors.New("unknown command")
+	}
+
+	// short-circuit on help
+	help, err := cleanFlagSet.GetBool("help")
+	if err != nil {
+		log.Error(`"help" flag is non-bool`)
+		return err
+	}
+	if help {
+		_ = cmd.Help()
+		return err
+	}
+	return nil
+}
+
 // Run starts and runs nfs provider service
 func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	log.Info("Starting Server ...")
@@ -127,11 +138,25 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	serverAddr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
+		return errors.New("failed to resolve unix addr")
+	}
+	if _, err := os.Stat(serviceOptions.UnixSocketPath); err == nil {
+		if err := os.RemoveAll(serviceOptions.UnixSocketPath); err != nil {
+			log.Fatal(err)
+			return err
+		}
 	}
 	lis, err := net.ListenUnix("unix", serverAddr)
 	if err != nil {
 		log.Fatal("failed to listen: ", err)
+		return err
 	}
+	defer func() {
+		err := lis.Close()
+		if err != nil {
+			log.Errorf("failed to close listerning socket %s", err)
+		}
+	}()
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)

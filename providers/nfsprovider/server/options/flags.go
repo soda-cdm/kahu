@@ -18,9 +18,9 @@ limitations under the License.
 package options
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
 
@@ -44,7 +44,7 @@ func NewNFSServiceFlags() *NFSServiceFlags {
 	return &NFSServiceFlags{
 		UnixSocketPath: unixSocketPath,
 		// DataPath defines directory of backup files
-		DataPath:       DataPath,
+		DataPath: DataPath,
 	}
 }
 
@@ -59,7 +59,8 @@ func (options *NFSServiceFlags) AddFlags(fs *pflag.FlagSet) {
 // Apply checks validity of available command line options
 func (options *NFSServiceFlags) Apply() error {
 	if _, err := os.Stat(options.DataPath); os.IsNotExist(err) {
-		return fmt.Errorf("nfs mount directory(%s) does not exist", options.DataPath)
+		logrus.Errorf("nfs mount directory(%s) does not exist", options.DataPath)
+		return err
 	}
 
 	return nil

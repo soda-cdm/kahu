@@ -43,7 +43,11 @@ func NewLogOptions() *LogOptions {
 		logFormat: defaultLogFormat,
 		logLevel:  defaultLogLevel.String(),
 	}
-	_ = loggingOptions.Apply()
+	err := loggingOptions.Apply()
+	if err != nil {
+		log.Error("fail to apply log options")
+		return nil
+	}
 	return loggingOptions
 }
 
