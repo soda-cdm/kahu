@@ -162,6 +162,7 @@ func (c *Controller) doBackup(key string) error {
 	prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
 
 	c.logger.Infof("completed backup with status: %s", prepareBackupReq.Status.Phase)
+	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
 	return err
 }
 
