@@ -148,7 +148,6 @@ func (c *Controller) doBackup(key string) error {
 		c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
 		return err
 	} else {
-		prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseInProgress
 	}
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
@@ -331,6 +330,61 @@ func (c *Controller) runBackup(backup *PrepareBackup) error {
 				} else {
 					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
 				}
+			case "services":
+				gvr, err := c.getGVR("services")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getServices(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "secrets":
+				gvr, err := c.getGVR("secrets")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getSecrets(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "endpoints":
+				gvr, err := c.getGVR("endpoints")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getEndpoints(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "replicasets":
+				gvr, err := c.getGVR("replicasets")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getReplicasets(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
+			case "statefulsets":
+				gvr, err := c.getGVR("statefulsets")
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				}
+				err = c.getStatefulsets(gvr, ns, backup, backupClient)
+				if err != nil {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+				} else {
+					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+				}
 			default:
 				continue
 			}
@@ -437,8 +491,5 @@ func (c *Controller) handleAdd(obj interface{}) {
 }
 
 func (c *Controller) handleDel(obj interface{}) {
-	backup := obj.(*v1beta1.Backup)
-	backupName := utils.NamespaceAndName(backup)
-	c.deleteBackup(backupName, backup)
-
+	c.controller.Enqueue(obj)
 }

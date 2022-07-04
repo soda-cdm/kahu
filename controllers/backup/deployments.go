@@ -126,7 +126,7 @@ func (c *Controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, 
 
 	sa, err := c.GetServiceAccount(deployment.Namespace, saName)
 	if err != nil {
-		c.logger.Errorf("unable to get configmap for name: %s", saName)
+		c.logger.Errorf("unable to get service account for name: %s", saName)
 	}
 	resourceData, err := json.Marshal(sa)
 	if err != nil {
@@ -156,47 +156,6 @@ func (c *Controller) GetServiceAccount(namespace, name string) (*corev1.ServiceA
 		return nil, err
 	}
 	return sa, err
-}
-
-func (c *Controller) getConfigMapS(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
-	backupClient metaservice.MetaService_BackupClient) error {
-
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return err
-	}
-
-	var labelSelectors map[string]string
-	if backup.Spec.Label != nil {
-		labelSelectors = backup.Spec.Label.MatchLabels
-	}
-
-	selectors := labels.Set(labelSelectors).String()
-	configList, err := k8sClinet.CoreV1().ConfigMaps(namespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: selectors,
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, configMap := range configList.Items {
-		config_data, err := c.GetConfigMap(namespace, configMap.Name)
-
-		resourceData, err := json.Marshal(config_data)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of configmaps: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
-
-		err = c.backupSend(gvr, resourceData, config_data.Name, backupClient)
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
 }
 
 func (c *Controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, error) {
@@ -266,12 +225,6 @@ func (c *Controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 			return err
 		}
 		c.logger.Debug(resourceData)
-		gvr := GroupResouceVersion{
-			group:        "",
-			resourceName: "persistentvolumeclaims",
-			version:      "v1",
-		}
-
 		err = c.backupSend(gvr, resourceData, pvcData.Name, backupClient)
 		if err != nil {
 			return err
@@ -323,7 +276,7 @@ func (c *Controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBac
 
 		resourceData, err := json.Marshal(scData)
 		if err != nil {
-			c.logger.Errorf("Unable to get resource content of pvc: %s", err)
+			c.logger.Errorf("Unable to get resource content of storageclass: %s", err)
 			return err
 		}
 		c.logger.Debug(resourceData)
