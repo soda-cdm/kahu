@@ -18,8 +18,9 @@ package tar
 
 import (
 	"archive/tar"
-	log "github.com/sirupsen/logrus"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver"
 )

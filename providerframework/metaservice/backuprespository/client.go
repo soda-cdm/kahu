@@ -38,9 +38,10 @@ type BackupRepository interface {
 type backupRepository struct {
 	backupRepositoryAddress string
 	client                  pb.MetaBackupClient
+	grpcConn                grpc.ClientConnInterface
 }
 
-func NewBackupRepository(backupRepositoryAddress string) (BackupRepository, error) {
+func NewBackupRepository(backupRepositoryAddress string) (BackupRepository, grpc.ClientConnInterface, error) {
 	unixPrefix := "unix://"
 	if strings.HasPrefix(backupRepositoryAddress, "/") {
 		// It looks like filesystem path.
@@ -48,20 +49,20 @@ func NewBackupRepository(backupRepositoryAddress string) (BackupRepository, erro
 	}
 
 	if !strings.HasPrefix(backupRepositoryAddress, unixPrefix) {
-		return nil, fmt.Errorf("invalid unix domain path [%s]",
+		return nil, nil, fmt.Errorf("invalid unix domain path [%s]",
 			backupRepositoryAddress)
 	}
 
 	grpcConnection, err := grpc.Dial(backupRepositoryAddress, grpc.WithInsecure(),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return &backupRepository{
 		backupRepositoryAddress: backupRepositoryAddress,
 		client:                  pb.NewMetaBackupClient(grpcConnection),
-	}, nil
+	}, grpcConnection, nil
 }
 
 func (repo *backupRepository) Upload(filePath string) error {

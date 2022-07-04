@@ -23,6 +23,12 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// NFSService component name
+	unixSocketPath = "/tmp/nfs.sock"
+	DataPath       = "/data"
+)
+
 type CompressionType string
 
 type NFSServiceFlags struct {
@@ -32,8 +38,8 @@ type NFSServiceFlags struct {
 
 func NewNFSServiceFlags() *NFSServiceFlags {
 	return &NFSServiceFlags{
-		UnixSocketPath: "/tmp/nfs.sock",
-		DataPath:       "/data",
+		UnixSocketPath: unixSocketPath,
+		DataPath:       DataPath,
 	}
 }
 
