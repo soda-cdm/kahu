@@ -38,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
@@ -133,7 +132,7 @@ func (c *Controller) doBackup(key string) error {
 	backuplocation, err := c.backupLocationClient.Get(context.Background(), backupProvider, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to validate backup location, reason: %s", err)
-		backup.Status.Phase = kahuv1beta1.BackupPhaseFailedValidation
+		backup.Status.Phase = v1beta1.BackupPhaseFailedValidation
 		backup.Status.ValidationErrors = append(backup.Status.ValidationErrors, fmt.Sprintf("%v", err))
 		c.updateStatus(backup, c.backupClient, backup.Status.Phase)
 		return err
@@ -144,11 +143,11 @@ func (c *Controller) doBackup(key string) error {
 	prepareBackupReq := c.prepareBackupRequest(backup)
 
 	if len(prepareBackupReq.Status.ValidationErrors) > 0 {
-		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseFailedValidation
+		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailedValidation
 		c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
 		return err
 	} else {
-		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseInProgress
+		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseInProgress
 	}
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
@@ -156,9 +155,9 @@ func (c *Controller) doBackup(key string) error {
 	// start taking backup
 	err = c.runBackup(prepareBackupReq)
 	if err != nil {
-		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseFailed
+		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailed
 	} else {
-		prepareBackupReq.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseCompleted
 	}
 	prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
 
@@ -166,7 +165,7 @@ func (c *Controller) doBackup(key string) error {
 	return err
 }
 
-func (c *Controller) prepareBackupRequest(backup *kahuv1beta1.Backup) *PrepareBackup {
+func (c *Controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup {
 	backupRequest := &PrepareBackup{
 		Backup: backup.DeepCopy(),
 	}
@@ -203,14 +202,14 @@ func (c *Controller) prepareBackupRequest(backup *kahuv1beta1.Backup) *PrepareBa
 	return backupRequest
 }
 
-func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase kahuv1beta1.BackupPhase) {
+func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase v1beta1.BackupPhase) {
 	backup, err := client.Get(context.Background(), bkp.Name, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to get backup for updating status :%+s", err)
 		return
 	}
 
-	if backup.Status.Phase == v1beta1.BackupPhaseCompleted && phase == kahuv1beta1.BackupPhaseFailed {
+	if backup.Status.Phase == v1beta1.BackupPhaseCompleted && phase == v1beta1.BackupPhaseFailed {
 		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
 	} else if backup.Status.Phase == v1beta1.BackupPhasePartiallyFailed {
 		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
@@ -288,102 +287,102 @@ func (c *Controller) runBackup(backup *PrepareBackup) error {
 			case "deployments":
 				gvr, err := c.getGVR("deployments")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.deploymentBackup(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 				c.updateStatus(backup.Backup, c.backupClient, backup.Status.Phase)
 			case "configmaps":
 				gvr, err := c.getGVR("configmaps")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getConfigMapS(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "persistentvolumeclaims":
 				gvr, err := c.getGVR("persistentvolumeclaims")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getPersistentVolumeClaims(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "storageclasses":
 				gvr, err := c.getGVR("storageclasses")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getStorageClass(gvr, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "services":
 				gvr, err := c.getGVR("services")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getServices(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "secrets":
 				gvr, err := c.getGVR("secrets")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getSecrets(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "endpoints":
 				gvr, err := c.getGVR("endpoints")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getEndpoints(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "replicasets":
 				gvr, err := c.getGVR("replicasets")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getReplicasets(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "statefulsets":
 				gvr, err := c.getGVR("statefulsets")
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				}
 				err = c.getStatefulsets(gvr, ns, backup, backupClient)
 				if err != nil {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseFailed
+					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
-					backup.Status.Phase = kahuv1beta1.BackupPhaseCompleted
+					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			default:
 				continue
