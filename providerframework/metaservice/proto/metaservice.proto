@@ -46,7 +46,6 @@ message BackupResource {
 
 message BackupIdentifier {
   string backup_handle = 1;
-  string backup_location = 2;
   map <string, string> parameters = 9;
 }
 

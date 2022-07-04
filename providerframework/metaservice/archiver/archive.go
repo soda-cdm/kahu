@@ -16,10 +16,18 @@ limitations under the License.
 
 package archiver
 
-import "io"
+import (
+	"archive/tar"
+	"io"
+)
 
 type Archiver interface {
 	WriteFile(filePath string, data []byte) error
+	Close() error
+}
+
+type ArchiveReader interface {
+	ReadNext() (header *tar.Header, file io.Reader, err error)
 	Close() error
 }
 
@@ -28,9 +36,16 @@ type CompressionType string
 type ArchivalManager interface {
 	GetArchiver(typ CompressionType,
 		file string) (archiver Archiver, filePath string, err error)
+	GetArchiveReader(typ CompressionType,
+		filePath string) (reader ArchiveReader, err error)
 }
 
 type Writer interface {
 	io.Writer
+	io.Closer
+}
+
+type Reader interface {
+	io.Reader
 	io.Closer
 }

@@ -65,7 +65,7 @@ all:
 	@echo "$$ALL_HELP_INFO"
 else
 all: verify
-	build/build.sh $(WHAT)
+	@build/build.sh $(WHAT)
 endif
 
 define CLEAN_HELP_INFO
@@ -127,7 +127,7 @@ verify:
 	@echo "$$VERIFY_HELP_INFO"
 else
 verify:
-	build/verify.sh
+	@build/verify.sh
 endif
 
 .PHONY: verify-fmt
