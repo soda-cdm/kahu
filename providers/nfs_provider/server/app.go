@@ -29,6 +29,7 @@ import (
 
 	nfs_provider "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
 
@@ -90,7 +91,8 @@ func NewNFSProviderCommand() *cobra.Command {
 
 			// TODO: Setup signal handler with context
 			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			// setup signal handler
+			utils.SetupSignalHandler(cancel)
 
 			// run the meta service
 			if err := Run(ctx, options.NFSProviderOptions{NFSServiceFlags: *nfsServiceFlags}); err != nil {
@@ -135,5 +137,11 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	grpcServer := grpc.NewServer(opts...)
 	nfs_provider.RegisterMetaBackupServer(grpcServer, NewMetaBackupServer(ctx, serviceOptions))
 	nfs_provider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, serviceOptions))
+
+	go func(ctx context.Context, server *grpc.Server) {
+		<-ctx.Done()
+		server.Stop()
+	}(ctx, grpcServer)
+
 	return grpcServer.Serve(lis)
 }

@@ -132,11 +132,11 @@ endif
 
 .PHONY: verify-fmt
 verify-fmt:
-	bash hack/go-format.sh verify
+	@hack/go-format.sh verify
 
 .PHONY: update-fmt
 update-fmt:
-	bash hack/go-format.sh
+	@hack/go-format.sh
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))

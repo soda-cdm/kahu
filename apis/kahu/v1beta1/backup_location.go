@@ -20,7 +20,7 @@ import (
 
 // BackupLocationSpec defines the desired state of BackupLocation
 type BackupLocationSpec struct {
-	// ProviderName is a 3rd party driver which inernally connect to respective storage
+	// ProviderName is a 3rd party driver which internally connect to respective storage
 	// +optional
 	ProviderName string `json:"providerName,omitempty"`
 

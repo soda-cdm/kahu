@@ -57,46 +57,64 @@ type controller struct {
 	cacheSyncWaiters []cache.InformerSynced
 }
 
+type controllerBuilder struct {
+	controller
+}
+
 func NewControllerBuilder(name string) ControllerBuilder {
-	return &controller{
-		name:   name,
-		queue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name),
-		logger: log.StandardLogger(),
+	return &controllerBuilder{
+		controller{
+			name: name,
+		},
 	}
 }
 
-func (ctrl *controller) SetLogger(logger log.FieldLogger) ControllerBuilder {
-	ctrl.logger = logger
-	return ctrl
+func (builder *controllerBuilder) SetLogger(logger log.FieldLogger) ControllerBuilder {
+	builder.logger = logger
+	return builder
 }
 
-func (ctrl *controller) SetHandler(handler func(key string) error) ControllerBuilder {
-	ctrl.handler = handler
-	return ctrl
+func (builder *controllerBuilder) SetHandler(handler func(key string) error) ControllerBuilder {
+	builder.handler = handler
+	return builder
 }
 
-func (ctrl *controller) SetReSyncHandler(handler func()) ControllerBuilder {
-	ctrl.reSyncHandler = handler
+func (builder *controllerBuilder) SetReSyncHandler(handler func()) ControllerBuilder {
+	builder.reSyncHandler = handler
 	// add default re sync period
-	ctrl.reSyncPeriod = defaultReSyncPeriod
-	return ctrl
+	builder.reSyncPeriod = defaultReSyncPeriod
+	return builder
 }
 
-func (ctrl *controller) SetReSyncPeriod(period time.Duration) ControllerBuilder {
-	ctrl.reSyncPeriod = period
-	return ctrl
+func (builder *controllerBuilder) SetReSyncPeriod(period time.Duration) ControllerBuilder {
+	builder.reSyncPeriod = period
+	return builder
 }
 
-func (ctrl *controller) SetInformerSyncWaiters(waiters ...cache.InformerSynced) ControllerBuilder {
-	ctrl.cacheSyncWaiters = append(ctrl.cacheSyncWaiters, waiters...)
-	return ctrl
+func (builder *controllerBuilder) SetInformerSyncWaiters(waiters ...cache.InformerSynced) ControllerBuilder {
+	builder.cacheSyncWaiters = append(builder.cacheSyncWaiters, waiters...)
+	return builder
 }
 
-func (ctrl *controller) Build() (Controller, error) {
-	if ctrl.handler == nil && ctrl.reSyncHandler == nil {
+func (builder *controllerBuilder) Build() (Controller, error) {
+	if builder.handler == nil && builder.reSyncHandler == nil {
 		return nil, fmt.Errorf("both handler and resync handler canot be empty")
 	}
-	return ctrl, nil
+
+	if builder.logger == nil {
+		builder.logger = log.WithField("controller", builder.name)
+	}
+
+	return &controller{
+		name: builder.name,
+		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(),
+			builder.name),
+		logger:           builder.logger,
+		handler:          builder.handler,
+		reSyncHandler:    builder.reSyncHandler,
+		reSyncPeriod:     builder.reSyncPeriod,
+		cacheSyncWaiters: builder.cacheSyncWaiters,
+	}, nil
 }
 
 func (ctrl *controller) Name() string {
@@ -178,8 +196,7 @@ func (ctrl *controller) processNextItem() bool {
 		return true
 	}
 
-	ctrl.logger.WithError(err).WithField("key", key).Error("Error in handler, " +
-		"re-adding item to queue")
+	ctrl.logger.WithError(err).WithField("restore", key).Error("Re-adding item  to queue")
 	ctrl.queue.AddRateLimited(key)
 
 	return true

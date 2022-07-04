@@ -20,6 +20,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -154,7 +155,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	}
 
 	log.Printf("Download file id %v", fileId)
-	fileName := server.options.DataPath + "/" + fileId
+	fileName := filepath.Join(server.options.DataPath, fileId)
 	file, err := os.Open(fileName)
 	if err != nil {
 		log.Errorf("failed to open file for download from NFS: %s", err)
@@ -165,7 +166,6 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	buffer := make([]byte, READ_BUFFER_SIZE)
 
 	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
-
 	fid_data := pb.DownloadResponse{
 		Data: &pb.DownloadResponse_Info{Info: &fi},
 	}
@@ -177,20 +177,20 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		return status.Errorf(codes.Unknown, "error sending response")
 	}
 
+	size := 0
 	// Second, send backup content in loop till file end
 	for {
 		n, err := file.Read(buffer)
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
 			log.Errorf("failed to read data from file %s", err)
 			return status.Errorf(codes.Unknown, "error sending response")
 		}
 
+		size += n
 		data := pb.DownloadResponse{Data: &pb.DownloadResponse_ChunkData{ChunkData: buffer[:n]}}
-
 		err = service.Send(&data)
 		if err != nil {
 			log.Errorf("download response got error %s", err)
@@ -198,7 +198,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		}
 	}
 
-	log.Info("Download success!")
+	log.Infof("Download success!. size %d", size)
 
 	return nil
 }
