@@ -136,8 +136,9 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
 	nfs_provider.RegisterMetaBackupServer(grpcServer, NewMetaBackupServer(ctx, serviceOptions))
-
-	go func(ctx context.Context, server *grpc.Server) {
+	nfs_provider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, serviceOptions))
+	
+  go func(ctx context.Context, server *grpc.Server) {
 		<-ctx.Done()
 		server.Stop()
 	}(ctx, grpcServer)
