@@ -1,16 +1,18 @@
-// Copyright 2022 The SODA Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+Copyright 2022 The SODA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package v1beta1
 
@@ -84,15 +86,26 @@ type BackupSpec struct {
 	// IncludedResources is a list of all resources included for backup. If empty, all resources
 	// are included
 	// +optional
-	IncludedResources []string `json:"includedResources,omitempty"`
+	IncludedResources []ResourceIncluder `json:"includedResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
+	ExcludedResources []ResourceIncluder `json:"excludedResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
 	Label *metav1.LabelSelector `json:"label,omitempty"`
+}
+
+type ResourceIncluder struct {
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// +optional
+	Kind string `json:"kind,omitempty"`
+
+	// +optional
+	IsRegex bool `json:"isRegex,omitempty"`
 }
 
 // ResourceHookSpec is hook which should be executed
