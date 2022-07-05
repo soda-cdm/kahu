@@ -18,13 +18,14 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 
-	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
-	"github.com/soda-cdm/kahu/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/soda-cdm/kahu/utils"
+
+	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
 func (c *controller) getServices(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
@@ -65,13 +66,7 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 				return err
 			}
 
-			resourceData, err := json.Marshal(serviceData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of service %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-			err = c.backupSend(gvr, resourceData, serviceData.Name, backupClient)
+			err = c.backupSend(serviceData, serviceData.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -114,14 +109,7 @@ func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, ba
 		if utils.Contains(configAllLits, item.Name) {
 			config_data, err := c.GetConfigMap(namespace, item.Name)
 
-			resourceData, err := json.Marshal(config_data)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of configmaps: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, config_data.Name, backupClient)
+			err = c.backupSend(config_data, config_data.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -168,14 +156,7 @@ func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 				return err
 			}
 
-			resourceData, err := json.Marshal(secretData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of secret: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, secretData.Name, backupClient)
+			err = c.backupSend(secretData, secret.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -222,14 +203,7 @@ func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 				return err
 			}
 
-			resourceData, err := json.Marshal(endpointData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of endpoint: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, endpointData.Name, backupClient)
+			err = c.backupSend(endpointData, endpointData.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -276,14 +250,7 @@ func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 				return err
 			}
 
-			resourceData, err := json.Marshal(replicasetData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of replicaset: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, replicaset.Name, backupClient)
+			err = c.backupSend(replicasetData, replicaset.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -329,14 +296,7 @@ func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, 
 				return err
 			}
 
-			resourceData, err := json.Marshal(statefulData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of stateful: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, stateful.Name, backupClient)
+			err = c.backupSend(statefulData, stateful.Name, backupClient)
 			if err != nil {
 				return err
 			}
