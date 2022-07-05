@@ -82,7 +82,7 @@ func (options *MetaServiceFlags) Apply() error {
 		return fmt.Errorf("invalid address %s", options.Address)
 	}
 
-	if ok := manager.CheckCompressor(options.CompressionFormat); !ok {
+	if ok := manager.CheckWriterCompressor(options.CompressionFormat); !ok {
 		return fmt.Errorf("invalid compression type %s", options.CompressionFormat)
 	}
 

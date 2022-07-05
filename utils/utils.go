@@ -22,13 +22,14 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	"google.golang.org/grpc"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	
+  metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"  
 )
 
 func GetConfig(kubeConfig string) (config *restclient.Config, err error) {

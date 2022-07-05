@@ -124,37 +124,7 @@ spec:
               metadataLocation:
                 description: MetadataLocation is location where backup is going to
                   be stored
-                nullable: true
-                properties:
-                  apiVersion:
-                    description: 'APIVersion defines the versioned schema of this
-                      representation of an object. Servers should convert recognized
-                      schemas to the latest internal value, and may reject unrecognized
-                      values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-                    type: string
-                  kind:
-                    description: 'Kind is a string value representing the REST resource
-                      this object represents. Servers may infer this from the endpoint
-                      the client submits requests to. Cannot be updated. In CamelCase.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                    type: string
-                  metadata:
-                    type: object
-                  spec:
-                    description: BackupLocationSpec defines the desired state of BackupLocation
-                    properties:
-                      config:
-                        additionalProperties:
-                          type: string
-                        description: Config is a dictonary which may contains specific
-                          details, like secret key, password etc
-                        type: object
-                      providerName:
-                        description: ProviderName is a 3rd party driver which inernally
-                          connect to respective storage
-                        type: string
-                    type: object
-                type: object
+                type: string
               postExecHook:
                 description: PostExecHook is a hook which should be executed after
                   backup finished
@@ -314,6 +284,8 @@ spec:
                   reclaimPolicyRetain:
                     type: string
                 type: object
+            required:
+            - metadataLocation
             type: object
           status:
             properties:

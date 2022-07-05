@@ -42,7 +42,6 @@ type Backup struct {
 
 type BackupSpec struct {
 	// MetadataLocation is location where backup is going to be stored
-	// +kubebuilder:validation:Required
 	// +required
 	MetadataLocation string `json:"metadataLocation"`
 

@@ -54,6 +54,9 @@ spec:
               version:
                 description: Version is version of the provider getting registered
                 type: string
+            required:
+            - type
+            - version
             type: object
           status:
             description: ProviderStatus defines the observed state of Provider

@@ -20,6 +20,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -30,7 +31,9 @@ import (
 )
 
 const (
-	READ_BUFFER_SIZE int = 4096
+	defaultProviderName        = "kahu-nfs-provider"
+	defaultProviderVersion     = "v1"
+	READ_BUFFER_SIZE       int = 4096
 )
 
 type nfsServer struct {
@@ -46,6 +49,46 @@ func NewMetaBackupServer(ctx context.Context,
 	}
 }
 
+func NewIdentityServer(ctx context.Context,
+	serviceOptions options.NFSProviderOptions) pb.IdentityServer {
+	return &nfsServer{
+		ctx:     ctx,
+		options: serviceOptions,
+	}
+}
+
+// GetProviderInfo returns the basic information from provider side
+func (server *nfsServer) GetProviderInfo(ctx context.Context, GetProviderInfoRequest *pb.GetProviderInfoRequest) (*pb.GetProviderInfoResponse, error) {
+	log.Info("GetProviderInfo Called .... ")
+	response := &pb.GetProviderInfoResponse{
+		Provider: defaultProviderName,
+		Version:  defaultProviderVersion}
+
+	return response, nil
+}
+
+// GetProviderCapabilities returns the capabilities supported by provider
+func (server *nfsServer) GetProviderCapabilities(ctx context.Context, GetProviderCapabilitiesRequest *pb.GetProviderCapabilitiesRequest) (*pb.GetProviderCapabilitiesResponse, error) {
+	log.Info("GetProviderCapabilities Called .... ")
+	return &pb.GetProviderCapabilitiesResponse{
+		Capabilities: []*pb.ProviderCapability{
+			{
+				Type: &pb.ProviderCapability_Service_{
+					Service: &pb.ProviderCapability_Service{
+						Type: pb.ProviderCapability_Service_META_BACKUP_SERVICE,
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+// Probe checks the healthy/availability state of the provider
+func (server *nfsServer) Probe(ctx context.Context, probeRequest *pb.ProbeRequest) (*pb.ProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
+}
+
+// Upload pushes the input data to the specified location at provider
 func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	log.Info("Upload Called .... ")
 
@@ -101,6 +144,7 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	return nil
 }
 
+// Download pulls the input file from the specified location at provider
 func (server *nfsServer) Download(request *pb.DownloadRequest,
 	service pb.MetaBackup_DownloadServer) error {
 	log.Info("Download Called ...")
@@ -111,7 +155,7 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	}
 
 	log.Printf("Download file id %v", fileId)
-	fileName := server.options.DataPath + "/" + fileId
+	fileName := filepath.Join(server.options.DataPath, fileId)
 	file, err := os.Open(fileName)
 	if err != nil {
 		log.Errorf("failed to open file for download from NFS: %s", err)
@@ -122,7 +166,6 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	buffer := make([]byte, READ_BUFFER_SIZE)
 
 	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
-
 	fid_data := pb.DownloadResponse{
 		Data: &pb.DownloadResponse_Info{Info: &fi},
 	}
@@ -134,20 +177,20 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		return status.Errorf(codes.Unknown, "error sending response")
 	}
 
+	size := 0
 	// Second, send backup content in loop till file end
 	for {
 		n, err := file.Read(buffer)
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
 			log.Errorf("failed to read data from file %s", err)
 			return status.Errorf(codes.Unknown, "error sending response")
 		}
 
+		size += n
 		data := pb.DownloadResponse{Data: &pb.DownloadResponse_ChunkData{ChunkData: buffer[:n]}}
-
 		err = service.Send(&data)
 		if err != nil {
 			log.Errorf("download response got error %s", err)
@@ -155,11 +198,12 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 		}
 	}
 
-	log.Info("Download success!")
+	log.Infof("Download success!. size %d", size)
 
 	return nil
 }
 
+// Delete removes the input file from the specified location at provider
 func (server *nfsServer) Delete(ctxt context.Context,
 	request *pb.DeleteRequest) (*pb.Empty, error) {
 	log.Info("Delete Called ...")
@@ -186,6 +230,7 @@ func (server *nfsServer) Delete(ctxt context.Context,
 	return &empty, nil
 }
 
+// ObjectExists checks if input file exists at provider
 func (server *nfsServer) ObjectExists(ctxt context.Context,
 	request *pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
 	log.Info("ObjectExists Called...")

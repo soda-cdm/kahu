@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
+	providerIdentity "github.com/soda-cdm/kahu/providerframework/identityservice"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
 	repo "github.com/soda-cdm/kahu/providerframework/metaservice/backuprespository"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
@@ -65,14 +66,14 @@ func NewMetaServiceCommand() *cobra.Command {
 			if len(cmds) > 0 {
 				log.Error("Unknown command ", cmds[0])
 				_ = cmd.Usage()
-				os.Exit(1)
+				return
 			}
 
 			// short-circuit on help
 			help, err := cleanFlagSet.GetBool("help")
 			if err != nil {
 				log.Error(`"help" flag is non-bool`)
-				os.Exit(1)
+				return
 			}
 			if help {
 				_ = cmd.Help()
@@ -82,25 +83,26 @@ func NewMetaServiceCommand() *cobra.Command {
 			// validate and apply initial MetaService Flags
 			if err := metaServiceFlags.Apply(); err != nil {
 				log.Error("Failed to validate meta service flags ", err)
-				os.Exit(1)
+				return
 			}
 
 			// validate and apply logging flags
 			if err := loggingOptions.Apply(); err != nil {
 				log.Error("Failed to apply logging flags ", err)
-				os.Exit(1)
+				return
 			}
 
 			// TODO: Setup signal handler with context
 			ctx, cancel := context.WithCancel(context.Background())
 			// setup signal handler
 			utils.SetupSignalHandler(cancel)
+
 			// run the meta service
 			if err := Run(ctx, options.MetaServiceOptions{MetaServiceFlags: *metaServiceFlags}); err != nil {
 				log.Error("Failed to run meta service", err)
-				os.Exit(1)
 			}
 
+			return
 		},
 	}
 
@@ -133,8 +135,15 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	}
 
 	// initialize backup repository
-	repository, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
+	repository, grpcConn, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
 	if err != nil {
+		return err
+	}
+
+	// Register the metadata provider
+	err = providerIdentity.RegisterMetadataProvider(ctx, &grpcConn)
+	if err != nil {
+		log.Error("Failed to get provider info: ", err)
 		return err
 	}
 
@@ -142,6 +151,11 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	grpcServer := grpc.NewServer(opts...)
 	metaservice.RegisterMetaServiceServer(grpcServer, server.NewMetaServiceServer(ctx,
 		serviceOptions, repository))
+
+	go func(ctx context.Context, server *grpc.Server) {
+		<-ctx.Done()
+		server.Stop()
+	}(ctx, grpcServer)
 
 	return grpcServer.Serve(lis)
 }

@@ -22,15 +22,13 @@ import (
 
 // RestoreSpec defines the desired state of Restore
 type RestoreSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// BackupName is backup CR name specified during backup
-	BackupName string `json:"backupName,omitempty"`
+	// +required
+	BackupName string `json:"backupName"`
 
 	// IncludeNamespaces are set of namespaces name considered for restore
 	// +optional
-	IncludeNamespaces []string `json:"includeNamespace,omitempty"`
+	IncludeNamespaces []string `json:"includeNamespaces,omitempty"`
 
 	// ExcludeNamespaces are set of namespace name should not get considered for restore
 	// +optional
@@ -61,12 +59,13 @@ type RestoreSpec struct {
 	ResourcePrefix string `json:"resourcePrefix,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=New;FailedValidation;InProgress;Completed;PartiallyFailed;Failed;Deleting
+// +kubebuilder:validation:Enum=New;MetadataRestore;FailedValidation;InProgress;Completed;PartiallyFailed;Failed;Deleting
 
 type RestorePhase string
 
 const (
 	RestorePhaseInit             RestorePhase = "New"
+	RestorePhaseMeta             RestorePhase = "MetadataRestore"
 	RestorePhaseFailedValidation RestorePhase = "FailedValidation"
 	RestorePhaseInProgress       RestorePhase = "InProgress"
 	RestorePhaseCompleted        RestorePhase = "Completed"
@@ -92,19 +91,27 @@ type RestoreStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
+	// +kubebuilder:default=New
 	Phase RestorePhase `json:"phase,omitempty"`
 
 	// +optional
-	StartTimestamp metav1.Timestamp `json:"startTimestamp,omitempty"`
+	// +nullable
+	StartTimestamp *metav1.Time `json:"startTimestamp,omitempty"`
 
 	// +optional
-	CompletionTimestamp metav1.Timestamp `json:"completionTimestamp,omitempty"`
+	// +nullable
+	CompletionTimestamp *metav1.Time `json:"completionTimestamp,omitempty"`
 
 	// +optional
 	Progress RestoreProgress `json:"progress,omitempty"`
 
 	// +optional
-	FailureReason []string `json:"failureReason,omitempty"`
+	FailureReason string `json:"failureReason,omitempty"`
+
+	// ValidationErrors is a slice of validation errors during restore
+	// +optional
+	// +nullable
+	ValidationErrors []string `json:"validationErrors,omitempty"`
 }
 
 // +genclient
@@ -119,7 +126,9 @@ type Restore struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RestoreSpec   `json:"spec,omitempty"`
+	// +optional
+	Spec RestoreSpec `json:"spec,omitempty"`
+	// +optional
 	Status RestoreStatus `json:"status,omitempty"`
 }
 
