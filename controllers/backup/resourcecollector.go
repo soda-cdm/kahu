@@ -21,12 +21,13 @@ import (
 	"encoding/json"
 
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
+	"github.com/soda-cdm/kahu/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 )
 
-func (c *Controller) getServices(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getServices(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	c.logger.Infoln("starting collecting services")
@@ -49,28 +50,38 @@ func (c *Controller) getServices(gvr GroupResouceVersion, namespace string, back
 		return err
 	}
 
-	for _, service := range allServices.Items {
-		serviceData, err := k8sClinet.CoreV1().Services(namespace).Get(context.TODO(), service.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
+	var allServicesList []string
+	for _, sc := range allServices.Items {
+		allServicesList = append(allServicesList, sc.Name)
+	}
 
-		resourceData, err := json.Marshal(serviceData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of service %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
-		err = c.backupSend(gvr, resourceData, serviceData.Name, backupClient)
-		if err != nil {
-			return err
+	allServicesList = utils.FindMatchedStrins(gvr.resourceName, allServicesList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
+	for _, service := range allServices.Items {
+		if utils.Contains(allServicesList, service.Name) {
+			serviceData, err := k8sClinet.CoreV1().Services(namespace).Get(context.TODO(), service.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+
+			resourceData, err := json.Marshal(serviceData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of service %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
+			err = c.backupSend(gvr, resourceData, serviceData.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
 }
 
-func (c *Controller) getConfigMapS(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -91,27 +102,36 @@ func (c *Controller) getConfigMapS(gvr GroupResouceVersion, namespace string, ba
 	if err != nil {
 		return err
 	}
+	var configAllLits []string
+	for _, deployment := range configList.Items {
+		configAllLits = append(configAllLits, deployment.Name)
+	}
 
-	for _, configMap := range configList.Items {
-		config_data, err := c.GetConfigMap(namespace, configMap.Name)
+	configAllLits = utils.FindMatchedStrins(gvr.resourceName, configAllLits, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
 
-		resourceData, err := json.Marshal(config_data)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of configmaps: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+	for _, item := range configList.Items {
+		if utils.Contains(configAllLits, item.Name) {
+			config_data, err := c.GetConfigMap(namespace, item.Name)
 
-		err = c.backupSend(gvr, resourceData, config_data.Name, backupClient)
-		if err != nil {
-			return err
+			resourceData, err := json.Marshal(config_data)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of configmaps: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
+
+			err = c.backupSend(gvr, resourceData, config_data.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
 }
 
-func (c *Controller) getSecrets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -133,29 +153,39 @@ func (c *Controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 		return err
 	}
 
+	var allSecretsList []string
+	for _, sc := range secretList.Items {
+		allSecretsList = append(allSecretsList, sc.Name)
+	}
+
+	allSecretsList = utils.FindMatchedStrins(gvr.resourceName, allSecretsList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
 	for _, secret := range secretList.Items {
-		secretData, err := k8sClinet.CoreV1().Secrets(namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
+		if utils.Contains(allSecretsList, secret.Name) {
+			secretData, err := k8sClinet.CoreV1().Secrets(namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
 
-		resourceData, err := json.Marshal(secretData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of secret: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+			resourceData, err := json.Marshal(secretData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of secret: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
 
-		err = c.backupSend(gvr, resourceData, secretData.Name, backupClient)
-		if err != nil {
-			return err
+			err = c.backupSend(gvr, resourceData, secretData.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
 }
 
-func (c *Controller) getEndpoints(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -177,29 +207,38 @@ func (c *Controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 		return err
 	}
 
+	var allendpointList []string
+	for _, sc := range endpointList.Items {
+		allendpointList = append(allendpointList, sc.Name)
+	}
+
+	allendpointList = utils.FindMatchedStrins(gvr.resourceName, allendpointList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
 	for _, endpoint := range endpointList.Items {
-		endpointData, err := k8sClinet.CoreV1().Endpoints(namespace).Get(context.TODO(), endpoint.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
+		if utils.Contains(allendpointList, endpoint.Name) {
+			endpointData, err := k8sClinet.CoreV1().Endpoints(namespace).Get(context.TODO(), endpoint.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
 
-		resourceData, err := json.Marshal(endpointData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of endpoint: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+			resourceData, err := json.Marshal(endpointData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of endpoint: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
 
-		err = c.backupSend(gvr, resourceData, endpointData.Name, backupClient)
-		if err != nil {
-			return err
+			err = c.backupSend(gvr, resourceData, endpointData.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
-
 	}
 	return nil
 }
 
-func (c *Controller) getReplicasets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -221,29 +260,39 @@ func (c *Controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 		return err
 	}
 
+	var allreplicasetList []string
+	for _, sc := range replicasetList.Items {
+		allreplicasetList = append(allreplicasetList, sc.Name)
+	}
+
+	allreplicasetList = utils.FindMatchedStrins(gvr.resourceName, allreplicasetList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
 	for _, replicaset := range replicasetList.Items {
-		replicasetData, err := k8sClinet.AppsV1().ReplicaSets(namespace).Get(context.TODO(), replicaset.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
 
-		resourceData, err := json.Marshal(replicasetData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of replicaset: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+		if utils.Contains(allreplicasetList, replicaset.Name) {
+			replicasetData, err := k8sClinet.AppsV1().ReplicaSets(namespace).Get(context.TODO(), replicaset.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
 
-		err = c.backupSend(gvr, resourceData, replicaset.Name, backupClient)
-		if err != nil {
-			return err
-		}
+			resourceData, err := json.Marshal(replicasetData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of replicaset: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
 
+			err = c.backupSend(gvr, resourceData, replicaset.Name, backupClient)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
 
-func (c *Controller) getStatefulsets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -265,24 +314,33 @@ func (c *Controller) getStatefulsets(gvr GroupResouceVersion, namespace string, 
 		return err
 	}
 
+	var allstatefulList []string
+	for _, sc := range statefulList.Items {
+		allstatefulList = append(allstatefulList, sc.Name)
+	}
+
+	allstatefulList = utils.FindMatchedStrins(gvr.resourceName, allstatefulList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
 	for _, stateful := range statefulList.Items {
-		statefulData, err := k8sClinet.AppsV1().StatefulSets(namespace).Get(context.TODO(), stateful.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
+		if utils.Contains(allstatefulList, stateful.Name) {
+			statefulData, err := k8sClinet.AppsV1().StatefulSets(namespace).Get(context.TODO(), stateful.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
 
-		resourceData, err := json.Marshal(statefulData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of stateful: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+			resourceData, err := json.Marshal(statefulData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of stateful: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
 
-		err = c.backupSend(gvr, resourceData, stateful.Name, backupClient)
-		if err != nil {
-			return err
+			err = c.backupSend(gvr, resourceData, stateful.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
-
 	}
 	return nil
 }

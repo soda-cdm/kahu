@@ -57,7 +57,14 @@ spec:
                 description: ExcludedResources is a list of all resources excluded
                   for backup
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  type: object
                 type: array
               includedNamespaces:
                 description: IncludedNamespaces is a list of all namespaces included
@@ -75,7 +82,14 @@ spec:
                 description: IncludedResources is a list of all resources included
                   for backup. If empty, all resources are included
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  type: object
                 type: array
               label:
                 description: Label is used to filter the resources

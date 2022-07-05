@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
@@ -28,8 +29,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	
-  metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"  
+
+	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
 func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
@@ -88,4 +90,46 @@ func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaServi
 		return nil
 	}
 	return backupClient
+}
+
+func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
+	var subItemList []string
+	if isRegex {
+		re := regexp.MustCompile(input)
+		for _, item := range allList {
+			if re.MatchString(item) {
+				subItemList = append(subItemList, item)
+			}
+		}
+	} else {
+		for _, item := range allList {
+			if item == input {
+				subItemList = append(subItemList, item)
+			}
+		}
+	}
+	return subItemList
+}
+
+func FindMatchedStrins(kind string, allList []string, includeList, excludeList []v1beta1.ResourceIncluder) []string {
+	var collectAllIncludeds []string
+	var collectAllExcludeds []string
+	var resultantStrings []string
+
+	for _, resource := range includeList {
+		if resource.Kind == kind {
+			input, isRegex := resource.Name, resource.IsRegex
+			collectAllIncludeds = append(collectAllIncludeds, GetSubItemStrings(allList, input, isRegex)...)
+		}
+	}
+	for _, resource := range excludeList {
+		if resource.Kind == kind {
+			input, isRegex := resource.Name, resource.IsRegex
+			collectAllExcludeds = append(collectAllExcludeds, GetSubItemStrings(allList, input, isRegex)...)
+		}
+	}
+	if len(collectAllIncludeds) > 0 {
+		resultantStrings = GetResultantItems(allList, collectAllIncludeds, collectAllExcludeds)
+	}
+	return resultantStrings
 }

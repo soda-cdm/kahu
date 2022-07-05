@@ -52,7 +52,7 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=kahu, Version=v1beta1
+	// Group=kahu.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithResource("backups"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().Backups().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("backuplocations"):

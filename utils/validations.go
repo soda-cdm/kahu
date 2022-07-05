@@ -35,8 +35,8 @@ func ValidateIncludesExcludes(includesList, excludesList []string) []error {
 	includeRes := sets.NewString(includesList...)
 	excludeRes := sets.NewString(excludesList...)
 
-	if includeRes.Len() == 1 && includeRes.Has("*") {
-		errs = append(errs, errors.New("IncludeList must be either empty or only '*'"))
+	if includeRes.Has("*") {
+		errs = append(errs, errors.New("IncludeList doesnot support '*'. Empty list will be consider for all"))
 	}
 
 	if excludeRes.Has("*") {
@@ -74,10 +74,6 @@ func ValidateNamespace(includesList, excludesList []string) []error {
 
 func validateNamespaceName(ns string) []error {
 	var errs []error
-
-	if ns == "" {
-		return nil
-	}
 	tmpNamespace := strings.ReplaceAll(ns, "*", "x")
 	if errMsgs := validation.ValidateNamespaceName(tmpNamespace, false); errMsgs != nil {
 		for _, msg := range errMsgs {
@@ -98,7 +94,7 @@ func GetResultantItems(allList, includeList, excludeList []string) []string {
 
 	for _, itm := range excludeList {
 		if Contains(resultedItems, itm) {
-			RemoveItem(resultedItems, string(itm))
+			resultedItems = RemoveItem(resultedItems, string(itm))
 		}
 	}
 

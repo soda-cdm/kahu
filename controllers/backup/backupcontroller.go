@@ -106,7 +106,7 @@ func NewController(config *Config,
 	return genericController, err
 }
 
-func (c *Controller) doBackup(key string) error {
+func (c *controller) doBackup(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Errorf("splitting key into namespace and name, error %s\n", err.Error())
@@ -166,7 +166,7 @@ func (c *Controller) doBackup(key string) error {
 	return err
 }
 
-func (c *Controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup {
+func (c *controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup {
 	backupRequest := &PrepareBackup{
 		Backup: backup.DeepCopy(),
 	}
@@ -180,9 +180,21 @@ func (c *Controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup
 	}
 
 	// validate the resources from include and exlude list
-	for _, err := range utils.ValidateIncludesExcludes(backupRequest.Spec.IncludedResources, backupRequest.Spec.ExcludedResources) {
-		backupRequest.Status.ValidationErrors = append(backupRequest.Status.ValidationErrors, fmt.Sprintf("Include/Exclude resourse list is not valid: %v", err))
+	var includedresourceKindList []string
+	var excludedresourceKindList []string
+	// resourceKindList = append(resourceKindList, "abc")
+
+	for _, resource := range backupRequest.Spec.IncludedResources {
+		includedresourceKindList = append(includedresourceKindList, resource.Kind)
 	}
+
+	if len(includedresourceKindList) == 0 {
+		for _, resource := range backupRequest.Spec.ExcludedResources {
+			excludedresourceKindList = append(excludedresourceKindList, resource.Kind)
+		}
+	}
+
+	ResultantResource = utils.GetResultantItems(utils.SupportedResourceList, includedresourceKindList, excludedresourceKindList)
 
 	// validate the namespace from include and exlude list
 	for _, err := range utils.ValidateNamespace(backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces) {
@@ -195,15 +207,13 @@ func (c *Controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup
 	}
 	ResultantNamespace = utils.GetResultantItems(allNamespace, backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces)
 
-	ResultantResource = utils.GetResultantItems(utils.SupportedResourceList, backupRequest.Spec.IncludedResources, backupRequest.Spec.ExcludedResources)
-
 	// till now validation is ok. Set the backupphase as New to start backup
 	backupRequest.Status.Phase = v1beta1.BackupPhaseInit
 
 	return backupRequest
 }
 
-func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase v1beta1.BackupPhase) {
+func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase v1beta1.BackupPhase) {
 	backup, err := client.Get(context.Background(), bkp.Name, metav1.GetOptions{})
 	if err != nil {
 		c.logger.Errorf("failed to get backup for updating status :%+s", err)
@@ -226,7 +236,7 @@ func (c *Controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 	return
 }
 
-func (c *Controller) getGVR(input string) (GroupResouceVersion, error) {
+func (c *controller) getGVR(input string) (GroupResouceVersion, error) {
 	var gvr GroupResouceVersion
 	k8sClinet, err := utils.GetK8sClient(c.restClientconfig)
 	if err != nil {
@@ -257,7 +267,7 @@ func (c *Controller) getGVR(input string) (GroupResouceVersion, error) {
 	return gvr, err
 }
 
-func (c *Controller) runBackup(backup *PrepareBackup) error {
+func (c *controller) runBackup(backup *PrepareBackup) error {
 	c.logger.Infoln("starting to run backup")
 
 	backupClient := utils.GetMetaserviceBackupClient(c.config.MetaServiceAddress, c.config.MetaServicePort)
@@ -395,7 +405,7 @@ func (c *Controller) runBackup(backup *PrepareBackup) error {
 	return err
 }
 
-func (c *Controller) getResourceObjects(backup *PrepareBackup,
+func (c *controller) getResourceObjects(backup *PrepareBackup,
 	gvr GroupResouceVersion, ns string,
 	labelSelectors map[string]string) (*unstructured.UnstructuredList, error) {
 	dynamicClient, err := utils.GetDynamicClient(c.restClientconfig)
@@ -427,7 +437,7 @@ func (c *Controller) getResourceObjects(backup *PrepareBackup,
 }
 
 // getResourceItems collects all relevant items for a given group-version-resource.
-func (c *Controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource, input string) GroupResouceVersion {
+func (c *controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource, input string) GroupResouceVersion {
 	gvr := gv.WithResource(resource.Name)
 
 	var groupResourceVersion GroupResouceVersion
@@ -448,10 +458,10 @@ func sortCoreGroup(group *metav1.APIResourceList) {
 	})
 }
 
-func (c *Controller) backupSend(gvr GroupResouceVersion,
+func (c *controller) backupSend(gvr GroupResouceVersion,
 	resourceData []byte, metadataName string,
 	backupSendClient metaservice.MetaService_BackupClient) error {
-	c.logger.Infof("sending metadata for namespace:%s and resources:%s", metadataName, gvr.resourceName)
+	c.logger.Infof("sending metadata for name:%s and resources:%s", metadataName, gvr.resourceName)
 
 	err := backupSendClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_BackupResource{
@@ -469,13 +479,13 @@ func (c *Controller) backupSend(gvr GroupResouceVersion,
 	return err
 }
 
-func (c *Controller) deleteBackup(name string, backup *v1beta1.Backup) {
+func (c *controller) deleteBackup(name string, backup *v1beta1.Backup) {
 	// TODO: delete need to be added
 	c.logger.Infof("delete is called for backup:%s", name)
 
 }
 
-func (c *Controller) handleAdd(obj interface{}) {
+func (c *controller) handleAdd(obj interface{}) {
 	backup := obj.(*v1beta1.Backup)
 
 	switch backup.Status.Phase {
@@ -487,9 +497,9 @@ func (c *Controller) handleAdd(obj interface{}) {
 		}).Infof("Backup: %s is not New, so will not be processed", backup.Name)
 		return
 	}
-	c.controller.Enqueue(obj)
+	c.genericController.Enqueue(obj)
 }
 
-func (c *Controller) handleDel(obj interface{}) {
-	c.controller.Enqueue(obj)
+func (c *controller) handleDel(obj interface{}) {
+	c.genericController.Enqueue(obj)
 }

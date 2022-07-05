@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
+	"github.com/soda-cdm/kahu/utils"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -29,7 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func (c *Controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, namespace string,
+func (c *controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, namespace string,
 	backupClient metaservice.MetaService_BackupClient) error {
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
@@ -56,7 +57,7 @@ func (c *Controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, names
 
 }
 
-func (c *Controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
+func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -77,25 +78,34 @@ func (c *Controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 	if err != nil {
 		return err
 	}
-
+	var deploymentAllList []string
 	for _, deployment := range dList.Items {
-		err = c.GetDeploymentAndBackup(gvr, deployment.Name, deployment.Namespace, backupClient)
-		if err != nil {
-			return err
-		}
-		err = c.GetConfigMapUsedInDeployment(gvr, deployment, backupClient)
-		if err != nil {
-			return err
-		}
-		err = c.GetServiceAccountUsedInDeployment(gvr, deployment, backupClient)
-		if err != nil {
-			return err
+		deploymentAllList = append(deploymentAllList, deployment.Name)
+	}
+
+	deploymentAllList = utils.FindMatchedStrins(gvr.resourceName, deploymentAllList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
+	for _, item := range dList.Items {
+		if utils.Contains(deploymentAllList, item.Name) {
+			err = c.GetDeploymentAndBackup(gvr, item.Name, item.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+			err = c.GetConfigMapUsedInDeployment(gvr, item, backupClient)
+			if err != nil {
+				return err
+			}
+			err = c.GetServiceAccountUsedInDeployment(gvr, item, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (c *Controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
+func (c *controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
 	backupClient metaservice.MetaService_BackupClient) error {
 	for _, v := range deployment.Spec.Template.Spec.Volumes {
 		if v.ConfigMap != nil {
@@ -120,7 +130,7 @@ func (c *Controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deplo
 
 }
 
-func (c *Controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
+func (c *controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
 	backupClient metaservice.MetaService_BackupClient) error {
 	saName := deployment.Spec.Template.Spec.ServiceAccountName
 
@@ -143,7 +153,7 @@ func (c *Controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, 
 	return nil
 }
 
-func (c *Controller) GetServiceAccount(namespace, name string) (*corev1.ServiceAccount, error) {
+func (c *controller) GetServiceAccount(namespace, name string) (*corev1.ServiceAccount, error) {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
@@ -158,7 +168,7 @@ func (c *Controller) GetServiceAccount(namespace, name string) (*corev1.ServiceA
 	return sa, err
 }
 
-func (c *Controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, error) {
+func (c *controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, error) {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
@@ -173,7 +183,7 @@ func (c *Controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, er
 	return configmap, err
 }
 
-func (c *Controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
+func (c *controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -192,7 +202,7 @@ func (c *Controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
 	return namespaceList, nil
 }
 
-func (c *Controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	c.logger.Infoln("starting collecting persistentvolumeclaims")
@@ -215,26 +225,34 @@ func (c *Controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 		return err
 	}
 
-	c.logger.Infof("the all pvc:%+v", allPVC)
+	var allPVCList []string
 	for _, pvc := range allPVC.Items {
-		pvcData, err := c.GetPVC(namespace, pvc.Name)
+		allPVCList = append(allPVCList, pvc.Name)
+	}
 
-		resourceData, err := json.Marshal(pvcData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of pvc: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
-		err = c.backupSend(gvr, resourceData, pvcData.Name, backupClient)
-		if err != nil {
-			return err
+	allPVCList = utils.FindMatchedStrins(gvr.resourceName, allPVCList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
+	for _, item := range allPVC.Items {
+		if utils.Contains(allPVCList, item.Name) {
+			pvcData, err := c.GetPVC(namespace, item.Name)
+			resourceData, err := json.Marshal(pvcData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of pvc: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
+			err = c.backupSend(gvr, resourceData, pvcData.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
 }
 
-func (c *Controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
+func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
@@ -249,7 +267,7 @@ func (c *Controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeCla
 	return pvc, err
 }
 
-func (c *Controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBackup,
+func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
@@ -271,26 +289,36 @@ func (c *Controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBac
 		return err
 	}
 
-	for _, pvc := range allSC.Items {
-		scData, err := c.GetSC(pvc.Name)
+	var allSCList []string
+	for _, sc := range allSC.Items {
+		allSCList = append(allSCList, sc.Name)
+	}
 
-		resourceData, err := json.Marshal(scData)
-		if err != nil {
-			c.logger.Errorf("Unable to get resource content of storageclass: %s", err)
-			return err
-		}
-		c.logger.Debug(resourceData)
+	allSCList = utils.FindMatchedStrins(gvr.resourceName, allSCList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
 
-		err = c.backupSend(gvr, resourceData, scData.Name, backupClient)
-		if err != nil {
-			return err
+	for _, item := range allSC.Items {
+		if utils.Contains(allSCList, item.Name) {
+			scData, err := c.GetSC(item.Name)
+
+			resourceData, err := json.Marshal(scData)
+			if err != nil {
+				c.logger.Errorf("Unable to get resource content of storageclass: %s", err)
+				return err
+			}
+			c.logger.Debug(resourceData)
+
+			err = c.backupSend(gvr, resourceData, scData.Name, backupClient)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
 	return nil
 }
 
-func (c *Controller) GetSC(name string) (*storagev1.StorageClass, error) {
+func (c *controller) GetSC(name string) (*storagev1.StorageClass, error) {
 
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {

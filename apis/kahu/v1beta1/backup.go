@@ -34,7 +34,7 @@ type Backup struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
-	Spec BackupSpec `json:"spec"`
+	Spec BackupSpec `json:"spec,omitempty"`
 
 	// +optional
 	Status BackupStatus `json:"status,omitempty"`
@@ -86,15 +86,26 @@ type BackupSpec struct {
 	// IncludedResources is a list of all resources included for backup. If empty, all resources
 	// are included
 	// +optional
-	IncludedResources []string `json:"includedResources,omitempty"`
+	IncludedResources []ResourceIncluder `json:"includedResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
+	ExcludedResources []ResourceIncluder `json:"excludedResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
 	Label *metav1.LabelSelector `json:"label,omitempty"`
+}
+
+type ResourceIncluder struct {
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// +optional
+	Kind string `json:"kind,omitempty"`
+
+	// +optional
+	IsRegex bool `json:"isRegex,omitempty"`
 }
 
 // ResourceHookSpec is hook which should be executed
