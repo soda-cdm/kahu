@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-var SupportedResourceList = []string{"deployments", "replicasets", "configmaps", "secrets", "servicesr",
+var SupportedResourceList = []string{"deployments", "replicasets", "configmaps", "secrets", "services",
 	"endpoints", "storageclasses", "persistentvolumeclaims", "statefulsets",
 }
 
