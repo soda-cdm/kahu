@@ -153,10 +153,25 @@ func (c *controller) doBackup(key string) error {
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
 
-	// start taking backup
-	err = c.runBackup(prepareBackupReq)
+	backupStatus, err := c.runBackup(prepareBackupReq)
 	if err != nil {
 		prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailed
+	} else {
+		for _, phase := range backupStatus {
+			if phase == string(v1beta1.BackupPhaseCompleted) {
+				prepareBackupReq.Status.Phase = v1beta1.BackupPhaseCompleted
+				c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+			} else if backup.Status.Phase == v1beta1.BackupPhaseFailed && v1beta1.BackupPhase(phase) == v1beta1.BackupPhaseCompleted {
+				prepareBackupReq.Status.Phase = v1beta1.BackupPhasePartiallyFailed
+				c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+			} else if backup.Status.Phase == v1beta1.BackupPhaseCompleted && v1beta1.BackupPhase(phase) == v1beta1.BackupPhaseFailed {
+				prepareBackupReq.Status.Phase = v1beta1.BackupPhasePartiallyFailed
+				c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+			} else {
+				prepareBackupReq.Status.Phase = v1beta1.BackupPhaseFailed
+				c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+			}
+		}
 	}
 	prepareBackupReq.Status.LastBackup = &metav1.Time{Time: time.Now()}
 
@@ -218,13 +233,7 @@ func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 		return
 	}
 
-	if backup.Status.Phase == v1beta1.BackupPhaseCompleted && phase == v1beta1.BackupPhaseFailed {
-		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
-	} else if backup.Status.Phase == v1beta1.BackupPhasePartiallyFailed {
-		backup.Status.Phase = v1beta1.BackupPhasePartiallyFailed
-	} else {
-		backup.Status.Phase = phase
-	}
+	backup.Status.Phase = phase
 	backup.Status.ValidationErrors = bkp.Status.ValidationErrors
 	_, err = client.UpdateStatus(context.Background(), backup, metav1.UpdateOptions{})
 	if err != nil {
@@ -234,8 +243,9 @@ func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 	return
 }
 
-func (c *controller) runBackup(backup *PrepareBackup) error {
+func (c *controller) runBackup(backup *PrepareBackup) ([]string, error) {
 	c.logger.Infoln("starting to run backup")
+	var backupStatus = []string{}
 
 	backupClient := utils.GetMetaserviceBackupClient(c.config.MetaServiceAddress, c.config.MetaServicePort)
 
@@ -249,20 +259,13 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 
 	if err != nil {
 		c.logger.Errorf("Unable to connect metadata service %s", err)
-		return err
+		return backupStatus, err
 	}
 
 	resultantResource := sets.NewString(ResultantResource...)
 	resultantNamespace := sets.NewString(ResultantNamespace...)
 	c.logger.Infof("backup will be taken for these resources:%+v", resultantResource)
 	c.logger.Infof("backup will be taken for these namespaces:%+v", resultantNamespace)
-
-	type status struct {
-		kind   string
-		status string
-	}
-
-	var backupStatus = []status{}
 
 	for ns, nsVal := range resultantNamespace {
 		c.logger.Infof("started backup for namespace:%s", ns)
@@ -272,72 +275,72 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 			case utils.Pod:
 				err = c.podBackup(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Pod, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Pod, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Deployment:
 				err = c.deploymentBackup(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Deployment, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Deployment, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Configmap:
 				err = c.getConfigMapS(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Configmap, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Configmap, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Pvc:
 				err = c.getPersistentVolumeClaims(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Pvc, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Pvc, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Sc:
 				err = c.getStorageClass(backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Sc, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Sc, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Service:
 				err = c.getServices(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Service, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Service, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Secret:
 				err = c.getSecrets(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Secret, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Secret, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Endpoint:
 				err = c.getEndpoints(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Endpoint, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Endpoint, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Replicaset:
 				err = c.getReplicasets(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Replicaset, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Replicaset, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Statefulset:
 				err = c.getStatefulsets(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, status{kind: utils.Statefulset, status: string(v1beta1.BackupPhaseFailed)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, status{kind: utils.Statefulset, status: string(v1beta1.BackupPhaseCompleted)})
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			default:
 				continue
@@ -345,21 +348,10 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 		}
 	}
 
-	for _, phase := range backupStatus {
-		if backup.Status.Phase == v1beta1.BackupPhaseInProgress {
-			c.updateStatus(backup.Backup, c.backupClient, v1beta1.BackupPhase(phase.status))
-		} else if backup.Status.Phase == v1beta1.BackupPhaseFailed && v1beta1.BackupPhase(phase.status) == v1beta1.BackupPhaseCompleted {
-			c.updateStatus(backup.Backup, c.backupClient, v1beta1.BackupPhasePartiallyFailed)
-		} else if backup.Status.Phase == v1beta1.BackupPhaseCompleted && v1beta1.BackupPhase(phase.status) == v1beta1.BackupPhaseFailed {
-			c.updateStatus(backup.Backup, c.backupClient, v1beta1.BackupPhasePartiallyFailed)
-		} else {
-			c.updateStatus(backup.Backup, c.backupClient, v1beta1.BackupPhase(phase.status))
-		}
-	}
-
+	c.logger.Infof("the intermediate status:%s", backupStatus)
 	_, err = backupClient.CloseAndRecv()
 
-	return err
+	return backupStatus, err
 }
 
 // sortCoreGroup sorts the core API group.

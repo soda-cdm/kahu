@@ -136,21 +136,6 @@ func (c *controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, er
 	return configmap, err
 }
 
-func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
-
-	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return nil, err
-	}
-
-	pvc, err := k8sClient.CoreV1().PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return pvc, err
-}
-
 func (c *controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
 	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
