@@ -25,7 +25,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
@@ -35,18 +34,17 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/utils"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 const (
@@ -185,7 +183,6 @@ func (c *controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup
 	// validate the resources from include and exlude list
 	var includedresourceKindList []string
 	var excludedresourceKindList []string
-	// resourceKindList = append(resourceKindList, "abc")
 
 	for _, resource := range backupRequest.Spec.IncludedResources {
 		includedresourceKindList = append(includedresourceKindList, resource.Kind)
@@ -239,37 +236,6 @@ func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.Backu
 	return
 }
 
-func (c *controller) getGVR(input string) (GroupResouceVersion, error) {
-	var gvr GroupResouceVersion
-	k8sClinet, err := utils.GetK8sClient(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("unable to get k8s client:%s", err)
-		return gvr, err
-	}
-
-	_, resource, _ := k8sClinet.ServerGroupsAndResources()
-
-	for _, group := range resource {
-		// Parse so we can check if this is the core group
-		gv, err := schema.ParseGroupVersion(group.GroupVersion)
-		if err != nil {
-			return gvr, err
-		}
-		if gv.Group == "" {
-			sortCoreGroup(group)
-		}
-
-		for _, resource := range group.APIResources {
-			gvr = c.getResourceItems(gv, resource, input)
-			if gvr.resourceName == input {
-				return gvr, nil
-			}
-		}
-
-	}
-	return gvr, err
-}
-
 func (c *controller) runBackup(backup *PrepareBackup) error {
 	c.logger.Infoln("starting to run backup")
 
@@ -299,11 +265,7 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 			c.logger.Debug(nsVal, val)
 			switch name {
 			case "deployments":
-				gvr, err := c.getGVR("deployments")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.deploymentBackup(gvr, ns, backup, backupClient)
+				err = c.deploymentBackup(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
@@ -311,88 +273,56 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 				}
 				c.updateStatus(backup.Backup, c.backupClient, backup.Status.Phase)
 			case "configmaps":
-				gvr, err := c.getGVR("configmaps")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getConfigMapS(gvr, ns, backup, backupClient)
+				err = c.getConfigMapS(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "persistentvolumeclaims":
-				gvr, err := c.getGVR("persistentvolumeclaims")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getPersistentVolumeClaims(gvr, ns, backup, backupClient)
+				err = c.getPersistentVolumeClaims(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "storageclasses":
-				gvr, err := c.getGVR("storageclasses")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getStorageClass(gvr, backup, backupClient)
+				err = c.getStorageClass(backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "services":
-				gvr, err := c.getGVR("services")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getServices(gvr, ns, backup, backupClient)
+				err = c.getServices(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "secrets":
-				gvr, err := c.getGVR("secrets")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getSecrets(gvr, ns, backup, backupClient)
+				err = c.getSecrets(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "endpoints":
-				gvr, err := c.getGVR("endpoints")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getEndpoints(gvr, ns, backup, backupClient)
+				err = c.getEndpoints(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "replicasets":
-				gvr, err := c.getGVR("replicasets")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getReplicasets(gvr, ns, backup, backupClient)
+				err = c.getReplicasets(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
 					backup.Status.Phase = v1beta1.BackupPhaseCompleted
 				}
 			case "statefulsets":
-				gvr, err := c.getGVR("statefulsets")
-				if err != nil {
-					backup.Status.Phase = v1beta1.BackupPhaseFailed
-				}
-				err = c.getStatefulsets(gvr, ns, backup, backupClient)
+				err = c.getStatefulsets(ns, backup, backupClient)
 				if err != nil {
 					backup.Status.Phase = v1beta1.BackupPhaseFailed
 				} else {
@@ -408,52 +338,6 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 	return err
 }
 
-func (c *controller) getResourceObjects(backup *PrepareBackup,
-	gvr GroupResouceVersion, ns string,
-	labelSelectors map[string]string) (*unstructured.UnstructuredList, error) {
-	dynamicClient, err := utils.GetDynamicClient(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("error creating dynamic client: %v\n", err)
-		return nil, err
-	}
-
-	res_gvr := schema.GroupVersionResource{
-		Group:    gvr.group,
-		Version:  gvr.version,
-		Resource: gvr.resourceName,
-	}
-	if backup.Spec.Label != nil {
-		labelSelectors = backup.Spec.Label.MatchLabels
-	}
-
-	var ObjectList *unstructured.UnstructuredList
-	selectors := labels.Set(labelSelectors).String()
-
-	if ns != "" {
-		ObjectList, err = dynamicClient.Resource(res_gvr).Namespace(ns).List(context.Background(), metav1.ListOptions{
-			LabelSelector: selectors,
-		})
-	} else {
-		ObjectList, err = dynamicClient.Resource(res_gvr).List(context.Background(), metav1.ListOptions{})
-	}
-	return ObjectList, nil
-}
-
-// getResourceItems collects all relevant items for a given group-version-resource.
-func (c *controller) getResourceItems(gv schema.GroupVersion, resource metav1.APIResource, input string) GroupResouceVersion {
-	gvr := gv.WithResource(resource.Name)
-
-	var groupResourceVersion GroupResouceVersion
-	if input == gvr.Resource {
-		groupResourceVersion = GroupResouceVersion{
-			resourceName: gvr.Resource,
-			version:      gvr.Version,
-			group:        gvr.Group,
-		}
-	}
-	return groupResourceVersion
-}
-
 // sortCoreGroup sorts the core API group.
 func sortCoreGroup(group *metav1.APIResourceList) {
 	sort.SliceStable(group.APIResources, func(i, j int) bool {
@@ -466,7 +350,7 @@ func (c *controller) backupSend(obj runtime.Object, metadataName string,
 
 	gvk, err := addTypeInformationToObject(obj)
 	if err != nil {
-		c.logger.Errorf("Unable to get resource content: %s", err)
+		c.logger.Errorf("Unable to get gvk: %s", err)
 		return err
 	}
 

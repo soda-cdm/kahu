@@ -28,7 +28,7 @@ import (
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
-func (c *controller) getServices(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getServices(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	c.logger.Infoln("starting collecting services")
@@ -56,7 +56,7 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 		allServicesList = append(allServicesList, sc.Name)
 	}
 
-	allServicesList = utils.FindMatchedStrins(gvr.resourceName, allServicesList, backup.Spec.IncludedResources,
+	allServicesList = utils.FindMatchedStrings("services", allServicesList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, service := range allServices.Items {
@@ -76,9 +76,10 @@ func (c *controller) getServices(gvr GroupResouceVersion, namespace string, back
 	return nil
 }
 
-func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getConfigMapS(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting configmaps")
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -102,7 +103,7 @@ func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, ba
 		configAllLits = append(configAllLits, deployment.Name)
 	}
 
-	configAllLits = utils.FindMatchedStrins(gvr.resourceName, configAllLits, backup.Spec.IncludedResources,
+	configAllLits = utils.FindMatchedStrings("configmaps", configAllLits, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range configList.Items {
@@ -119,9 +120,10 @@ func (c *controller) getConfigMapS(gvr GroupResouceVersion, namespace string, ba
 	return nil
 }
 
-func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getSecrets(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting secrets")
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -146,7 +148,7 @@ func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 		allSecretsList = append(allSecretsList, sc.Name)
 	}
 
-	allSecretsList = utils.FindMatchedStrins(gvr.resourceName, allSecretsList, backup.Spec.IncludedResources,
+	allSecretsList = utils.FindMatchedStrings("secrets", allSecretsList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, secret := range secretList.Items {
@@ -166,9 +168,10 @@ func (c *controller) getSecrets(gvr GroupResouceVersion, namespace string, backu
 	return nil
 }
 
-func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getEndpoints(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting endpoints")
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -193,7 +196,7 @@ func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 		allendpointList = append(allendpointList, sc.Name)
 	}
 
-	allendpointList = utils.FindMatchedStrins(gvr.resourceName, allendpointList, backup.Spec.IncludedResources,
+	allendpointList = utils.FindMatchedStrings("endpoints", allendpointList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, endpoint := range endpointList.Items {
@@ -212,9 +215,10 @@ func (c *controller) getEndpoints(gvr GroupResouceVersion, namespace string, bac
 	return nil
 }
 
-func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getReplicasets(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting replicasets")
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -239,7 +243,7 @@ func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 		allreplicasetList = append(allreplicasetList, sc.Name)
 	}
 
-	allreplicasetList = utils.FindMatchedStrins(gvr.resourceName, allreplicasetList, backup.Spec.IncludedResources,
+	allreplicasetList = utils.FindMatchedStrings("replicasets", allreplicasetList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, replicaset := range replicasetList.Items {
@@ -259,9 +263,10 @@ func (c *controller) getReplicasets(gvr GroupResouceVersion, namespace string, b
 	return nil
 }
 
-func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting statefulsets")
 	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -286,7 +291,7 @@ func (c *controller) getStatefulsets(gvr GroupResouceVersion, namespace string, 
 		allstatefulList = append(allstatefulList, sc.Name)
 	}
 
-	allstatefulList = utils.FindMatchedStrins(gvr.resourceName, allstatefulList, backup.Spec.IncludedResources,
+	allstatefulList = utils.FindMatchedStrings("statefulsets", allstatefulList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, stateful := range statefulList.Items {

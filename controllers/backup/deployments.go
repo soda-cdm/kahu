@@ -31,7 +31,7 @@ import (
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
-func (c *controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, namespace string,
+func (c *controller) GetDeploymentAndBackup(name, namespace string,
 	backupClient metaservice.MetaService_BackupClient) error {
 	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
@@ -52,9 +52,10 @@ func (c *controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, names
 
 }
 
-func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
+func (c *controller) deploymentBackup(namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 
+	c.logger.Infoln("starting collecting deployments")
 	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -78,20 +79,20 @@ func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 		deploymentAllList = append(deploymentAllList, deployment.Name)
 	}
 
-	deploymentAllList = utils.FindMatchedStrins(gvr.resourceName, deploymentAllList, backup.Spec.IncludedResources,
+	deploymentAllList = utils.FindMatchedStrings("deployments", deploymentAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range dList.Items {
 		if utils.Contains(deploymentAllList, item.Name) {
-			err = c.GetDeploymentAndBackup(gvr, item.Name, item.Namespace, backupClient)
+			err = c.GetDeploymentAndBackup(item.Name, item.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetConfigMapUsedInDeployment(gvr, item, backupClient)
+			err = c.GetConfigMapUsedInDeployment(item, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetServiceAccountUsedInDeployment(gvr, item, backupClient)
+			err = c.GetServiceAccountUsedInDeployment(item, backupClient)
 			if err != nil {
 				return err
 			}
@@ -100,7 +101,7 @@ func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 	return nil
 }
 
-func (c *controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
+func (c *controller) GetConfigMapUsedInDeployment(deployment v1.Deployment,
 	backupClient metaservice.MetaService_BackupClient) error {
 	for _, v := range deployment.Spec.Template.Spec.Volumes {
 		if v.ConfigMap != nil {
@@ -117,7 +118,7 @@ func (c *controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deplo
 
 }
 
-func (c *controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, deployment v1.Deployment,
+func (c *controller) GetServiceAccountUsedInDeployment(deployment v1.Deployment,
 	backupClient metaservice.MetaService_BackupClient) error {
 	saName := deployment.Spec.Template.Spec.ServiceAccountName
 
@@ -181,7 +182,7 @@ func (c *controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
 	return namespaceList, nil
 }
 
-func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespace string, backup *PrepareBackup,
+func (c *controller) getPersistentVolumeClaims(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	c.logger.Infoln("starting collecting persistentvolumeclaims")
@@ -209,7 +210,7 @@ func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 		allPVCList = append(allPVCList, pvc.Name)
 	}
 
-	allPVCList = utils.FindMatchedStrins(gvr.resourceName, allPVCList, backup.Spec.IncludedResources,
+	allPVCList = utils.FindMatchedStrings("persistentvolumeclaims", allPVCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allPVC.Items {
@@ -243,9 +244,9 @@ func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeCla
 	return pvc, err
 }
 
-func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBackup,
+func (c *controller) getStorageClass(backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
-
+	c.logger.Infoln("starting collecting storageclass")
 	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
@@ -270,7 +271,7 @@ func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBac
 		allSCList = append(allSCList, sc.Name)
 	}
 
-	allSCList = utils.FindMatchedStrins(gvr.resourceName, allSCList, backup.Spec.IncludedResources,
+	allSCList = utils.FindMatchedStrings("storageclasses", allSCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allSC.Items {
