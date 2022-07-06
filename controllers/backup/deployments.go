@@ -19,7 +19,6 @@ package backup
 import (
 	"context"
 
-	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,57 +78,31 @@ func (c *controller) deploymentBackup(namespace string,
 		deploymentAllList = append(deploymentAllList, deployment.Name)
 	}
 
-	deploymentAllList = utils.FindMatchedStrings("deployments", deploymentAllList, backup.Spec.IncludedResources,
+	deploymentAllList = utils.FindMatchedStrings(utils.Deployment, deploymentAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
-	for _, item := range dList.Items {
-		if utils.Contains(deploymentAllList, item.Name) {
-			err = c.GetDeploymentAndBackup(item.Name, item.Namespace, backupClient)
+	for _, deployment := range dList.Items {
+		if utils.Contains(deploymentAllList, deployment.Name) {
+			// backup the deployment yaml
+			err = c.GetDeploymentAndBackup(deployment.Name, deployment.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetConfigMapUsedInDeployment(item, backupClient)
+
+			// backup the volumespec releted object like, configmaps, secret, pvc and sc
+			err = c.GetVolumesSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetServiceAccountUsedInDeployment(item, backupClient)
+
+			// get service account relared objects
+			err = c.GetServiceAccountSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
+
 		}
 	}
-	return nil
-}
-
-func (c *controller) GetConfigMapUsedInDeployment(deployment v1.Deployment,
-	backupClient metaservice.MetaService_BackupClient) error {
-	for _, v := range deployment.Spec.Template.Spec.Volumes {
-		if v.ConfigMap != nil {
-			configMap, err := c.GetConfigMap(deployment.Namespace, v.ConfigMap.Name)
-			if err != nil {
-				c.logger.Errorf("unable to get configmap for name: %s", v.ConfigMap.Name)
-				return err
-			}
-
-			c.backupSend(configMap, v.ConfigMap.Name, backupClient)
-		}
-	}
-	return nil
-
-}
-
-func (c *controller) GetServiceAccountUsedInDeployment(deployment v1.Deployment,
-	backupClient metaservice.MetaService_BackupClient) error {
-	saName := deployment.Spec.Template.Spec.ServiceAccountName
-
-	sa, err := c.GetServiceAccount(deployment.Namespace, saName)
-	if err != nil {
-		c.logger.Errorf("unable to get service account for name: %s", saName)
-		return err
-	}
-
-	c.backupSend(sa, saName, backupClient)
-
 	return nil
 }
 
@@ -161,6 +134,21 @@ func (c *controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, er
 		return nil, err
 	}
 	return configmap, err
+}
+
+func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
+
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return nil, err
+	}
+
+	pvc, err := k8sClient.CoreV1().PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return pvc, err
 }
 
 func (c *controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
@@ -210,7 +198,7 @@ func (c *controller) getPersistentVolumeClaims(namespace string, backup *Prepare
 		allPVCList = append(allPVCList, pvc.Name)
 	}
 
-	allPVCList = utils.FindMatchedStrings("persistentvolumeclaims", allPVCList, backup.Spec.IncludedResources,
+	allPVCList = utils.FindMatchedStrings(utils.Pvc, allPVCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allPVC.Items {
@@ -227,21 +215,6 @@ func (c *controller) getPersistentVolumeClaims(namespace string, backup *Prepare
 
 	}
 	return nil
-}
-
-func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
-
-	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
-	if err != nil {
-		c.logger.Errorf("Unable to get k8sclient %s", err)
-		return nil, err
-	}
-
-	pvc, err := k8sClient.CoreV1().PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return pvc, err
 }
 
 func (c *controller) getStorageClass(backup *PrepareBackup,
@@ -271,7 +244,7 @@ func (c *controller) getStorageClass(backup *PrepareBackup,
 		allSCList = append(allSCList, sc.Name)
 	}
 
-	allSCList = utils.FindMatchedStrings("storageclasses", allSCList, backup.Spec.IncludedResources,
+	allSCList = utils.FindMatchedStrings(utils.Sc, allSCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allSC.Items {
