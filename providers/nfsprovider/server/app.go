@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//Package server defines nfs provider server
 package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -28,14 +30,14 @@ import (
 	"google.golang.org/grpc"
 
 	nfs_provider "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
 
 const (
 	// NFSService component name
-	componentNFSService = "nfs_provider"
+	componentNFSService = "nfsprovider"
 )
 
 // NewNFSProviderCommand creates a *cobra.Command object with default parameters
@@ -51,45 +53,23 @@ func NewNFSProviderCommand() *cobra.Command {
 		// Disabled flag parsing from cobra framework
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			// initial flag parse, since we disable cobra's flag parsing
-			if err := cleanFlagSet.Parse(args); err != nil {
-				log.Error("Failed to parse nfs provider service flag ", err)
-				_ = cmd.Usage()
-				os.Exit(1)
-			}
-
-			// check if there are non-flag arguments in the command line
-			cmds := cleanFlagSet.Args()
-			if len(cmds) > 0 {
-				log.Error("Unknown command ", cmds[0])
-				_ = cmd.Usage()
-				os.Exit(1)
-			}
-
-			// short-circuit on help
-			help, err := cleanFlagSet.GetBool("help")
-			if err != nil {
-				log.Error(`"help" flag is non-bool`)
-				os.Exit(1)
-			}
-			if help {
-				_ = cmd.Help()
+			// validate flags
+			if err := validateFlags(cmd, cleanFlagSet, args); err != nil {
 				return
 			}
 
 			// validate and apply initial NFSService Flags
 			if err := nfsServiceFlags.Apply(); err != nil {
 				log.Error("Failed to validate nfs provider service flags ", err)
-				os.Exit(1)
+				return
 			}
 
 			// validate and apply logging flags
 			if err := loggingOptions.Apply(); err != nil {
 				log.Error("Failed to apply logging flags ", err)
-				os.Exit(1)
+				return
 			}
 
-			// TODO: Setup signal handler with context
 			ctx, cancel := context.WithCancel(context.Background())
 			// setup signal handler
 			utils.SetupSignalHandler(cancel)
@@ -97,7 +77,7 @@ func NewNFSProviderCommand() *cobra.Command {
 			// run the meta service
 			if err := Run(ctx, options.NFSProviderOptions{NFSServiceFlags: *nfsServiceFlags}); err != nil {
 				log.Error("Failed to run nfs provider service", err)
-				os.Exit(1)
+				return
 			}
 
 		},
@@ -121,17 +101,62 @@ func NewNFSProviderCommand() *cobra.Command {
 	return cmd
 }
 
+// validateFlags validates nfs provider arguments
+func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []string) error {
+	// initial flag parse, since we disable cobra's flag parsing
+	if err := cleanFlagSet.Parse(args); err != nil {
+		log.Error("Failed to parse nfs provider service flag ", err)
+		_ = cmd.Usage()
+		return err
+	}
+
+	// check if there are non-flag arguments in the command line
+	cmds := cleanFlagSet.Args()
+	if len(cmds) > 0 {
+		log.Error("unknown command ", cmds[0])
+		_ = cmd.Usage()
+		return errors.New("unknown command")
+	}
+
+	// short-circuit on help
+	help, err := cleanFlagSet.GetBool("help")
+	if err != nil {
+		log.Error(`"help" flag is non-bool`)
+		return err
+	}
+	if help {
+		_ = cmd.Help()
+		return err
+	}
+	return nil
+}
+
+// Run starts and runs nfs provider service
 func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 	log.Info("Starting Server ...")
 
-	server_addr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
+	serverAddr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
+		return errors.New("failed to resolve unix addr")
 	}
-	lis, err := net.ListenUnix("unix", server_addr)
+	if _, err := os.Stat(serviceOptions.UnixSocketPath); err == nil {
+		if err := os.RemoveAll(serviceOptions.UnixSocketPath); err != nil {
+			log.Fatal(err)
+			return err
+		}
+	}
+	lis, err := net.ListenUnix("unix", serverAddr)
 	if err != nil {
 		log.Fatal("failed to listen: ", err)
+		return err
 	}
+	defer func() {
+		err := lis.Close()
+		if err != nil {
+			log.Errorf("failed to close listerning socket %s", err)
+		}
+	}()
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)

@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package options defins nfs provider flag options
 package options
 
+// NFSProviderOptions defines fns provider flag options
 type NFSProviderOptions struct {
 	NFSServiceFlags
-	// TODO: Add configuration file options here
 }

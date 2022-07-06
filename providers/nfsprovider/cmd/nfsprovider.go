@@ -14,14 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main provide entry point
 package main
 
 import (
 	"math/rand"
-	"os"
 	"time"
 
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server"
 )
 
 func main() {
@@ -29,6 +29,6 @@ func main() {
 
 	command := server.NewNFSProviderCommand()
 	if err := command.Execute(); err != nil {
-		os.Exit(1)
+		return
 	}
 }

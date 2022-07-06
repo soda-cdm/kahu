@@ -14,12 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package options defines nfs provider flag options
 package options
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
 
@@ -29,17 +30,21 @@ const (
 	DataPath       = "/data"
 )
 
+// CompressionType defines type of compression for archival
 type CompressionType string
 
+// NFSServiceFlags defines flags for nfs services
 type NFSServiceFlags struct {
 	UnixSocketPath string
 	DataPath       string
 }
 
+// NFSServiceFlags creats new nfs services
 func NewNFSServiceFlags() *NFSServiceFlags {
 	return &NFSServiceFlags{
 		UnixSocketPath: unixSocketPath,
-		DataPath:       DataPath,
+		// DataPath defines directory of backup files
+		DataPath: DataPath,
 	}
 }
 
@@ -54,7 +59,8 @@ func (options *NFSServiceFlags) AddFlags(fs *pflag.FlagSet) {
 // Apply checks validity of available command line options
 func (options *NFSServiceFlags) Apply() error {
 	if _, err := os.Stat(options.DataPath); os.IsNotExist(err) {
-		return fmt.Errorf("nfs mount directory(%s) does not exist", options.DataPath)
+		logrus.Errorf("nfs mount directory(%s) does not exist", options.DataPath)
+		return err
 	}
 
 	return nil

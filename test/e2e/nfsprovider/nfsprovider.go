@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nfs_provider
+package nfsprovider
 
 import (
 	"context"
@@ -29,8 +29,8 @@ import (
 	"google.golang.org/grpc"
 
 	service "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server"
-	"github.com/soda-cdm/kahu/providers/nfs_provider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server"
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
 )
 
 const (

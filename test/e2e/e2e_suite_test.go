@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	_ "github.com/soda-cdm/kahu/test/e2e/nfs_provider"
+	_ "github.com/soda-cdm/kahu/test/e2e/nfsprovider"
 )
 
 func TestE2e(t *testing.T) {
