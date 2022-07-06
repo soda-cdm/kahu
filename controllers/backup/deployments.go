@@ -18,38 +18,33 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 
-	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
-	"github.com/soda-cdm/kahu/utils"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/soda-cdm/kahu/utils"
+
+	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
 func (c *controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, namespace string,
 	backupClient metaservice.MetaService_BackupClient) error {
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
 	}
 
-	deployment, err := k8sClinet.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	deployment, err := k8sClient.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
-	resourceData, err := json.Marshal(deployment)
-	if err != nil {
-		c.logger.Errorf("Unable to get resource content of deployment:%s: %s", name, err)
-		return err
-	}
-
-	err = c.backupSend(gvr, resourceData, deployment.Name, backupClient)
+	err = c.backupSend(deployment, deployment.Name, backupClient)
 	if err != nil {
 		return err
 	}
@@ -60,7 +55,7 @@ func (c *controller) GetDeploymentAndBackup(gvr GroupResouceVersion, name, names
 func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
@@ -72,7 +67,7 @@ func (c *controller) deploymentBackup(gvr GroupResouceVersion, namespace string,
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	dList, err := k8sClinet.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{
+	dList, err := k8sClient.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -112,18 +107,10 @@ func (c *controller) GetConfigMapUsedInDeployment(gvr GroupResouceVersion, deplo
 			configMap, err := c.GetConfigMap(deployment.Namespace, v.ConfigMap.Name)
 			if err != nil {
 				c.logger.Errorf("unable to get configmap for name: %s", v.ConfigMap.Name)
-			}
-			resourceData, err := json.Marshal(configMap)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of pod: %s", err)
 				return err
 			}
-			c.logger.Debug(resourceData)
-			gvr.group = ""
-			gvr.resourceName = "configs"
-			gvr.version = "v1"
 
-			c.backupSend(gvr, resourceData, deployment.Name, backupClient)
+			c.backupSend(configMap, v.ConfigMap.Name, backupClient)
 		}
 	}
 	return nil
@@ -137,31 +124,23 @@ func (c *controller) GetServiceAccountUsedInDeployment(gvr GroupResouceVersion, 
 	sa, err := c.GetServiceAccount(deployment.Namespace, saName)
 	if err != nil {
 		c.logger.Errorf("unable to get service account for name: %s", saName)
-	}
-	resourceData, err := json.Marshal(sa)
-	if err != nil {
-		c.logger.Errorf("Unable to get resource content of Service Account: %s", err)
 		return err
 	}
-	c.logger.Debug(resourceData)
-	gvr.group = ""
-	gvr.resourceName = "serviceaccounts"
-	gvr.version = "v1"
 
-	c.backupSend(gvr, resourceData, deployment.Name, backupClient)
+	c.backupSend(sa, saName, backupClient)
 
 	return nil
 }
 
 func (c *controller) GetServiceAccount(namespace, name string) (*corev1.ServiceAccount, error) {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return nil, err
 	}
 
-	sa, err := k8sClinet.CoreV1().ServiceAccounts(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	sa, err := k8sClient.CoreV1().ServiceAccounts(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -170,13 +149,13 @@ func (c *controller) GetServiceAccount(namespace, name string) (*corev1.ServiceA
 
 func (c *controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, error) {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return nil, err
 	}
 
-	configmap, err := k8sClinet.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	configmap, err := k8sClient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +163,14 @@ func (c *controller) GetConfigMap(namespace, name string) (*corev1.ConfigMap, er
 }
 
 func (c *controller) ListNamespaces(backup *PrepareBackup) ([]string, error) {
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return nil, err
 	}
 
 	var namespaceList []string
-	namespaces, err := k8sClinet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+	namespaces, err := k8sClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return namespaceList, err
 	}
@@ -206,7 +185,7 @@ func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 	backupClient metaservice.MetaService_BackupClient) error {
 
 	c.logger.Infoln("starting collecting persistentvolumeclaims")
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
@@ -218,7 +197,7 @@ func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	allPVC, err := k8sClinet.CoreV1().PersistentVolumeClaims(namespace).List(context.TODO(), metav1.ListOptions{
+	allPVC, err := k8sClient.CoreV1().PersistentVolumeClaims(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -236,13 +215,10 @@ func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 	for _, item := range allPVC.Items {
 		if utils.Contains(allPVCList, item.Name) {
 			pvcData, err := c.GetPVC(namespace, item.Name)
-			resourceData, err := json.Marshal(pvcData)
 			if err != nil {
-				c.logger.Errorf("Unable to get resource content of pvc: %s", err)
 				return err
 			}
-			c.logger.Debug(resourceData)
-			err = c.backupSend(gvr, resourceData, pvcData.Name, backupClient)
+			err = c.backupSend(pvcData, pvcData.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -254,13 +230,13 @@ func (c *controller) getPersistentVolumeClaims(gvr GroupResouceVersion, namespac
 
 func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return nil, err
 	}
 
-	pvc, err := k8sClinet.CoreV1().PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	pvc, err := k8sClient.CoreV1().PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +246,7 @@ func (c *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeCla
 func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
@@ -282,7 +258,7 @@ func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBac
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	allSC, err := k8sClinet.StorageV1().StorageClasses().List(context.TODO(), metav1.ListOptions{
+	allSC, err := k8sClient.StorageV1().StorageClasses().List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
@@ -300,33 +276,24 @@ func (c *controller) getStorageClass(gvr GroupResouceVersion, backup *PrepareBac
 	for _, item := range allSC.Items {
 		if utils.Contains(allSCList, item.Name) {
 			scData, err := c.GetSC(item.Name)
-
-			resourceData, err := json.Marshal(scData)
-			if err != nil {
-				c.logger.Errorf("Unable to get resource content of storageclass: %s", err)
-				return err
-			}
-			c.logger.Debug(resourceData)
-
-			err = c.backupSend(gvr, resourceData, scData.Name, backupClient)
+			err = c.backupSend(scData, scData.Name, backupClient)
 			if err != nil {
 				return err
 			}
 		}
-
 	}
 	return nil
 }
 
 func (c *controller) GetSC(name string) (*storagev1.StorageClass, error) {
 
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return nil, err
 	}
 
-	sc, err := k8sClinet.StorageV1().StorageClasses().Get(context.TODO(), name, metav1.GetOptions{})
+	sc, err := k8sClient.StorageV1().StorageClasses().Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}

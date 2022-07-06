@@ -19,8 +19,9 @@ package backup
 import (
 	"strings"
 
-	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 var ResultantNamespace = []string{}

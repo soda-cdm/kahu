@@ -18,6 +18,7 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -35,10 +36,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
+	"github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
@@ -458,19 +461,31 @@ func sortCoreGroup(group *metav1.APIResourceList) {
 	})
 }
 
-func (c *controller) backupSend(gvr GroupResouceVersion,
-	resourceData []byte, metadataName string,
+func (c *controller) backupSend(obj runtime.Object, metadataName string,
 	backupSendClient metaservice.MetaService_BackupClient) error {
-	c.logger.Infof("sending metadata for name:%s and resources:%s", metadataName, gvr.resourceName)
 
-	err := backupSendClient.Send(&metaservice.BackupRequest{
+	gvk, err := addTypeInformationToObject(obj)
+	if err != nil {
+		c.logger.Errorf("Unable to get resource content: %s", err)
+		return err
+	}
+
+	resourceData, err := json.Marshal(obj)
+	if err != nil {
+		c.logger.Errorf("Unable to get resource content: %s", err)
+		return err
+	}
+
+	c.logger.Infof("sending metadata for object %s/%s", gvk, metadataName)
+
+	err = backupSendClient.Send(&metaservice.BackupRequest{
 		Backup: &metaservice.BackupRequest_BackupResource{
 			BackupResource: &metaservice.BackupResource{
 				Resource: &metaservice.Resource{
 					Name:    metadataName,
-					Group:   gvr.group,
-					Version: gvr.version,
-					Kind:    gvr.resourceName,
+					Group:   gvk.Group,
+					Version: gvk.Version,
+					Kind:    gvk.Kind,
 				},
 				Data: resourceData,
 			},
@@ -502,4 +517,27 @@ func (c *controller) handleAdd(obj interface{}) {
 
 func (c *controller) handleDel(obj interface{}) {
 	c.genericController.Enqueue(obj)
+}
+
+// addTypeInformationToObject adds TypeMeta information to a runtime.Object based upon the loaded scheme.Scheme
+// inspired by: https://github.com/kubernetes/cli-runtime/blob/v0.19.2/pkg/printers/typesetter.go#L41
+func addTypeInformationToObject(obj runtime.Object) (schema.GroupVersionKind, error) {
+	gvks, _, err := scheme.Scheme.ObjectKinds(obj)
+	if err != nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("missing apiVersion or kind and cannot assign it; %w", err)
+	}
+
+	for _, gvk := range gvks {
+		if len(gvk.Kind) == 0 {
+			continue
+		}
+		if len(gvk.Version) == 0 || gvk.Version == runtime.APIVersionInternal {
+			continue
+		}
+
+		obj.GetObjectKind().SetGroupVersionKind(gvk)
+		return gvk, nil
+	}
+
+	return schema.GroupVersionKind{}, err
 }
