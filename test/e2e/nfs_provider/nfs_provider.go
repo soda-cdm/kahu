@@ -85,8 +85,11 @@ var _ = Describe("NFSProviderService", func() {
 
 		var serverOpts []grpc.ServerOption
 		grpcServer = grpc.NewServer(serverOpts...)
+		nfsServiceFlags := options.NewNFSServiceFlags()
+		nfsServiceFlags.Apply()
+		nfsOpts := options.NFSProviderOptions{NFSServiceFlags: *nfsServiceFlags}
 		service.RegisterMetaBackupServer(grpcServer,
-			server.NewMetaBackupServer(context.Background(), options.NFSProviderOptions{}))
+			server.NewMetaBackupServer(context.Background(), nfsOpts))
 		go grpcServer.Serve(lis)
 
 		// initialize client
