@@ -111,7 +111,7 @@ func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
 	return subItemList
 }
 
-func FindMatchedStrins(kind string, allList []string, includeList, excludeList []v1beta1.ResourceIncluder) []string {
+func FindMatchedStrings(kind string, allList []string, includeList, excludeList []v1beta1.ResourceIncluder) []string {
 	var collectAllIncludeds []string
 	var collectAllExcludeds []string
 	var resultantStrings []string

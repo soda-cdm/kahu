@@ -79,7 +79,7 @@ func (c *controller) deploymentBackup(namespace string,
 		deploymentAllList = append(deploymentAllList, deployment.Name)
 	}
 
-	deploymentAllList = utils.FindMatchedStrins("deployments", deploymentAllList, backup.Spec.IncludedResources,
+	deploymentAllList = utils.FindMatchedStrings("deployments", deploymentAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range dList.Items {
@@ -210,7 +210,7 @@ func (c *controller) getPersistentVolumeClaims(namespace string, backup *Prepare
 		allPVCList = append(allPVCList, pvc.Name)
 	}
 
-	allPVCList = utils.FindMatchedStrins("persistentvolumeclaims", allPVCList, backup.Spec.IncludedResources,
+	allPVCList = utils.FindMatchedStrings("persistentvolumeclaims", allPVCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allPVC.Items {
@@ -271,7 +271,7 @@ func (c *controller) getStorageClass(backup *PrepareBackup,
 		allSCList = append(allSCList, sc.Name)
 	}
 
-	allSCList = utils.FindMatchedStrins("storageclasses", allSCList, backup.Spec.IncludedResources,
+	allSCList = utils.FindMatchedStrings("storageclasses", allSCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allSC.Items {

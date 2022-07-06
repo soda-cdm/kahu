@@ -56,7 +56,7 @@ func (c *controller) getServices(namespace string, backup *PrepareBackup,
 		allServicesList = append(allServicesList, sc.Name)
 	}
 
-	allServicesList = utils.FindMatchedStrins("services", allServicesList, backup.Spec.IncludedResources,
+	allServicesList = utils.FindMatchedStrings("services", allServicesList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, service := range allServices.Items {
@@ -103,7 +103,7 @@ func (c *controller) getConfigMapS(namespace string, backup *PrepareBackup,
 		configAllLits = append(configAllLits, deployment.Name)
 	}
 
-	configAllLits = utils.FindMatchedStrins("configmaps", configAllLits, backup.Spec.IncludedResources,
+	configAllLits = utils.FindMatchedStrings("configmaps", configAllLits, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range configList.Items {
@@ -148,7 +148,7 @@ func (c *controller) getSecrets(namespace string, backup *PrepareBackup,
 		allSecretsList = append(allSecretsList, sc.Name)
 	}
 
-	allSecretsList = utils.FindMatchedStrins("secrets", allSecretsList, backup.Spec.IncludedResources,
+	allSecretsList = utils.FindMatchedStrings("secrets", allSecretsList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, secret := range secretList.Items {
@@ -196,7 +196,7 @@ func (c *controller) getEndpoints(namespace string, backup *PrepareBackup,
 		allendpointList = append(allendpointList, sc.Name)
 	}
 
-	allendpointList = utils.FindMatchedStrins("endpoints", allendpointList, backup.Spec.IncludedResources,
+	allendpointList = utils.FindMatchedStrings("endpoints", allendpointList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, endpoint := range endpointList.Items {
@@ -243,7 +243,7 @@ func (c *controller) getReplicasets(namespace string, backup *PrepareBackup,
 		allreplicasetList = append(allreplicasetList, sc.Name)
 	}
 
-	allreplicasetList = utils.FindMatchedStrins("replicasets", allreplicasetList, backup.Spec.IncludedResources,
+	allreplicasetList = utils.FindMatchedStrings("replicasets", allreplicasetList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, replicaset := range replicasetList.Items {
@@ -291,7 +291,7 @@ func (c *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 		allstatefulList = append(allstatefulList, sc.Name)
 	}
 
-	allstatefulList = utils.FindMatchedStrins("statefulsets", allstatefulList, backup.Spec.IncludedResources,
+	allstatefulList = utils.FindMatchedStrings("statefulsets", allstatefulList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, stateful := range statefulList.Items {
