@@ -269,7 +269,6 @@ func (c *controller) runBackup(backup *PrepareBackup) error {
 		for name, val := range resultantResource {
 			c.logger.Debug(nsVal, val)
 			switch name {
-
 			case utils.Pod:
 				err = c.podBackup(ns, backup, backupClient)
 				if err != nil {
