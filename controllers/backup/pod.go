@@ -54,6 +54,7 @@ func (c *controller) podBackup(namespace string,
 		return err
 	}
 
+	var podLabelList []map[string]string
 	var labelSelectors map[string]string
 	if backup.Spec.Label != nil {
 		labelSelectors = backup.Spec.Label.MatchLabels
@@ -71,9 +72,10 @@ func (c *controller) podBackup(namespace string,
 		podAllList = append(podAllList, pod.Name)
 	}
 
-	podAllList = utils.FindMatchedStrings(utils.Deployment, podAllList, backup.Spec.IncludedResources,
+	podAllList = utils.FindMatchedStrings(utils.Pod, podAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
+	// only for backup
 	for _, pod := range podList.Items {
 		if utils.Contains(podAllList, pod.Name) {
 			// backup the deployment yaml
@@ -94,7 +96,52 @@ func (c *controller) podBackup(namespace string,
 				return err
 			}
 
+			// append the lables of pods to list
+			podLabelList = append(podLabelList, pod.Labels)
 		}
 	}
+
+	// get services used by pod
+	err = c.GetServiceForPod(namespace, podLabelList, backupClient, k8sClient)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *controller) GetServiceForPod(namespace string, podLabelList []map[string]string,
+	backupClient metaservice.MetaService_BackupClient, k8sClinet *kubernetes.Clientset) error {
+
+	allServices, err := k8sClinet.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	var allServicesList []string
+	for _, sc := range allServices.Items {
+		allServicesList = append(allServicesList, sc.Name)
+	}
+
+	for _, service := range allServices.Items {
+		serviceData, err := c.GetService(namespace, service.Name)
+		if err != nil {
+			return err
+		}
+
+		for skey, svalue := range serviceData.Spec.Selector {
+			for _, labels := range podLabelList {
+				for lkey, lvalue := range labels {
+					if skey == lkey && svalue == lvalue {
+						err = c.backupSend(serviceData, serviceData.Name, backupClient)
+						if err != nil {
+							return err
+						}
+
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }

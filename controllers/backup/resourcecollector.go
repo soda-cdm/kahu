@@ -62,7 +62,7 @@ func (c *controller) getServices(namespace string, backup *PrepareBackup,
 
 	for _, service := range allServices.Items {
 		if utils.Contains(allServicesList, service.Name) {
-			serviceData, err := k8sClinet.CoreV1().Services(namespace).Get(context.TODO(), service.Name, metav1.GetOptions{})
+			serviceData, err := c.GetService(namespace, service.Name)
 			if err != nil {
 				return err
 			}
@@ -75,6 +75,21 @@ func (c *controller) getServices(namespace string, backup *PrepareBackup,
 
 	}
 	return nil
+}
+
+func (c *controller) GetService(namespace, name string) (*v1.Service, error) {
+
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return nil, err
+	}
+
+	service, err := k8sClient.CoreV1().Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return service, err
 }
 
 func (c *controller) getConfigMapS(namespace string, backup *PrepareBackup,
