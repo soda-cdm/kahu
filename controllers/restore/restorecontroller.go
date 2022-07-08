@@ -19,6 +19,7 @@ package restore
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -118,8 +119,9 @@ type restoreContext struct {
 
 func newRestoreContext(name string, ctrl *controller) *restoreContext {
 	backupObjectIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, newBackupObjectIndexers())
+	logger := ctrl.logger.WithField("restore", name)
 	return &restoreContext{
-		logger:               ctrl.logger.WithField("restore", name),
+		logger:               logger,
 		kubeClient:           ctrl.kubeClient,
 		restoreClient:        ctrl.restoreClient,
 		restoreLister:        ctrl.restoreLister,
@@ -129,7 +131,7 @@ func newRestoreContext(name string, ctrl *controller) *restoreContext {
 		dynamicClient:        ctrl.dynamicClient,
 		discoveryHelper:      ctrl.discoveryHelper,
 		backupObjectIndexer:  backupObjectIndexer,
-		filter:               constructFilterHandler(backupObjectIndexer),
+		filter:               constructFilterHandler(backupObjectIndexer, logger),
 		mutator:              constructMutationHandler(backupObjectIndexer),
 	}
 }
@@ -279,14 +281,22 @@ func (ctx *restoreContext) validateRestore(restore *kahuapi.Restore) {
 	}
 
 	// resource validation
-	includeResources := sets.NewString(restore.Spec.IncludeResources...)
-	excludeResources := sets.NewString(restore.Spec.ExcludeResources...)
-	// check common namespace name in include/exclude list
-	if intersection := includeResources.Intersection(excludeResources); intersection.Len() > 0 {
-		restore.Status.ValidationErrors =
-			append(restore.Status.ValidationErrors,
-				fmt.Sprintf("common resource name (%s) in include and exclude resource list",
-					strings.Join(intersection.List(), ",")))
+	// check regular expression validity
+	for _, resourceSpec := range restore.Spec.IncludeResources {
+		if _, err := regexp.Compile(resourceSpec.Name); err != nil {
+			restore.Status.ValidationErrors =
+				append(restore.Status.ValidationErrors,
+					fmt.Sprintf("invalid include resource name specification name %s",
+						resourceSpec.Name))
+		}
+	}
+	for _, resourceSpec := range restore.Spec.ExcludeResources {
+		if _, err := regexp.Compile(resourceSpec.Name); err != nil {
+			restore.Status.ValidationErrors =
+				append(restore.Status.ValidationErrors,
+					fmt.Sprintf("invalid include resource name specification name %s",
+						resourceSpec.Name))
+		}
 	}
 }
 

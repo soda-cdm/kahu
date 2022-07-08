@@ -143,5 +143,10 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 		server.Stop()
 	}(ctx, grpcServer)
 
+	go func(ctx context.Context, server *grpc.Server) {
+		<-ctx.Done()
+		server.Stop()
+	}(ctx, grpcServer)
+
 	return grpcServer.Serve(lis)
 }

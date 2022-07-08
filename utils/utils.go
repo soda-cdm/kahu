@@ -22,7 +22,6 @@ import (
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
-
 	"google.golang.org/grpc"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"

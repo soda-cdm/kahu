@@ -48,7 +48,17 @@ spec:
                 description: ExcludeResources are set of kubernetes resource name
                   should not get considered for restore
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
                 type: array
               includeClusterResource:
                 description: IncludeClusterResource is a flag for considering cluster
@@ -64,7 +74,17 @@ spec:
                 description: IncludeResources are set of kubernetes resource name
                   considered for restore
                 items:
-                  type: string
+                  properties:
+                    isRegex:
+                      type: boolean
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
                 type: array
               labelSelector:
                 description: LabelSelector are label get evaluated against resource

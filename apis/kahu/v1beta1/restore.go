@@ -20,6 +20,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type ResourceSpec struct {
+	// +required
+	// Name of the resource
+	// The name can have empty, * in regular expression
+	// or valid resource name
+	Name string `json:"name"`
+
+	// +required
+	// Kind of the resource
+	Kind string `json:"kind"`
+
+	// +optional
+	// IsRegex indicates if Name is regular expression
+	IsRegex bool `json:"isRegex,omitempty"`
+}
+
 // RestoreSpec defines the desired state of Restore
 type RestoreSpec struct {
 	// BackupName is backup CR name specified during backup
@@ -36,11 +52,11 @@ type RestoreSpec struct {
 
 	// IncludeResources are set of kubernetes resource name considered for restore
 	// +optional
-	IncludeResources []string `json:"includeResources,omitempty"`
+	IncludeResources []ResourceSpec `json:"includeResources,omitempty"`
 
 	// ExcludeResources are set of kubernetes resource name should not get considered for restore
 	// +optional
-	ExcludeResources []string `json:"excludeResources,omitempty"`
+	ExcludeResources []ResourceSpec `json:"excludeResources,omitempty"`
 
 	// LabelSelector are label get evaluated against resource selection
 	// +optional

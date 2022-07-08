@@ -19,7 +19,9 @@ package restore
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 
+	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,21 +35,25 @@ type filterHandler interface {
 	handle(restore *kahuapi.Restore) error
 }
 
-func constructFilterHandler(cache cache.Indexer) filterHandler {
-	return newNamespaceFilter(cache,
-		newResourceFilter(cache,
-			newLabelSelectorFilter(cache)))
+func constructFilterHandler(cache cache.Indexer, logger log.FieldLogger) filterHandler {
+	return newNamespaceFilter(cache, logger,
+		newResourceFilter(cache, logger,
+			newLabelSelectorFilter(cache, logger)))
 }
 
 type namespaceFilter struct {
-	cache cache.Indexer
-	next  filterHandler
+	cache  cache.Indexer
+	next   filterHandler
+	logger log.FieldLogger
 }
 
-func newNamespaceFilter(cache cache.Indexer, handler filterHandler) filterHandler {
+func newNamespaceFilter(cache cache.Indexer,
+	logger log.FieldLogger,
+	handler filterHandler) filterHandler {
 	return &namespaceFilter{
-		cache: cache,
-		next:  handler,
+		cache:  cache,
+		next:   handler,
+		logger: logger,
 	}
 }
 
@@ -95,48 +101,90 @@ func (handler *namespaceFilter) handle(restore *kahuapi.Restore) error {
 }
 
 type resourceFilter struct {
-	cache cache.Indexer
-	next  filterHandler
+	cache  cache.Indexer
+	logger log.FieldLogger
+	next   filterHandler
 }
 
-func newResourceFilter(cache cache.Indexer, handler filterHandler) filterHandler {
+func newResourceFilter(cache cache.Indexer,
+	logger log.FieldLogger,
+	handler filterHandler) filterHandler {
 	return &resourceFilter{
-		cache: cache,
-		next:  handler,
+		cache:  cache,
+		next:   handler,
+		logger: logger,
 	}
+}
+
+func isMatch(resource *unstructured.Unstructured,
+	resourceSpec kahuapi.ResourceSpec) bool {
+	resourceKind := resource.GetKind()
+	resourceName := resource.GetName()
+
+	if resourceSpec.Kind != resourceKind {
+		return false
+	}
+
+	if resourceSpec.IsRegex {
+		match, err := regexp.MatchString(resourceSpec.Name, resourceName)
+		if err != nil {
+			return false
+		}
+		return match
+	}
+
+	return false
+}
+
+func isResourceNeedExclude(resource *unstructured.Unstructured,
+	includeResourceSpecs []kahuapi.ResourceSpec,
+	excludeResourceSpecs []kahuapi.ResourceSpec) bool {
+	// exclude if in the exclusion list
+	for _, spec := range excludeResourceSpecs {
+		if isMatch(resource, spec) {
+			return true
+		}
+	}
+
+	// exclude if not in inclusion list
+	exclude := false
+	for _, spec := range includeResourceSpecs {
+		if isMatch(resource, spec) {
+			return false
+		}
+		exclude = true
+	}
+
+	return exclude
 }
 
 func (handler *resourceFilter) handle(restore *kahuapi.Restore) error {
 	// perform include/exclude resources on cache
-	// perform include/exclude namespace on cache
 
-	excludeResources := sets.NewString()
+	excludeResourceSpecs := make([]kahuapi.ResourceSpec, 0)
+	includeResourceSpecs := make([]kahuapi.ResourceSpec, 0)
+	includeResourceSpecs = append(includeResourceSpecs, restore.Spec.IncludeResources...)
+	excludeResourceSpecs = append(excludeResourceSpecs, restore.Spec.ExcludeResources...)
 
-	// process include resources
-	includeResources := sets.NewString(restore.Spec.IncludeResources...)
-	if len(includeResources) != 0 {
-		availableResources := handler.cache.ListIndexFuncValues(backupObjectResourceIndex)
-		for _, resource := range availableResources {
-			// if available resource are not included exclude them
-			if !includeResources.Has(resource) {
-				excludeResources.Insert()
+	excludeResourceList := make([]interface{}, 0)
+	resourceList := handler.cache.List()
+	for _, resource := range resourceList {
+		switch unstructuredResource := resource.(type) {
+		case *unstructured.Unstructured:
+			if isResourceNeedExclude(unstructuredResource,
+				includeResourceSpecs,
+				excludeResourceSpecs) {
+				excludeResourceList = append(excludeResourceList, resource)
 			}
+		case unstructured.Unstructured:
+			if isResourceNeedExclude(&unstructuredResource,
+				includeResourceSpecs,
+				excludeResourceSpecs) {
+				excludeResourceList = append(excludeResourceList, resource)
+			}
+		default:
+			handler.logger.Warningf("Unknown cached resource type. %s", reflect.TypeOf(resource))
 		}
-	}
-
-	excludeResources.Insert(restore.Spec.ExcludeResources...)
-
-	// remove objects from cache present in excluded resources
-	var (
-		excludeResourceList = make([]interface{}, 0)
-	)
-	for _, resource := range excludeResources.List() {
-		resourceList, err := handler.cache.ByIndex(backupObjectResourceIndex, resource)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve resources from cache for "+
-				"resource exclusion. %s", err)
-		}
-		excludeResourceList = append(excludeResourceList, resourceList...)
 	}
 
 	for _, resource := range excludeResourceList {
@@ -146,16 +194,19 @@ func (handler *resourceFilter) handle(restore *kahuapi.Restore) error {
 				"resource exclusion. %s", err)
 		}
 	}
+
 	return handler.next.handle(restore)
 }
 
 type labelSelectorFilter struct {
-	cache cache.Indexer
+	cache  cache.Indexer
+	logger log.FieldLogger
 }
 
-func newLabelSelectorFilter(cache cache.Indexer) filterHandler {
+func newLabelSelectorFilter(cache cache.Indexer, logger log.FieldLogger) filterHandler {
 	return &labelSelectorFilter{
-		cache: cache,
+		cache:  cache,
+		logger: logger,
 	}
 }
 
