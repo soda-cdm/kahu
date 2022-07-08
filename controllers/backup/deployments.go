@@ -101,6 +101,13 @@ func (c *controller) deploymentBackup(namespace string,
 				return err
 			}
 
+			// get services based on selectors
+			var selectorList []map[string]string
+			selectorList = append(selectorList, deployment.Spec.Selector.MatchLabels)
+			err = c.GetServiceForPod(deployment.Namespace, selectorList, backupClient, k8sClient)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
