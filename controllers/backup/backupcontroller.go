@@ -43,6 +43,7 @@ import (
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
+	"github.com/soda-cdm/kahu/hooks"
 	"github.com/soda-cdm/kahu/utils"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -67,6 +68,7 @@ type controller struct {
 	backupLister         kahulister.BackupLister
 	backupClient         kahuv1client.BackupInterface
 	backupLocationClient kahuv1client.BackupLocationInterface
+	execHook             *hooks.Hooks
 }
 
 func NewController(config *Config,
@@ -152,6 +154,11 @@ func (c *controller) doBackup(key string) error {
 	}
 	prepareBackupReq.Status.StartTimestamp = &metav1.Time{Time: time.Now()}
 	c.updateStatus(prepareBackupReq.Backup, c.backupClient, prepareBackupReq.Status.Phase)
+
+	c.execHook, err = hooks.NewHooks(c.restClientconfig, backup.Spec.Hook.Resources)
+	if err != nil {
+		c.logger.Infof("failed to create backup hooks:%s", err)
+	}
 
 	// start taking backup
 	err = c.runBackup(prepareBackupReq)

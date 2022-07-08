@@ -49,13 +49,9 @@ type BackupSpec struct {
 	// +optional
 	ReclaimPolicy ReclaimPolicyType `json:"reclaimPolicy,omitempty"`
 
-	// PreExecHook is a hook which should be executed before backup starts
+	// Hook is pre or post operations which should be executed during backup
 	// +optional
-	PreExecHook ResourceHookSpec `json:"preExecHook,omitempty"`
-
-	// PostExecHook is a hook which should be executed after backup finished
-	// +optional
-	PostExecHook ResourceHookSpec `json:"postExecHook,omitempty"`
+	Hook HookSpec `json:"hook,omitempty"`
 
 	// IncludedProviders is a list of all provideres included for backup. If empty, all provideres
 	// are included
@@ -108,6 +104,13 @@ type ResourceIncluder struct {
 	IsRegex bool `json:"isRegex,omitempty"`
 }
 
+// HookSpec is hook which should be executed
+// at different phase of backup
+type HookSpec struct {
+	// +optional
+	Resources []ResourceHookSpec `json:"resources,omitempty"`
+}
+
 // ResourceHookSpec is hook which should be executed
 // at different phase of backup
 type ResourceHookSpec struct {
@@ -126,16 +129,67 @@ type ResourceHookSpec struct {
 	// IncludedResources is a list of all resources included for hook. If empty, all resources
 	// are included
 	// +optional
-	IncludedResources []string `json:"includedResources,omitempty"`
+	IncludedResources []ResourceIncluder `json:"includedResources,omitempty"`
 
 	// ExcludedResources is a list of all resources excluded for backup
 	// +optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
+	ExcludedResources []ResourceIncluder `json:"excludedResources,omitempty"`
 
 	// Label is used to filter the resources
 	// +optional
 	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+
+	// PreHooks is a list of ResourceHooks to execute prior to storing the item in the backup.
+	// These are executed before any "additional items" from item actions are processed.
+	// +optional
+	PreHooks []ResourceHook `json:"pre,omitempty"`
+
+	// PostHooks is a list of ResourceHooks to execute after storing the item in the backup.
+	// These are executed after all "additional items" from item actions are processed.
+	// +optional
+	PostHooks []ResourceHook `json:"post,omitempty"`
 }
+
+// ResourceHook defines a hook for a resource.
+type ResourceHook struct {
+	// Exec defines an exec hook.
+	Exec *ExecHook `json:"exec"`
+}
+
+// ExecHook is a hook that uses the pod exec API to execute a command in a container in a pod.
+type ExecHook struct {
+	// Container is the container in the pod where the command should be executed. If not specified,
+	// the pod's first container is used.
+	// +optional
+	Container string `json:"container,omitempty"`
+
+	// Command is the command and arguments to execute.
+	// +kubebuilder:validation:MinItems=1
+	Command []string `json:"command"`
+
+	// OnError specifies how to behave if it encounters an error executing this hook.
+	// +optional
+	OnError HookErrorMode `json:"onError,omitempty"`
+
+	// Timeout defines the maximum amount of time service should wait for the hook to complete before
+	// considering the execution a failure.
+	// +optional
+	Timeout metav1.Duration `json:"timeout,omitempty"`
+}
+
+// HookErrorMode defines how service should treat an error from a hook.
+// +kubebuilder:validation:Enum=Continue;Fail
+type HookErrorMode string
+
+const (
+	// HookErrorModeContinue means that an error from a hook is acceptable, and the backup can
+	// proceed.
+	HookErrorModeContinue HookErrorMode = "Continue"
+
+	// HookErrorModeFail means that an error from a hook is problematic, and the backup should be in
+	// error.
+	HookErrorModeFail HookErrorMode = "Fail"
+)
 
 // ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
 type ReclaimPolicyType struct {
