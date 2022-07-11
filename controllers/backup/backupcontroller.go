@@ -39,7 +39,7 @@ import (
 
 	"k8s.io/client-go/kubernetes/scheme"
 
-	v1 "github.com/soda-cdm/kahu/apis/kahu/v1"
+	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
@@ -143,7 +143,7 @@ func (c *controller) processBackup(key string) error {
 	return err
 }
 
-func (c *controller) doBackup(backup *v1.Backup) error {
+func (c *controller) doBackup(backup *v1beta1.Backup) error {
 
 	// setting finanlizer
 	controllerutil.AddFinalizer(backup, "backup-controller-finalizer")
@@ -368,14 +368,14 @@ func (c *controller) runBackup(backup *PrepareBackup) ([]string, error) {
 				if err != nil {
 					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, string(v1.BackupPhaseCompleted))
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Daemonset:
 				err = c.daemonSetBackup(ns, backup, backupClient)
 				if err != nil {
-					backupStatus = append(backupStatus, string(v1.BackupPhaseFailed))
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, string(v1.BackupPhaseCompleted))
+					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			default:
 				continue
@@ -429,7 +429,7 @@ func (c *controller) backupSend(obj runtime.Object, metadataName string,
 	return err
 }
 
-func (c *controller) deleteBackup(backup *v1.Backup) error {
+func (c *controller) deleteBackup(backup *v1beta1.Backup) error {
 	// TODO: delete need to be added
 	c.logger.Infof("delete is called for backup:%s", backup.Name)
 
@@ -449,7 +449,7 @@ func (c *controller) handleAdd(obj interface{}) {
 }
 
 func (c *controller) handleUpdate(oldobj, obj interface{}) {
-	backup := obj.(*v1.Backup)
+	backup := obj.(*v1beta1.Backup)
 
 	if backup.DeletionTimestamp != nil {
 		c.deleteBackup(backup)
