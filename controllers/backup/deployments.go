@@ -113,6 +113,89 @@ func (c *controller) deploymentBackup(namespace string,
 	return nil
 }
 
+func (c *controller) GetDaemonSetAndBackup(name, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return err
+	}
+
+	daemonset, err := k8sClient.AppsV1().DaemonSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	err = c.backupSend(daemonset, daemonset.Name, backupClient)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (c *controller) daemonSetBackup(namespace string,
+	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
+
+	c.logger.Infoln("starting collecting daemonset")
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return err
+	}
+
+	var labelSelectors map[string]string
+	if backup.Spec.Label != nil {
+		labelSelectors = backup.Spec.Label.MatchLabels
+	}
+	selectors := labels.Set(labelSelectors).String()
+
+	dList, err := k8sClient.AppsV1().DaemonSets(namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: selectors,
+	})
+	if err != nil {
+		return err
+	}
+	var daemonsetAllList []string
+	for _, daemonset := range dList.Items {
+		daemonsetAllList = append(daemonsetAllList, daemonset.Name)
+	}
+
+	daemonsetAllList = utils.FindMatchedStrings(utils.Daemonset, daemonsetAllList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
+	for _, daemonset := range dList.Items {
+		if utils.Contains(daemonsetAllList, daemonset.Name) {
+			// backup the daemonset yaml
+			err = c.GetDaemonSetAndBackup(daemonset.Name, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// backup the volumespec releted object like, configmaps, secret, pvc and sc
+			err = c.GetVolumesSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get service account relared objects
+			err = c.GetServiceAccountSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get services based on selectors
+			var selectorList []map[string]string
+			selectorList = append(selectorList, daemonset.Spec.Selector.MatchLabels)
+			err = c.GetServiceForPod(daemonset.Namespace, selectorList, backupClient, k8sClient)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (c *controller) GetServiceAccount(namespace, name string) (*corev1.ServiceAccount, error) {
 
 	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)

@@ -37,14 +37,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	"k8s.io/client-go/kubernetes/scheme"
+
+	v1 "github.com/soda-cdm/kahu/apis/kahu/v1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions/kahu/v1beta1"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/utils"
-	"k8s.io/client-go/kubernetes/scheme"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -59,6 +62,7 @@ type Config struct {
 
 type controller struct {
 	config               *Config
+	runtimeClinet        runtimeclient.Client
 	logger               log.FieldLogger
 	restClientconfig     *restclient.Config
 	genericController    controllers.Controller
@@ -70,12 +74,14 @@ type controller struct {
 }
 
 func NewController(config *Config,
+	rtClinet runtimeclient.Client,
 	restClientconfig *restclient.Config,
 	kahuClient versioned.Interface,
 	backupInformer kahuinformer.BackupInformer) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
 	backupController := &controller{
+		runtimeClinet:        rtClinet,
 		kahuClient:           kahuClient,
 		backupLister:         backupInformer.Lister(),
 		restClientconfig:     restClientconfig,
@@ -88,15 +94,16 @@ func NewController(config *Config,
 	// register to informer to receive events and push events to worker queue
 	backupInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    backupController.handleAdd,
-			DeleteFunc: backupController.handleDel,
+			AddFunc: backupController.handleAdd,
+			// DeleteFunc: backupController.handleDel,
+			UpdateFunc: backupController.handleUpdate,
 		},
 	)
 
 	// construct controller interface to process worker queue
 	genericController, err := controllers.NewControllerBuilder(controllerName).
 		SetLogger(logger).
-		SetHandler(backupController.doBackup).
+		SetHandler(backupController.processBackup).
 		Build()
 	if err != nil {
 		return nil, err
@@ -107,7 +114,7 @@ func NewController(config *Config,
 	return genericController, err
 }
 
-func (c *controller) doBackup(key string) error {
+func (c *controller) processBackup(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		c.logger.Errorf("splitting key into namespace and name, error %s\n", err.Error())
@@ -121,6 +128,27 @@ func (c *controller) doBackup(key string) error {
 		if apierrors.IsNotFound(err) {
 			c.logger.Debugf("backup %s not found", name)
 		}
+		return err
+	}
+	if backup.DeletionTimestamp == nil {
+		c.logger.Infoln("Backup should be performed")
+		err = c.doBackup(backup)
+		if err != nil {
+			return err
+		}
+	} else {
+		c.logger.Infoln("Delete should be performed")
+	}
+
+	return err
+}
+
+func (c *controller) doBackup(backup *v1.Backup) error {
+
+	// setting finanlizer
+	controllerutil.AddFinalizer(backup, "backup-controller-finalizer")
+	err := c.runtimeClinet.Update(context.TODO(), backup)
+	if err != nil {
 		return err
 	}
 
@@ -329,7 +357,7 @@ func (c *controller) runBackup(backup *PrepareBackup) ([]string, error) {
 					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
 				}
 			case utils.Replicaset:
-				err = c.getReplicasets(ns, backup, backupClient)
+				err = c.replicaSetBackup(ns, backup, backupClient)
 				if err != nil {
 					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
@@ -340,7 +368,14 @@ func (c *controller) runBackup(backup *PrepareBackup) ([]string, error) {
 				if err != nil {
 					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseFailed))
 				} else {
-					backupStatus = append(backupStatus, string(v1beta1.BackupPhaseCompleted))
+					backupStatus = append(backupStatus, string(v1.BackupPhaseCompleted))
+				}
+			case utils.Daemonset:
+				err = c.daemonSetBackup(ns, backup, backupClient)
+				if err != nil {
+					backupStatus = append(backupStatus, string(v1.BackupPhaseFailed))
+				} else {
+					backupStatus = append(backupStatus, string(v1.BackupPhaseCompleted))
 				}
 			default:
 				continue
@@ -394,29 +429,31 @@ func (c *controller) backupSend(obj runtime.Object, metadataName string,
 	return err
 }
 
-func (c *controller) deleteBackup(name string, backup *v1beta1.Backup) {
+func (c *controller) deleteBackup(backup *v1.Backup) error {
 	// TODO: delete need to be added
-	c.logger.Infof("delete is called for backup:%s", name)
+	c.logger.Infof("delete is called for backup:%s", backup.Name)
 
+	if backup.GetFinalizers() != nil {
+		c.logger.Infof("started to delete backup")
+		controllerutil.RemoveFinalizer(backup, "backup-controller-finalizer")
+		err := c.runtimeClinet.Update(context.TODO(), backup)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *controller) handleAdd(obj interface{}) {
-	backup := obj.(*v1beta1.Backup)
-
-	switch backup.Status.Phase {
-	case "", v1beta1.BackupPhaseInit:
-	default:
-		c.logger.WithFields(log.Fields{
-			"backup": utils.NamespaceAndName(backup),
-			"phase":  backup.Status.Phase,
-		}).Infof("Backup: %s is not New, so will not be processed", backup.Name)
-		return
-	}
 	c.genericController.Enqueue(obj)
 }
 
-func (c *controller) handleDel(obj interface{}) {
-	c.genericController.Enqueue(obj)
+func (c *controller) handleUpdate(oldobj, obj interface{}) {
+	backup := obj.(*v1.Backup)
+
+	if backup.DeletionTimestamp != nil {
+		c.deleteBackup(backup)
+	}
 }
 
 // addTypeInformationToObject adds TypeMeta information to a runtime.Object based upon the loaded scheme.Scheme

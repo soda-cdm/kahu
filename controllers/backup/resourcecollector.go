@@ -246,11 +246,32 @@ func (c *controller) getEndpoints(namespace string, backup *PrepareBackup,
 	return nil
 }
 
-func (c *controller) getReplicasets(namespace string, backup *PrepareBackup,
+func (c *controller) GetReplicaSetAndBackup(name, namespace string,
 	backupClient metaservice.MetaService_BackupClient) error {
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return err
+	}
 
-	c.logger.Infoln("starting collecting replicasets")
-	k8sClinet, err := kubernetes.NewForConfig(c.restClientconfig)
+	replicaset, err := k8sClient.AppsV1().ReplicaSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	err = c.backupSend(replicaset, replicaset.Name, backupClient)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (c *controller) replicaSetBackup(namespace string,
+	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
+
+	c.logger.Infoln("starting collecting replicaset")
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
 		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
@@ -262,30 +283,45 @@ func (c *controller) getReplicasets(namespace string, backup *PrepareBackup,
 	}
 
 	selectors := labels.Set(labelSelectors).String()
-	replicasetList, err := k8sClinet.AppsV1().ReplicaSets(namespace).List(context.TODO(), metav1.ListOptions{
+
+	rList, err := k8sClient.AppsV1().ReplicaSets(namespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectors,
 	})
 	if err != nil {
 		return err
 	}
-
-	var allreplicasetList []string
-	for _, sc := range replicasetList.Items {
-		allreplicasetList = append(allreplicasetList, sc.Name)
+	var replicasetAllList []string
+	for _, replicaset := range rList.Items {
+		replicasetAllList = append(replicasetAllList, replicaset.Name)
 	}
 
-	allreplicasetList = utils.FindMatchedStrings(utils.Replicaset, allreplicasetList, backup.Spec.IncludedResources,
+	replicasetAllList = utils.FindMatchedStrings(utils.Replicaset, replicasetAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
-	for _, replicaset := range replicasetList.Items {
-
-		if utils.Contains(allreplicasetList, replicaset.Name) {
-			replicasetData, err := k8sClinet.AppsV1().ReplicaSets(namespace).Get(context.TODO(), replicaset.Name, metav1.GetOptions{})
+	for _, replicaset := range rList.Items {
+		if utils.Contains(replicasetAllList, replicaset.Name) {
+			// backup the replicaset yaml
+			err = c.GetReplicaSetAndBackup(replicaset.Name, replicaset.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
 
-			err = c.backupSend(replicasetData, replicaset.Name, backupClient)
+			// backup the volumespec releted object like, configmaps, secret, pvc and sc
+			err = c.GetVolumesSpec(replicaset.Spec.Template.Spec, replicaset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get service account relared objects
+			err = c.GetServiceAccountSpec(replicaset.Spec.Template.Spec, replicaset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get services based on selectors
+			var selectorList []map[string]string
+			selectorList = append(selectorList, replicaset.Spec.Selector.MatchLabels)
+			err = c.GetServiceForPod(replicaset.Namespace, selectorList, backupClient, k8sClient)
 			if err != nil {
 				return err
 			}
@@ -377,11 +413,8 @@ func (c *controller) GetVolumesSpec(podspec v1.PodSpec, namespace string,
 
 			// now get the storageclass used in PVC
 			var storageClassName string
-			storageClassName = "standard"
-			if pvc.Spec.StorageClassName != nil {
-				if *pvc.Spec.StorageClassName != "" {
-					storageClassName = *pvc.Spec.StorageClassName
-				}
+			if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
+				storageClassName = *pvc.Spec.StorageClassName
 				sc, err := c.GetSC(storageClassName)
 				if err != nil {
 					c.logger.Errorf("unable to get storageclass:%s", storageClassName, err)
@@ -390,7 +423,7 @@ func (c *controller) GetVolumesSpec(podspec v1.PodSpec, namespace string,
 
 				err = c.backupSend(sc, storageClassName, backupClient)
 				if err != nil {
-					c.logger.Errorf("unable to backuo storageclass:%s, error:%s", storageClassName, err)
+					c.logger.Errorf("unable to backup storageclass:%s, error:%s", storageClassName, err)
 					return err
 				}
 			}
@@ -398,12 +431,12 @@ func (c *controller) GetVolumesSpec(podspec v1.PodSpec, namespace string,
 
 		// collect secret used in deployment
 		if v.Secret != nil {
-			pvc, err := c.GetSecret(namespace, v.Secret.SecretName)
+			secret, err := c.GetSecret(namespace, v.Secret.SecretName)
 			if err != nil {
 				c.logger.Errorf("unable to get secret:%s, error:%s", v.Secret.SecretName, err)
 				return err
 			}
-			err = c.backupSend(pvc, v.ConfigMap.Name, backupClient)
+			err = c.backupSend(secret, secret.Name, backupClient)
 			if err != nil {
 				c.logger.Errorf("unable to backup secret: %s, error:%s", v.Secret.SecretName, err)
 				return err
