@@ -24,10 +24,6 @@ import (
 	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
-var ResultantNamespace = []string{}
-
-var ResultantResource = []string{}
-
 type itemKey struct {
 	resource  string
 	namespace string

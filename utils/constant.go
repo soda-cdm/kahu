@@ -19,3 +19,21 @@ package utils
 const (
 	BackupLocationServiceAnnotation = "kahu.io/provider-service"
 )
+
+const (
+	Pod         string = "Pod"
+	Service     string = "Service"
+	Deployment  string = "Deployment"
+	Replicaset  string = "ReplicaSet"
+	Statefulset string = "StatefulSet"
+	Daemonset   string = "DaemonSet"
+	Configmap   string = "ConfigMap"
+	Secret      string = "Secret"
+	Pvc         string = "PersistentVolumeClaim"
+	Endpoint    string = "Endpoint"
+	Sc          string = "StorageClass"
+)
+
+var SupportedResourceList = []string{Pod, Service, Deployment, Replicaset, Statefulset,
+	Daemonset, Configmap, Secret, Pvc, Endpoint, Sc,
+}

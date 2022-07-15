@@ -19,7 +19,6 @@ package backup
 import (
 	"context"
 
-	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,20 +78,33 @@ func (c *controller) deploymentBackup(namespace string,
 		deploymentAllList = append(deploymentAllList, deployment.Name)
 	}
 
-	deploymentAllList = utils.FindMatchedStrings("deployments", deploymentAllList, backup.Spec.IncludedResources,
+	deploymentAllList = utils.FindMatchedStrings(utils.Deployment, deploymentAllList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
-	for _, item := range dList.Items {
-		if utils.Contains(deploymentAllList, item.Name) {
-			err = c.GetDeploymentAndBackup(item.Name, item.Namespace, backupClient)
+	for _, deployment := range dList.Items {
+		if utils.Contains(deploymentAllList, deployment.Name) {
+			// backup the deployment yaml
+			err = c.GetDeploymentAndBackup(deployment.Name, deployment.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetConfigMapUsedInDeployment(item, backupClient)
+
+			// backup the volumespec releted object like, configmaps, secret, pvc and sc
+			err = c.GetVolumesSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
 			if err != nil {
 				return err
 			}
-			err = c.GetServiceAccountUsedInDeployment(item, backupClient)
+
+			// get service account relared objects
+			err = c.GetServiceAccountSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get services based on selectors
+			var selectorList []map[string]string
+			selectorList = append(selectorList, deployment.Spec.Selector.MatchLabels)
+			err = c.GetServiceForPod(deployment.Namespace, selectorList, backupClient, k8sClient)
 			if err != nil {
 				return err
 			}
@@ -101,35 +113,86 @@ func (c *controller) deploymentBackup(namespace string,
 	return nil
 }
 
-func (c *controller) GetConfigMapUsedInDeployment(deployment v1.Deployment,
+func (c *controller) GetDaemonSetAndBackup(name, namespace string,
 	backupClient metaservice.MetaService_BackupClient) error {
-	for _, v := range deployment.Spec.Template.Spec.Volumes {
-		if v.ConfigMap != nil {
-			configMap, err := c.GetConfigMap(deployment.Namespace, v.ConfigMap.Name)
-			if err != nil {
-				c.logger.Errorf("unable to get configmap for name: %s", v.ConfigMap.Name)
-				return err
-			}
-
-			c.backupSend(configMap, v.ConfigMap.Name, backupClient)
-		}
-	}
-	return nil
-
-}
-
-func (c *controller) GetServiceAccountUsedInDeployment(deployment v1.Deployment,
-	backupClient metaservice.MetaService_BackupClient) error {
-	saName := deployment.Spec.Template.Spec.ServiceAccountName
-
-	sa, err := c.GetServiceAccount(deployment.Namespace, saName)
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
 	if err != nil {
-		c.logger.Errorf("unable to get service account for name: %s", saName)
+		c.logger.Errorf("Unable to get k8sclient %s", err)
 		return err
 	}
 
-	c.backupSend(sa, saName, backupClient)
+	daemonset, err := k8sClient.AppsV1().DaemonSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
 
+	err = c.backupSend(daemonset, daemonset.Name, backupClient)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (c *controller) daemonSetBackup(namespace string,
+	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
+
+	c.logger.Infoln("starting collecting daemonset")
+	k8sClient, err := kubernetes.NewForConfig(c.restClientconfig)
+	if err != nil {
+		c.logger.Errorf("Unable to get k8sclient %s", err)
+		return err
+	}
+
+	var labelSelectors map[string]string
+	if backup.Spec.Label != nil {
+		labelSelectors = backup.Spec.Label.MatchLabels
+	}
+	selectors := labels.Set(labelSelectors).String()
+
+	dList, err := k8sClient.AppsV1().DaemonSets(namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: selectors,
+	})
+	if err != nil {
+		return err
+	}
+	var daemonsetAllList []string
+	for _, daemonset := range dList.Items {
+		daemonsetAllList = append(daemonsetAllList, daemonset.Name)
+	}
+
+	daemonsetAllList = utils.FindMatchedStrings(utils.Daemonset, daemonsetAllList, backup.Spec.IncludedResources,
+		backup.Spec.ExcludedResources)
+
+	for _, daemonset := range dList.Items {
+		if utils.Contains(daemonsetAllList, daemonset.Name) {
+			// backup the daemonset yaml
+			err = c.GetDaemonSetAndBackup(daemonset.Name, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// backup the volumespec releted object like, configmaps, secret, pvc and sc
+			err = c.GetVolumesSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get service account relared objects
+			err = c.GetServiceAccountSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// get services based on selectors
+			var selectorList []map[string]string
+			selectorList = append(selectorList, daemonset.Spec.Selector.MatchLabels)
+			err = c.GetServiceForPod(daemonset.Namespace, selectorList, backupClient, k8sClient)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -210,7 +273,7 @@ func (c *controller) getPersistentVolumeClaims(namespace string, backup *Prepare
 		allPVCList = append(allPVCList, pvc.Name)
 	}
 
-	allPVCList = utils.FindMatchedStrings("persistentvolumeclaims", allPVCList, backup.Spec.IncludedResources,
+	allPVCList = utils.FindMatchedStrings(utils.Pvc, allPVCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allPVC.Items {
@@ -271,7 +334,7 @@ func (c *controller) getStorageClass(backup *PrepareBackup,
 		allSCList = append(allSCList, sc.Name)
 	}
 
-	allSCList = utils.FindMatchedStrings("storageclasses", allSCList, backup.Spec.IncludedResources,
+	allSCList = utils.FindMatchedStrings(utils.Sc, allSCList, backup.Spec.IncludedResources,
 		backup.Spec.ExcludedResources)
 
 	for _, item := range allSC.Items {
