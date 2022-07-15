@@ -221,37 +221,34 @@ func (c *controller) prepareBackupRequest(backup *v1beta1.Backup) *PrepareBackup
 		backupRequest.Labels = make(map[string]string)
 	}
 
-	// validate the resources from include and exlude list
-	var includedresourceKindList []string
-	var excludedresourceKindList []string
-
-	for _, resource := range backupRequest.Spec.IncludedResources {
-		includedresourceKindList = append(includedresourceKindList, resource.Kind)
-	}
-
-	if len(includedresourceKindList) == 0 {
-		for _, resource := range backupRequest.Spec.ExcludedResources {
-			excludedresourceKindList = append(excludedresourceKindList, resource.Kind)
-		}
-	}
-
-	ResultantResource = utils.GetResultantItems(utils.SupportedResourceList, includedresourceKindList, excludedresourceKindList)
-
 	// validate the namespace from include and exlude list
 	for _, err := range utils.ValidateNamespace(backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces) {
 		backupRequest.Status.ValidationErrors = append(backupRequest.Status.ValidationErrors, fmt.Sprintf("Include/Exclude namespace list is not valid: %v", err))
 	}
 
-	var allNamespace []string
-	if len(backupRequest.Spec.IncludedNamespaces) == 0 {
-		allNamespace, _ = c.ListNamespaces(backupRequest)
-	}
-	ResultantNamespace = utils.GetResultantItems(allNamespace, backupRequest.Spec.IncludedNamespaces, backupRequest.Spec.ExcludedNamespaces)
-
 	// till now validation is ok. Set the backupphase as New to start backup
-	backupRequest.Status.Phase = v1beta1.BackupPhaseInit
+	backupRequest.Status.Phase = v1.BackupPhaseInit
 
 	return backupRequest
+}
+
+func (c *controller) getResultant(backup *PrepareBackup) []string {
+	// validate the resources from include and exlude list
+	var includedresourceKindList []string
+	var excludedresourceKindList []string
+
+	for _, resource := range backup.Spec.IncludedResources {
+		includedresourceKindList = append(includedresourceKindList, resource.Kind)
+	}
+
+	if len(includedresourceKindList) == 0 {
+		for _, resource := range backup.Spec.ExcludedResources {
+			excludedresourceKindList = append(excludedresourceKindList, resource.Kind)
+		}
+	}
+
+	return utils.GetResultantItems(utils.SupportedResourceList, includedresourceKindList, excludedresourceKindList)
+
 }
 
 func (c *controller) updateStatus(bkp *v1beta1.Backup, client kahuv1client.BackupInterface, phase v1beta1.BackupPhase) {
@@ -290,8 +287,15 @@ func (c *controller) runBackup(backup *PrepareBackup) ([]string, error) {
 		return backupStatus, err
 	}
 
-	resultantResource := sets.NewString(ResultantResource...)
-	resultantNamespace := sets.NewString(ResultantNamespace...)
+	resultantResource := sets.NewString(c.getResultant(backup)...)
+
+	var allNamespace []string
+	if len(backup.Spec.IncludedNamespaces) == 0 {
+		allNamespace, _ = c.ListNamespaces(backup)
+	}
+	resultNs := utils.GetResultantItems(allNamespace, backup.Spec.IncludedNamespaces, backup.Spec.ExcludedNamespaces)
+
+	resultantNamespace := sets.NewString(resultNs...)
 	c.logger.Infof("backup will be taken for these resources:%+v", resultantResource)
 	c.logger.Infof("backup will be taken for these namespaces:%+v", resultantNamespace)
 
