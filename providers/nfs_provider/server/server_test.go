@@ -107,5 +107,3 @@ func TestUpload(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, "failed with error", err.Error())
 }
-
-
