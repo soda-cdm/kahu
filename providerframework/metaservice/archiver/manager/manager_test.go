@@ -40,7 +40,7 @@ func (f *fakeStruct) Read(p []byte) (n int, err error) {
 	return 1, nil
 }
 
-type ExampleTestSuite struct {
+type ManagerTestSuite struct {
 	suite.Suite
 	mgr          *archivalManager
 	archFileName string
@@ -52,7 +52,7 @@ type ExampleTestSuite struct {
 	archFilePath string
 }
 
-func (suite *ExampleTestSuite) BeforeTest(suiteName, testName string) {
+func (suite *ManagerTestSuite) BeforeTest(suiteName, testName string) {
 
 	switch testName {
 	case "TestGetArchiver":
@@ -98,7 +98,7 @@ func (suite *ExampleTestSuite) BeforeTest(suiteName, testName string) {
 	}
 }
 
-func (suite *ExampleTestSuite) AfterTest(suiteName, testName string) {
+func (suite *ManagerTestSuite) AfterTest(suiteName, testName string) {
 
 	switch testName {
 	case "TestGetArchiver":
@@ -123,7 +123,7 @@ func (suite *ExampleTestSuite) AfterTest(suiteName, testName string) {
 	}
 }
 
-func (suite *ExampleTestSuite) TestGetArchiver() {
+func (suite *ManagerTestSuite) TestGetArchiver() {
 
 	//when the compression type is fake not registered
 	faketyp := "faketype"
@@ -143,7 +143,7 @@ func (suite *ExampleTestSuite) TestGetArchiver() {
 	assert.Equal(suite.T(), err1, err)
 }
 
-func (suite *ExampleTestSuite) TestGetArchiveReader() {
+func (suite *ManagerTestSuite) TestGetArchiveReader() {
 	//invalid compression type
 	faketyp := archiver.CompressionType("faketype")
 	_, err := suite.mgr.GetArchiveReader(faketyp, suite.archFileName)
@@ -163,6 +163,6 @@ func (suite *ExampleTestSuite) TestGetArchiveReader() {
 
 }
 
-func TestExampleTestSuite(t *testing.T) {
-	suite.Run(t, new(ExampleTestSuite))
+func TestManagerTestSuite(t *testing.T) {
+	suite.Run(t, new(ManagerTestSuite))
 }
