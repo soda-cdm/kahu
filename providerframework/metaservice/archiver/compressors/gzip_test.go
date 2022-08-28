@@ -57,14 +57,25 @@ func (suite *GzipTestSuite) BeforeTest(suiteName, testName string) {
 		gzipWriter.Close()
 		out.Close()
 
+		out, err = os.Open(suite.fileName)
+		assert.Nil(suite.T(), err)
+		//defer out.Close()
+
+		gzip, _ := gzip.NewReader(out)
+		suite.fakeGzipReader = &gzipReader{
+			reader: out,
+			gzip:   gzip,
+		}
+
 	}
 }
 
 func (suite *GzipTestSuite) AfterTest(suiteName, testName string) {
 	switch testName {
 	case "TestCloseGzipReader", "TestReadGzipReader":
-		defer os.Remove(suite.fileName)
+		os.Remove(suite.fileName)
 	}
+
 }
 
 func (suite *GzipTestSuite) TestCloseGzipWriter() {
@@ -78,35 +89,35 @@ func (suite *GzipTestSuite) TestWriteGzipWriter() {
 }
 
 func (suite *GzipTestSuite) TestCloseGzipReader() {
+	/*
+		out, err := os.Open(suite.fileName)
+		assert.Nil(suite.T(), err)
+		defer out.Close()
 
-	out, err := os.Open(suite.fileName)
-	assert.Nil(suite.T(), err)
-	defer out.Close()
-
-	fakeStr := &mocks.FakeStruct{}
-	gzip, _ := gzip.NewReader(out)
-	suite.fakeGzipReader = &gzipReader{
-		reader: fakeStr,
-		gzip:   gzip,
-	}
-
-	err = suite.fakeGzipReader.Close()
+		gzip, _ := gzip.NewReader(out)
+		suite.fakeGzipReader = &gzipReader{
+			reader: out,
+			gzip:   gzip,
+		}
+	*/
+	err := suite.fakeGzipReader.Close()
 	assert.Nil(suite.T(), err)
 }
 
 func (suite *GzipTestSuite) TestReadGzipReader() {
+	/*
+		out, err := os.Open(suite.fileName)
+		assert.Nil(suite.T(), err)
+		defer out.Close()
 
-	out, err := os.Open(suite.fileName)
-	assert.Nil(suite.T(), err)
-	defer out.Close()
-
-	gzip, err := gzip.NewReader(out)
-	assert.Nil(suite.T(), err)
-	suite.fakeGzipReader = &gzipReader{
-		reader: out,
-		gzip:   gzip,
-	}
-	_, err = suite.fakeGzipReader.Read(suite.data)
+		gzip, err := gzip.NewReader(out)
+		assert.Nil(suite.T(), err)
+		suite.fakeGzipReader = &gzipReader{
+			reader: out,
+			gzip:   gzip,
+		}
+	*/
+	_, err := suite.fakeGzipReader.Read(suite.data)
 	assert.Equal(suite.T(), err, io.EOF)
 }
 

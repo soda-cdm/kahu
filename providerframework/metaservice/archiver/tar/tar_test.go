@@ -78,45 +78,42 @@ func (suite *TarTestSuite) BeforeTest(suiteName, testName string) {
 		_, err = tw.Write(suite.data)
 		assert.Nil(suite.T(), err)
 
+		file, err = os.Open(suite.file)
+		assert.Nil(suite.T(), err)
+		fakeTarReader := tar.NewReader(file)
+		suite.tarArchReader = &tarArchiveReader{
+			reader: file,
+			tar:    fakeTarReader,
+		}
+
 	}
 }
 
 func (suite *TarTestSuite) AfterTest(suiteName, testName string) {
 	switch testName {
-	case "TestWriteFile":
+	case "TestWriteFile", "TestReadNext":
 		os.Remove(suite.file)
 	}
 }
 
 func (suite *TarTestSuite) TestWriteFile() {
-
 	err := suite.archiver.WriteFile(suite.file, suite.data)
 	assert.Nil(suite.T(), err)
 
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiver() {
-
 	err := suite.archiver.Close()
 	assert.Nil(suite.T(), err)
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiveReader() {
-
 	err := suite.tarArchReader.Close()
 	assert.Nil(suite.T(), err)
 }
 
 func (suite *TarTestSuite) TestReadNext() {
-
-	file, err := os.Open(suite.file)
-	assert.Nil(suite.T(), err)
-	fakeTarReader := tar.NewReader(file)
-	suite.tarArchReader = &tarArchiveReader{
-		reader: file,
-		tar:    fakeTarReader,
-	}
-	_, _, err = suite.tarArchReader.ReadNext()
+	_, _, err := suite.tarArchReader.ReadNext()
 	assert.Nil(suite.T(), err)
 
 }
