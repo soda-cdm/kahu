@@ -16,20 +16,32 @@ limitations under the License.
 
 package mocks
 
-type FakeStruct struct{}
+import "github.com/stretchr/testify/mock"
+
+type FakeStruct struct {
+	mock.Mock
+}
 
 func (f *FakeStruct) Write(p []byte) (n int, err error) {
-	return 1, nil
+	args := f.Called(p)
+	return args.Int(0), args.Error(1)
+	//return 1, nil
 }
 
 func (f *FakeStruct) Close() error {
-	return nil
+	args := f.Called()
+	return args.Error(0)
+	//return nil
 }
 
 func (f *FakeStruct) Read(p []byte) (n int, err error) {
-	return 0, nil
+	args := f.Called(p)
+	return args.Int(0), args.Error(1)
+	//return 0, nil
 }
 
 func (f *FakeStruct) ReadByte() (byte, error) {
-	return 1, nil
+	args := f.Called()
+	return 1, args.Error(1)
+	//return 1, nil
 }

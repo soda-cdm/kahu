@@ -23,12 +23,13 @@ import (
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
 
 type TarTestSuite struct {
 	suite.Suite
-	fakestr       *mocks.FakeStruct
+	fakestr       mocks.FakeStruct
 	file          string
 	data          []byte
 	archiver      *tarArchiver
@@ -39,25 +40,21 @@ func (suite *TarTestSuite) BeforeTest(suiteName, testName string) {
 	suite.file = "testFile"
 	str := "hello world!!!"
 	suite.data = []byte(str)
+	suite.fakestr.On("Write", mock.Anything).Return(1, nil)
+	suite.fakestr.On("Close").Return(nil)
+	suite.fakestr.On("Read", mock.Anything).Return(1, nil)
+
 	switch testName {
-	case "TestWriteFile":
-
-		fakeTarWriter := tar.NewWriter(suite.fakestr)
+	case "TestWriteFile", "TestCloseTarArchiver":
+		fakeTarWriter := tar.NewWriter(&suite.fakestr)
 		suite.archiver = &tarArchiver{
-			tar: fakeTarWriter,
-		}
-	case "TestCloseTarArchiver":
-
-		fakeTarWriter := tar.NewWriter(suite.fakestr)
-		fakeArchiverWriter := suite.fakestr
-		suite.archiver = &tarArchiver{
-			writer: fakeArchiverWriter,
+			writer: &suite.fakestr,
 			tar:    fakeTarWriter,
 		}
 	case "TestCloseTarArchiveReader":
-		fakeTarReader := tar.NewReader(suite.fakestr)
+		fakeTarReader := tar.NewReader(&suite.fakestr)
 		suite.tarArchReader = &tarArchiveReader{
-			reader: suite.fakestr,
+			reader: &suite.fakestr,
 			tar:    fakeTarReader,
 		}
 	case "TestReadNext":
@@ -85,7 +82,6 @@ func (suite *TarTestSuite) BeforeTest(suiteName, testName string) {
 			reader: file,
 			tar:    fakeTarReader,
 		}
-
 	}
 }
 
@@ -99,23 +95,24 @@ func (suite *TarTestSuite) AfterTest(suiteName, testName string) {
 func (suite *TarTestSuite) TestWriteFile() {
 	err := suite.archiver.WriteFile(suite.file, suite.data)
 	assert.Nil(suite.T(), err)
-
+	suite.fakestr.AssertCalled(suite.T(), "Write", mock.Anything)
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiver() {
 	err := suite.archiver.Close()
 	assert.Nil(suite.T(), err)
+	suite.fakestr.AssertCalled(suite.T(), "Close", mock.Anything)
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiveReader() {
 	err := suite.tarArchReader.Close()
 	assert.Nil(suite.T(), err)
+	suite.fakestr.AssertCalled(suite.T(), "Close", mock.Anything)
 }
 
 func (suite *TarTestSuite) TestReadNext() {
 	_, _, err := suite.tarArchReader.ReadNext()
 	assert.Nil(suite.T(), err)
-
 }
 
 func TestTarTestSuite(t *testing.T) {
