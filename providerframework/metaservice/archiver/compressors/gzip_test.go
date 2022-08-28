@@ -19,55 +19,95 @@ package compressors
 import (
 	"compress/gzip"
 	"io"
+	"os"
 	"testing"
 
+	"github.com/soda-cdm/kahu/providerframework/metaservice/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
-type fakeStruct struct{}
-
-func (f *fakeStruct) Write(p []byte) (n int, err error) {
-	return 1, nil
-}
-
-func (f *fakeStruct) Close() error {
-	return nil
-}
-
-func (f *fakeStruct) Read(p []byte) (n int, err error) {
-	return 0, io.EOF
-}
-
-func (f *fakeStruct) ReadByte() (byte, error) {
-	return 1, nil
-}
-
 type GzipTestSuite struct {
 	suite.Suite
+	fakeGzipWriter *gzipWriter
+	fakeGzipReader *gzipReader
+	data           []byte
+	fileName       string
+}
+
+func (suite *GzipTestSuite) BeforeTest(suiteName, testName string) {
+	suite.fileName = "fakeFile"
+	str := "Sample data to write in TestGzipReader"
+	suite.data = []byte(str)
+	switch testName {
+	case "TestWriteGzipWriter", "TestCloseGzipWriter":
+		fakeStr := &mocks.FakeStruct{}
+		suite.fakeGzipWriter = &gzipWriter{
+			writer: fakeStr,
+			gzip:   gzip.NewWriter(fakeStr),
+		}
+
+	case "TestCloseGzipReader", "TestReadGzipReader":
+
+		out, err := os.Create(suite.fileName)
+		assert.Nil(suite.T(), err)
+		gzipWriter := gzip.NewWriter(out)
+		_, err = gzipWriter.Write(suite.data)
+		assert.Nil(suite.T(), err)
+		gzipWriter.Close()
+		out.Close()
+
+	}
+}
+
+func (suite *GzipTestSuite) AfterTest(suiteName, testName string) {
+	switch testName {
+	case "TestCloseGzipReader", "TestReadGzipReader":
+		defer os.Remove(suite.fileName)
+	}
 }
 
 func (suite *GzipTestSuite) TestCloseGzipWriter() {
-
-	fakeStr := &fakeStruct{}
-	fakeCompressor := &gzipWriter{
-		writer: fakeStr,
-		gzip:   gzip.NewWriter(fakeStr),
-	}
-	err := fakeCompressor.Close()
+	err := suite.fakeGzipWriter.Close()
 	assert.Nil(suite.T(), err)
 }
 
 func (suite *GzipTestSuite) TestWriteGzipWriter() {
-
-	fakeStr := &fakeStruct{}
-	fakeCompressor := &gzipWriter{
-		writer: fakeStr,
-		gzip:   gzip.NewWriter(fakeStr),
-	}
-	data := make([]byte, 1024)
-	_, err := fakeCompressor.Write(data)
+	_, err := suite.fakeGzipWriter.Write(suite.data)
 	assert.Nil(suite.T(), err)
+}
+
+func (suite *GzipTestSuite) TestCloseGzipReader() {
+
+	out, err := os.Open(suite.fileName)
+	assert.Nil(suite.T(), err)
+	defer out.Close()
+
+	fakeStr := &mocks.FakeStruct{}
+	gzip, _ := gzip.NewReader(out)
+	suite.fakeGzipReader = &gzipReader{
+		reader: fakeStr,
+		gzip:   gzip,
+	}
+
+	err = suite.fakeGzipReader.Close()
+	assert.Nil(suite.T(), err)
+}
+
+func (suite *GzipTestSuite) TestReadGzipReader() {
+
+	out, err := os.Open(suite.fileName)
+	assert.Nil(suite.T(), err)
+	defer out.Close()
+
+	gzip, err := gzip.NewReader(out)
+	assert.Nil(suite.T(), err)
+	suite.fakeGzipReader = &gzipReader{
+		reader: out,
+		gzip:   gzip,
+	}
+	_, err = suite.fakeGzipReader.Read(suite.data)
+	assert.Equal(suite.T(), err, io.EOF)
 }
 
 func TestGzipTestSuite(t *testing.T) {

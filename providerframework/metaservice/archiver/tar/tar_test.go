@@ -18,71 +18,107 @@ package tar
 
 import (
 	"archive/tar"
+	"os"
 	"testing"
 
+	"github.com/soda-cdm/kahu/providerframework/metaservice/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
-type fakeStruct struct{}
-
-func (f *fakeStruct) Write(p []byte) (n int, err error) {
-	return 1, nil
-}
-
-func (f *fakeStruct) Close() error {
-	return nil
-}
-
-func (f *fakeStruct) Read(p []byte) (n int, err error) {
-	return 1, nil
-}
-
 type TarTestSuite struct {
 	suite.Suite
-	fakestr *fakeStruct
+	fakestr       *mocks.FakeStruct
+	file          string
+	data          []byte
+	archiver      *tarArchiver
+	tarArchReader *tarArchiveReader
+}
+
+func (suite *TarTestSuite) BeforeTest(suiteName, testName string) {
+	suite.file = "testFile"
+	str := "hello world!!!"
+	suite.data = []byte(str)
+	switch testName {
+	case "TestWriteFile":
+
+		fakeTarWriter := tar.NewWriter(suite.fakestr)
+		suite.archiver = &tarArchiver{
+			tar: fakeTarWriter,
+		}
+	case "TestCloseTarArchiver":
+
+		fakeTarWriter := tar.NewWriter(suite.fakestr)
+		fakeArchiverWriter := suite.fakestr
+		suite.archiver = &tarArchiver{
+			writer: fakeArchiverWriter,
+			tar:    fakeTarWriter,
+		}
+	case "TestCloseTarArchiveReader":
+		fakeTarReader := tar.NewReader(suite.fakestr)
+		suite.tarArchReader = &tarArchiveReader{
+			reader: suite.fakestr,
+			tar:    fakeTarReader,
+		}
+	case "TestReadNext":
+
+		file, err := os.Create(suite.file)
+		assert.Nil(suite.T(), err)
+		defer file.Close()
+		tw := tar.NewWriter(file)
+		defer tw.Close()
+
+		hdr := &tar.Header{
+			Name: suite.file,
+			Size: int64(len(suite.data)),
+		}
+		err = tw.WriteHeader(hdr)
+		assert.Nil(suite.T(), err)
+
+		_, err = tw.Write(suite.data)
+		assert.Nil(suite.T(), err)
+
+	}
+}
+
+func (suite *TarTestSuite) AfterTest(suiteName, testName string) {
+	switch testName {
+	case "TestWriteFile":
+		os.Remove(suite.file)
+	}
 }
 
 func (suite *TarTestSuite) TestWriteFile() {
 
-	file := "testFile"
-	data := make([]byte, 1024)
-	fakeTarWriter := tar.NewWriter(suite.fakestr)
-	archiver := &tarArchiver{
-		tar: fakeTarWriter,
-	}
-	err := archiver.WriteFile(file, data)
+	err := suite.archiver.WriteFile(suite.file, suite.data)
 	assert.Nil(suite.T(), err)
-
-	//data is nil
-	var data1 []byte
-	file1 := "testfile1"
-	err = archiver.WriteFile(file1, data1)
-	assert.NotNil(suite.T(), err)
 
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiver() {
 
-	fakeTarWriter := tar.NewWriter(suite.fakestr)
-	fakeArchiverWriter := suite.fakestr
-	archiver := &tarArchiver{
-		writer: fakeArchiverWriter,
-		tar:    fakeTarWriter,
-	}
-	err := archiver.Close()
+	err := suite.archiver.Close()
 	assert.Nil(suite.T(), err)
 }
 
 func (suite *TarTestSuite) TestCloseTarArchiveReader() {
 
-	fakeTarReader := tar.NewReader(suite.fakestr)
-	tarArchReader := &tarArchiveReader{
-		reader: suite.fakestr,
+	err := suite.tarArchReader.Close()
+	assert.Nil(suite.T(), err)
+}
+
+func (suite *TarTestSuite) TestReadNext() {
+
+	file, err := os.Open(suite.file)
+	assert.Nil(suite.T(), err)
+	fakeTarReader := tar.NewReader(file)
+	suite.tarArchReader = &tarArchiveReader{
+		reader: file,
 		tar:    fakeTarReader,
 	}
-	err := tarArchReader.Close()
+	_, _, err = suite.tarArchReader.ReadNext()
 	assert.Nil(suite.T(), err)
+
 }
 
 func TestTarTestSuite(t *testing.T) {

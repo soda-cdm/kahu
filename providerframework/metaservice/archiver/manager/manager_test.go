@@ -22,140 +22,133 @@ import (
 	"testing"
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver"
+	"github.com/soda-cdm/kahu/providerframework/metaservice/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
-
-type fakeStruct struct{}
-
-func (f *fakeStruct) Write(p []byte) (n int, err error) {
-	return 1, nil
-}
-
-func (f *fakeStruct) Close() error {
-	return nil
-}
-
-func (f *fakeStruct) Read(p []byte) (n int, err error) {
-	return 1, nil
-}
 
 type ManagerTestSuite struct {
 	suite.Suite
 	mgr          *archivalManager
 	archFileName string
 	typ          archiver.CompressionType
-	fwriter      *fakeStruct
-	fReader      *fakeStruct
-	invoke       func(Writer archiver.Writer) archiver.Writer
+	fwriter      *mocks.FakeStruct
+	fReader      *mocks.FakeStruct
+	wrirteInvoke func(Writer archiver.Writer) archiver.Writer
 	readInvoke   func(Reader archiver.Reader) archiver.Reader
 	archFilePath string
+	fakeType     string
+	archieveYard string
 }
 
 func (suite *ManagerTestSuite) BeforeTest(suiteName, testName string) {
+	suite.fakeType = "faketype"
+	suite.archieveYard = "fakeArchiveYard1"
+	suite.archFileName = "FakeArchfileName"
+	suite.typ = archiver.CompressionType("fake")
+	suite.archFilePath = suite.archieveYard + "/" + suite.archFileName
 
-	switch testName {
-	case "TestGetArchiver":
+	GetArchiverInit := func() {
 		suite.mgr = &archivalManager{
-			archiveYard: "fakeArchiveYard1",
+			archiveYard: suite.archieveYard,
 		}
 		suite.archFileName = "FakeArchfileName"
 
-		err := os.Mkdir("fakeArchiveYard1", 0777)
-		if err != nil {
-			fmt.Print(err)
-		}
+		err := os.Mkdir(suite.archieveYard, 0777)
+		assert.Nil(suite.T(), err)
 
-		suite.typ = archiver.CompressionType("fake")
-		suite.invoke = func(Writer archiver.Writer) archiver.Writer {
+		suite.wrirteInvoke = func(Writer archiver.Writer) archiver.Writer {
 			return suite.fwriter
 		}
-		RegisterCompressionWriterPlugins(suite.typ, suite.invoke)
+		RegisterCompressionWriterPlugins(suite.typ, suite.wrirteInvoke)
+	}
 
-	case "TestGetArchiveReader":
-
+	GetArchiveReaderInit := func() {
 		suite.mgr = &archivalManager{
-			archiveYard: "fakeArchiveYard2",
+			archiveYard: suite.archieveYard,
 		}
-		err := os.Mkdir("fakeArchiveYard2", 0777)
-		if err != nil {
-			fmt.Print(err)
-		}
-		_, err = os.Create("fakeArchiveYard2/FakeArchfileName")
-		if err != nil {
-			fmt.Print(err)
-		}
+		err := os.Mkdir(suite.archieveYard, 0777)
+		assert.Nil(suite.T(), err)
 
-		suite.typ = archiver.CompressionType("name")
-
-		suite.fReader = &fakeStruct{}
+		suite.fReader = &mocks.FakeStruct{}
 		suite.readInvoke = func(Reader archiver.Reader) archiver.Reader {
 			return suite.fReader
 		}
 		RegisterCompressionReaderPlugins(suite.typ, suite.readInvoke)
+	}
 
-		suite.archFilePath = "fakeArchiveYard2/FakeArchfileName"
+	switch testName {
+	case "TestGetArchiverFileAlreadyExists":
+		GetArchiverInit()
+		_, err := os.Create(suite.archFilePath)
+		assert.Nil(suite.T(), err)
+	case "TestGetArchiverSuccess":
+		GetArchiverInit()
+	case "TestGetArchiveReaderInvalidFilePath":
+		GetArchiveReaderInit()
+
+	case "TestGetArchiveReaderSuccess":
+		GetArchiveReaderInit()
+		_, err := os.Create(suite.archFilePath)
+		assert.Nil(suite.T(), err)
 	}
 }
 
 func (suite *ManagerTestSuite) AfterTest(suiteName, testName string) {
 
 	switch testName {
-	case "TestGetArchiver":
-		err := os.Remove("fakeArchiveYard1/FakeArchfileName") //0755
-		if err != nil {
-			fmt.Print(err)
-		}
-		err = os.Remove("fakeArchiveYard1") //0755
-		if err != nil {
-			fmt.Print(err)
-		}
+	case "TestGetArchiverFileAlreadyExists", "TestGetArchiverSuccess", "TestGetArchiveReaderSuccess":
+		err := os.Remove(suite.archFilePath)
+		assert.Nil(suite.T(), err)
 
-	case "TestGetArchiveReader":
-		err := os.Remove("fakeArchiveYard2/FakeArchfileName") //0755
-		if err != nil {
-			fmt.Print(err)
-		}
-		err = os.Remove("fakeArchiveYard2") //0755
-		if err != nil {
-			fmt.Print(err)
-		}
+		err = os.Remove(suite.archieveYard)
+		assert.Nil(suite.T(), err)
+
+	case "TestGetArchiveReaderInvalidFilePath":
+		err := os.Remove(suite.archieveYard)
+		assert.Nil(suite.T(), err)
 	}
 }
 
-func (suite *ManagerTestSuite) TestGetArchiver() {
+func (suite *ManagerTestSuite) TestGetArchiverFakeCompressionType() {
 
 	//when the compression type is fake not registered
-	faketyp := "faketype"
-	_, _, err := suite.mgr.GetArchiver(archiver.CompressionType(faketyp), suite.archFileName)
-	expErr := fmt.Errorf("archival plugin[%s] not available", faketyp)
+	_, _, err := suite.mgr.GetArchiver(archiver.CompressionType(suite.fakeType), suite.archFileName)
+	expErr := fmt.Errorf("archival plugin[%s] not available", suite.fakeType)
 	assert.Equal(suite.T(), expErr, err)
+}
 
+func (suite *ManagerTestSuite) TestGetArchiverSuccess() {
 	//success case
 	_, archFile, err := suite.mgr.GetArchiver(suite.typ, suite.archFileName)
 	assert.Nil(suite.T(), err)
 	assert.Equal(suite.T(), archFile, "fakeArchiveYard1/FakeArchfileName")
-
-	//when trying to give already existing file
-	fakefile := suite.archFileName
-	err1 := fmt.Errorf("archival file(fakeArchiveYard1/FakeArchfileName) already exist")
-	_, _, err = suite.mgr.GetArchiver(suite.typ, fakefile)
-	assert.Equal(suite.T(), err1, err)
 }
 
-func (suite *ManagerTestSuite) TestGetArchiveReader() {
-	//invalid compression type
-	faketyp := archiver.CompressionType("faketype")
-	_, err := suite.mgr.GetArchiveReader(faketyp, suite.archFileName)
-	expErr := fmt.Errorf("archival plugin[%s] not available", faketyp)
+func (suite *ManagerTestSuite) TestGetArchiverFileAlreadyExists() {
+	//when trying to give already existing file
+	fakefile := suite.archFileName
+	expErr := fmt.Errorf("archival file(fakeArchiveYard1/FakeArchfileName) already exist")
+	_, _, err := suite.mgr.GetArchiver(suite.typ, fakefile)
 	assert.Equal(suite.T(), expErr, err)
+}
 
+func (suite *ManagerTestSuite) TestGetArchiveReaderFakeCompressionType() {
+	//invalid compression type
+
+	_, err := suite.mgr.GetArchiveReader(archiver.CompressionType(suite.fakeType), suite.archFileName)
+	expErr := fmt.Errorf("archival plugin[%s] not available", suite.fakeType)
+	assert.Equal(suite.T(), expErr, err)
+}
+
+func (suite *ManagerTestSuite) TestGetArchiveReaderInvalidFilePath() {
 	//invalid path
 	archFileName := "fakepath"
-	_, err = suite.mgr.GetArchiveReader(suite.typ, archFileName)
-	expErr = fmt.Errorf("archival file(%s) do not exist", archFileName)
+	_, err := suite.mgr.GetArchiveReader(suite.typ, archFileName)
+	expErr := fmt.Errorf("archival file(%s) do not exist", archFileName)
 	assert.Equal(suite.T(), expErr, err)
-
+}
+func (suite *ManagerTestSuite) TestGetArchiveReaderSuccess() {
 	//success case
 	resArch, err := suite.mgr.GetArchiveReader(suite.typ, suite.archFilePath)
 	assert.NotNil(suite.T(), resArch)
