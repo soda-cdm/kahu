@@ -25,23 +25,19 @@ type FakeStruct struct {
 func (f *FakeStruct) Write(p []byte) (n int, err error) {
 	args := f.Called(p)
 	return args.Int(0), args.Error(1)
-	//return 1, nil
 }
 
 func (f *FakeStruct) Close() error {
 	args := f.Called()
 	return args.Error(0)
-	//return nil
 }
 
 func (f *FakeStruct) Read(p []byte) (n int, err error) {
 	args := f.Called(p)
 	return args.Int(0), args.Error(1)
-	//return 0, nil
 }
 
 func (f *FakeStruct) ReadByte() (byte, error) {
 	args := f.Called()
-	return 1, args.Error(1)
-	//return 1, nil
+	return args.Get(0).(byte), args.Error(1)
 }
