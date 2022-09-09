@@ -85,11 +85,11 @@ func (f *FakeMetaBackupClient) Delete(ctx context.Context, in *pb.DeleteRequest,
 }
 
 func (suite *ClientTestSuite) BeforeTest(suiteName, testName string) {
+	suite.filePath = "FakeFile"
 	switch testName {
 	case "TestUploadInvalidPath", "TestDownloadFail":
 		repo, _, _ := NewBackupRepository("/tmp/nfs_test.sock")
 		suite.repo = repo
-		suite.filePath = "fakeFile"
 
 	case "TestUploadValid":
 		client := &FakeMetaBackupClient{}
@@ -101,18 +101,25 @@ func (suite *ClientTestSuite) BeforeTest(suiteName, testName string) {
 		}
 		fakeRespoClient.On("Send", mock.Anything).Return(nil)
 		fakeRespoClient.On("CloseAndRecv", mock.Anything).Return(&pb.Empty{}, nil)
-		filePath := "fakeFile"
-		file, err := os.Create(filePath)
+		file, err := os.Create(suite.filePath)
 		assert.Nil(suite.T(), err)
 		defer file.Close()
 		str := "this is sample data"
 		data := []byte(str)
-		err = os.WriteFile(filePath, data, 0777)
+		err = os.WriteFile(suite.filePath, data, 0777)
+	}
+}
+
+func (suite *ClientTestSuite) AfterTest(suiteName, testName string) {
+	switch testName {
+	case "TestUploadValid":
+		err := os.Remove(suite.filePath)
+		assert.Nil(suite.T(), err)
+
 	}
 }
 
 func (suite *ClientTestSuite) TestUploadInvalidPath() {
-	suite.filePath = "fakeFile"
 	err := suite.repo.Upload(suite.filePath)
 	assert.NotNil(suite.T(), err)
 }

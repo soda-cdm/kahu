@@ -43,7 +43,7 @@ type ManagerTestSuite struct {
 
 func (suite *ManagerTestSuite) BeforeTest(suiteName, testName string) {
 	suite.fakeType = "faketype"
-	suite.archieveYard = "fakeArchiveYard1"
+	suite.archieveYard = "FakeArchiveYard"
 	suite.archFileName = "FakeArchfileName"
 	suite.typ = archiver.CompressionType("fake")
 	suite.archFilePath = suite.archieveYard + "/" + suite.archFileName
@@ -52,8 +52,6 @@ func (suite *ManagerTestSuite) BeforeTest(suiteName, testName string) {
 		suite.mgr = &archivalManager{
 			archiveYard: suite.archieveYard,
 		}
-		suite.archFileName = "FakeArchfileName"
-
 		err := os.Mkdir(suite.archieveYard, 0777)
 		assert.Nil(suite.T(), err)
 
@@ -122,13 +120,13 @@ func (suite *ManagerTestSuite) TestGetArchiverSuccess() {
 	//success case
 	_, archFile, err := suite.mgr.GetArchiver(suite.typ, suite.archFileName)
 	assert.Nil(suite.T(), err)
-	assert.Equal(suite.T(), archFile, "fakeArchiveYard1/FakeArchfileName")
+	assert.Equal(suite.T(), archFile, suite.archFilePath)
 }
 
 func (suite *ManagerTestSuite) TestGetArchiverFileAlreadyExists() {
 	//when trying to give already existing file
 	fakefile := suite.archFileName
-	expErr := fmt.Errorf("archival file(fakeArchiveYard1/FakeArchfileName) already exist")
+	expErr := fmt.Errorf("archival file(%s) already exist", suite.archFilePath)
 	_, _, err := suite.mgr.GetArchiver(suite.typ, fakefile)
 	assert.Equal(suite.T(), expErr, err)
 }
