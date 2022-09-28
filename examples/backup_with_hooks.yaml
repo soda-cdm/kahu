@@ -1,0 +1,47 @@
+apiVersion: kahu.io/v1
+kind: Backup
+metadata:
+  name: backup-demo-003
+spec:
+  excludeResources: []
+  includeNamespaces: [default]
+  metadataLocation: nfs
+  includeResources:
+    - name:
+      kind: Pod
+      isRegex: true
+  hook:
+    resources:
+    - name: kahu_hook1
+      includeNamespaces: [default]
+      excludeNamespaces: [test]
+      includeResources:
+      - name: busybox
+        kind: Pod
+        isRegex: true
+      pre:
+        - exec:
+            container: busybox
+            command:
+            - /bin/sh
+            - -c
+            - ls -l && hostname
+            timeout: 5m
+            onError: Fail
+
+    - name: kahu_hook2
+      includeNamespaces: [default]
+      excludeNamespaces: [test]
+      includeResources:
+      - name: busybox
+        kind: Pod
+        isRegex: true
+      post:
+        - exec:
+            container: busybox
+            command:
+            - /bin/sh
+            - -c
+            - ls -l && hostname
+            timeout: 5m
+            onError: Fail

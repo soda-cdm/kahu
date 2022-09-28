@@ -1,0 +1,131 @@
+# Copyright 2022 The SODA Authors.
+# Copyright 2022 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This mounts the nfs volume claim into /mnt and continuously
+# overwrites /mnt/index.html with the time and hostname of the pod.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kahu-nfs-provider
+  namespace: test-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-provider
+  template:
+    metadata:
+      labels:
+        app: nfs-provider
+    spec:
+      serviceAccountName: kahu-nfs-provider
+      containers:
+      - image: docker.io/library/nfsprovider:v0.1.0
+        imagePullPolicy: IfNotPresent
+        name: nfs-driver
+        command: ["/usr/local/bin/nfsprovider"]
+        args:
+        - "-d"
+        - "/data"
+        volumeMounts:
+          # name must match the volume name below
+        - name: nfs
+          mountPath: "/data"
+        - name: socket
+          mountPath: "/tmp"
+      - image: docker.io/library/metaservice:v0.1.0
+        imagePullPolicy: IfNotPresent
+        name: meta-service
+        command: ["/usr/local/bin/metaservice"]
+        args:
+        - "-p"
+        - "8181"
+        - "-a"
+        - "0.0.0.0"
+        env:
+        - name: NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.labels['app']
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        ports:
+        - name: grpc
+          containerPort: 8181
+        volumeMounts:
+          # name must match the volume name below
+          - name: socket
+            mountPath: "/tmp"
+      volumes:
+      - name: nfs
+        persistentVolumeClaim:
+          claimName: nfs
+      - name: socket
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-provider
+  namespace: test-ns
+  labels:
+    app: nfs-provider
+spec:
+  ports:
+    - name: grpc
+      port: 8181
+  selector:
+    app: nfs-provider
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kahu-nfs-provider
+  namespace: test-ns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-nfs-provider-clusterrole-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kahu-nfs-provider-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: kahu-nfs-provider
+    namespace: test-ns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-nfs-provider-clusterrole
+rules:
+  - apiGroups: ["kahu.io"]
+    resources: ["providers", "providers/status"]
+    verbs: ["create", "delete", "watch", "update", "patch", "get", "watch", "list"]
+  - apiGroups: [ "*" ]
+    resources: ["*"]
+    verbs: ["get", "list"]
+---
