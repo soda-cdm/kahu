@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	"github.com/soda-cdm/kahu/hooks"
 	"github.com/soda-cdm/kahu/utils"
 )
 
@@ -255,12 +257,14 @@ func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstruc
 	restore *kahuapi.Restore,
 	resourceClient dynamic.ResourceInterface) error {
 	ctx.logger.Infof("Start processing init hook for Pod resource (%s)", resource.GetName())
+	var resourceType string
 	var labelSelectors map[string]string
 	var replicas int
 
 	switch resource.GetKind() {
 	case utils.Deployment:
 		// get all pods for deployment
+		resourceType = deploymentsResources
 		var deployment *appsv1.Deployment
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &deployment)
 		if err != nil {
@@ -274,6 +278,7 @@ func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstruc
 		replicas = int(*deploy.Spec.Replicas)
 	case utils.DaemonSet:
 		// get all pods for daemonset
+		resourceType = daemonsetsResources
 		var daemonset *appsv1.DaemonSet
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &daemonset)
 		if err != nil {
@@ -287,6 +292,7 @@ func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstruc
 		replicas = 1 // One daemon per node
 	case utils.StatefulSet:
 		// get all pods for statefulset
+		resourceType = statefulsetsResources
 		var statefulset *appsv1.StatefulSet
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &statefulset)
 		if err != nil {
@@ -300,6 +306,7 @@ func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstruc
 		replicas = int(*deploy.Spec.Replicas)
 	case utils.Replicaset:
 		// get all pods for replicaset
+		resourceType = replicasetsResources
 		var replicaset *appsv1.ReplicaSet
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &replicaset)
 		if err != nil {
@@ -314,12 +321,32 @@ func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstruc
 	default:
 	}
 
-	return ctx.applyWorkloadPodResources(resource, restore, resourceClient, labelSelectors, replicas)
+	ctx.hooksWaitGroup.Add(1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		wh := &hooks.ResourceWaitHandler{
+			ResourceListWatchFactory: hooks.ResourceListWatchFactory{
+				ResourceGetter: ctx.kubeClient.AppsV1().RESTClient(),
+			},
+		}
+		err := wh.WaitResource(ctx.hooksContext, ctx.logger, resource,
+			resource.GetName(), resource.GetNamespace(), resourceType)
+		if err != nil {
+			ctx.logger.Errorf("error executing wait for %s-%s ", resourceType, resource.GetName())
+		}
+	}()
+
+	return ctx.applyWorkloadPodResources(resource, restore, resourceClient, &wg, labelSelectors, replicas)
 }
 
 func (ctx *restoreContext) applyWorkloadPodResources(resource *unstructured.Unstructured,
 	restore *kahuapi.Restore,
 	resourceClient dynamic.ResourceInterface,
+	wg *sync.WaitGroup,
 	labelSelectors map[string]string,
 	replicas int) error {
 	// Done is called when all pods for the resource is scheduled for hooks
@@ -331,6 +358,9 @@ func (ctx *restoreContext) applyWorkloadPodResources(resource *unstructured.Unst
 		ctx.logger.Infof("failed to create %s", resource.GetName())
 		return err
 	}
+
+	// wait for workload resource to ready
+	wg.Wait()
 
 	namespace := resource.GetNamespace()
 	time.Sleep(2 * time.Second)
@@ -354,6 +384,17 @@ func (ctx *restoreContext) applyWorkloadPodResources(resource *unstructured.Unst
 		}
 	}
 
+	for _, pod := range pods.Items {
+		podMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&pod)
+		if err != nil {
+			ctx.logger.Errorf("failed to convert pod (%s) to unstructured, %+v", pod.Name, err.Error())
+			return err
+		}
+
+		podUns := &unstructured.Unstructured{Object: podMap}
+		// post exec hooks
+		ctx.waitExec(restore.Spec.Hooks.Resources, podUns)
+	}
 	return nil
 }
 
@@ -361,12 +402,61 @@ func (ctx *restoreContext) applyPodResources(resource *unstructured.Unstructured
 	restore *kahuapi.Restore,
 	resourceClient dynamic.ResourceInterface) error {
 	ctx.logger.Infof("Start processing init hook for Pod resource (%s)", resource.GetName())
+	hookHandler := hooks.InitHooksHandler{}
+	var initRes *unstructured.Unstructured
 
-	_, err := resourceClient.Create(context.TODO(), resource, metav1.CreateOptions{})
+	initRes, err := hookHandler.HandleInitHook(ctx.logger, hooks.Pods, resource, &restore.Spec.Hooks)
+	if err != nil {
+		ctx.logger.Errorf("Failed to process init hook for Pod resource (%s)", resource.GetName())
+		return err
+	}
+	if initRes != nil {
+		resource = initRes
+	}
+
+	_, err = resourceClient.Create(context.TODO(), resource, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		// ignore if already exist
 		return err
 	}
 
+	// post hook
+	ctx.waitExec(restore.Spec.Hooks.Resources, resource)
 	return nil
+}
+
+// waitExec executes hooks in a restored pod's containers when they become ready.
+func (ctx *restoreContext) waitExec(resourceHooks []kahuapi.RestoreResourceHookSpec, createdObj *unstructured.Unstructured) {
+	ctx.hooksWaitGroup.Add(1)
+	go func() {
+		// Done() will only be called after all errors have been successfully sent
+		// on the ctx.resticErrs channel.
+		defer ctx.hooksWaitGroup.Done()
+
+		pod := new(corev1.Pod)
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(createdObj.UnstructuredContent(), &pod); err != nil {
+			ctx.logger.WithError(err).Error("error converting unstructured pod")
+			ctx.hooksErrs <- err
+			return
+		}
+		execHooksByContainer, err := hooks.GroupRestoreExecHooks(
+			resourceHooks,
+			pod,
+			ctx.logger,
+		)
+		if err != nil {
+			ctx.logger.WithError(err).Errorf("error getting exec hooks for pod %s/%s", pod.Namespace, pod.Name)
+			ctx.hooksErrs <- err
+			return
+		}
+
+		if errs := ctx.waitExecHookHandler.HandleHooks(ctx.hooksContext, ctx.logger, pod, execHooksByContainer); len(errs) > 0 {
+			ctx.hooksCancelFunc()
+
+			for _, err := range errs {
+				// Errors are already logged in the HandleHooks method.
+				ctx.hooksErrs <- err
+			}
+		}
+	}()
 }
