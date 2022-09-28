@@ -30,8 +30,9 @@ spec:
       labels:
         provider: nfs
     spec:
+      serviceAccountName: kahu-nfs-provider
       containers:
-      - image: docker.io/library/kahu:v1
+      - image: docker.io/library/nfsprovider:v0.1.0
         imagePullPolicy: IfNotPresent
         name: nfs-driver
         command: ["/usr/local/bin/nfsprovider"]
@@ -44,7 +45,7 @@ spec:
           mountPath: "/data"
         - name: socket
           mountPath: "/tmp"
-      - image: docker.io/library/kahu:v1
+      - image: docker.io/library/metaservice:v0.1.0
         imagePullPolicy: IfNotPresent
         name: meta-service
         command: ["/usr/local/bin/metaservice"]
@@ -79,3 +80,50 @@ spec:
       port: 8181
   selector:
     provider: nfs
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kahu-nfs-provider
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-nfs-provider-clusterrole-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kahu-nfs-provider-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: kahu-nfs-provider
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-nfs-provider-clusterrole
+rules:
+  - apiGroups:
+      - "kahu.io"
+    resources:
+      - providers
+      - providers/status
+    verbs:
+      - create
+      - delete
+      - update
+      - get
+      - watch
+      - list
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs:
+      - get
+      - list
+---

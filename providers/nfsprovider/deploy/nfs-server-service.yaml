@@ -17,6 +17,7 @@ kind: Service
 apiVersion: v1
 metadata:
   name: nfs-server
+  namespace: default
 spec:
   ports:
     - name: nfs
