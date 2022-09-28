@@ -25,6 +25,7 @@ import (
 	v1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	scheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 )
@@ -38,12 +39,14 @@ type BackupsGetter interface {
 // BackupInterface has methods to work with Backup resources.
 type BackupInterface interface {
 	Create(ctx context.Context, backup *v1beta1.Backup, opts v1.CreateOptions) (*v1beta1.Backup, error)
+	Update(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (*v1beta1.Backup, error)
 	UpdateStatus(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (*v1beta1.Backup, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
 	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.Backup, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.BackupList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Backup, err error)
 	BackupExpansion
 }
 
@@ -113,6 +116,19 @@ func (c *backups) Create(ctx context.Context, backup *v1beta1.Backup, opts v1.Cr
 	return
 }
 
+// Update takes the representation of a backup and updates it. Returns the server's representation of the backup, and an error, if there is any.
+func (c *backups) Update(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (result *v1beta1.Backup, err error) {
+	result = &v1beta1.Backup{}
+	err = c.client.Put().
+		Resource("backups").
+		Name(backup.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(backup).
+		Do(ctx).
+		Into(result)
+	return
+}
+
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *backups) UpdateStatus(ctx context.Context, backup *v1beta1.Backup, opts v1.UpdateOptions) (result *v1beta1.Backup, err error) {
@@ -151,4 +167,18 @@ func (c *backups) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, l
 		Body(&opts).
 		Do(ctx).
 		Error()
+}
+
+// Patch applies the patch and returns the patched backup.
+func (c *backups) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Backup, err error) {
+	result = &v1beta1.Backup{}
+	err = c.client.Patch(pt).
+		Resource("backups").
+		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
 }

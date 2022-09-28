@@ -25,6 +25,7 @@ import (
 	v1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	scheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 )
@@ -38,12 +39,14 @@ type RestoresGetter interface {
 // RestoreInterface has methods to work with Restore resources.
 type RestoreInterface interface {
 	Create(ctx context.Context, restore *v1beta1.Restore, opts v1.CreateOptions) (*v1beta1.Restore, error)
+	Update(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (*v1beta1.Restore, error)
 	UpdateStatus(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (*v1beta1.Restore, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
 	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.Restore, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.RestoreList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Restore, err error)
 	RestoreExpansion
 }
 
@@ -113,6 +116,19 @@ func (c *restores) Create(ctx context.Context, restore *v1beta1.Restore, opts v1
 	return
 }
 
+// Update takes the representation of a restore and updates it. Returns the server's representation of the restore, and an error, if there is any.
+func (c *restores) Update(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (result *v1beta1.Restore, err error) {
+	result = &v1beta1.Restore{}
+	err = c.client.Put().
+		Resource("restores").
+		Name(restore.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(restore).
+		Do(ctx).
+		Into(result)
+	return
+}
+
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *restores) UpdateStatus(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (result *v1beta1.Restore, err error) {
@@ -151,4 +167,18 @@ func (c *restores) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, 
 		Body(&opts).
 		Do(ctx).
 		Error()
+}
+
+// Patch applies the patch and returns the patched restore.
+func (c *restores) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Restore, err error) {
+	result = &v1beta1.Restore{}
+	err = c.client.Patch(pt).
+		Resource("restores").
+		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
 }
