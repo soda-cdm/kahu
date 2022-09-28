@@ -25,7 +25,7 @@ func NewLBDial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error)
 	return grpc.Dial(target, opts...)
 }
 
-func GetMetaServiceClient(target string) (MetaServiceClient, error) {
+func GetMetaServiceClient(target string) (MetaServiceClient, *grpc.ClientConn, error) {
 	if net.ParseIP(target) == nil {
 		// if not IP, try dns
 		target = "dns:///" + target
@@ -33,7 +33,7 @@ func GetMetaServiceClient(target string) (MetaServiceClient, error) {
 
 	grpcConn, err := NewLBDial(target, grpc.WithInsecure())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return NewMetaServiceClient(grpcConn), nil
+	return NewMetaServiceClient(grpcConn), grpcConn, nil
 }

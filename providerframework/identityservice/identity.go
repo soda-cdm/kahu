@@ -21,19 +21,15 @@ import (
 
 	"google.golang.org/grpc"
 
-	apiv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	apiv1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 // RegisterMetadataProvider creates CRD entry on behalf of the metadata provider getting added.
-func RegisterMetadataProvider(ctx context.Context, conn *grpc.ClientConnInterface) error {
-
-	return registerProvider(ctx, conn, apiv1beta1.ProviderTypeMetadata)
-
+func RegisterMetadataProvider(ctx context.Context, conn *grpc.ClientConnInterface) (*apiv1.Provider, error) {
+	return registerProvider(ctx, conn, apiv1.ProviderTypeMetadata)
 }
 
 // RegisterVolumeProvider creates CRD entry on behalf of the volume provider getting added.
-func RegisterVolumeProvider(ctx context.Context, conn *grpc.ClientConnInterface) error {
-
-	return registerProvider(ctx, conn, apiv1beta1.ProviderTypeVolume)
-
+func RegisterVolumeProvider(ctx context.Context, conn *grpc.ClientConnInterface)  (*apiv1.Provider, error) {
+	return registerProvider(ctx, conn, apiv1.ProviderTypeVolume)
 }

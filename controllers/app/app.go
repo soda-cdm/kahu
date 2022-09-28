@@ -19,17 +19,18 @@ package app
 import (
 	"context"
 	"fmt"
-
-	"github.com/pkg/errors"
-
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
@@ -119,9 +120,12 @@ through the apiserver and makes attempts to move the current state towards the d
 				log.Fatalf("Error getting hostname: %v", err)
 			}
 
+			eventRecorder := completeConfig.EventBroadcaster.NewRecorder(scheme.Scheme,
+				v1.EventSource{Component: "kahu-controller-manager-lease"})
+
 			lockConfig := resourcelock.ResourceLockConfig{
 				Identity:      id,
-				EventRecorder: completeConfig.EventRecorder,
+				EventRecorder: eventRecorder,
 			}
 			resourceLock, err := resourcelock.New(
 				resourcelock.ConfigMapsLeasesResourceLock,
@@ -182,6 +186,10 @@ func Run(ctx context.Context, config *config.CompletedConfig) error {
 	log.Infof("Starting controller manager with build info %s", utils.GetBuildInfo())
 	config.Print()
 
+	// init discovery helper
+	initDiscoveryHelper(ctx, config)
+
+	// init controller manager
 	controllerManager, err := manager.NewControllerManager(ctx,
 		config,
 		config.ClientFactory,
@@ -227,4 +235,19 @@ func setupSignalHandler(cancel context.CancelFunc) {
 		log.Infof("Received signal %s, shutting down", sig)
 		cancel()
 	}()
+}
+
+// initDiscoveryHelper instantiates kubernetes APIs discovery helper and refresh itself
+func initDiscoveryHelper(ctx context.Context, config *config.CompletedConfig) {
+	discoveryHelper := config.DiscoveryHelper
+
+	go wait.Until(
+		func() {
+			if err := discoveryHelper.Refresh(); err != nil {
+				log.WithError(err).Error("Error refreshing discovery")
+			}
+		},
+		5*time.Minute,
+		ctx.Done(),
+	)
 }

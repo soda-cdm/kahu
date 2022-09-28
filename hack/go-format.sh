@@ -27,7 +27,9 @@ if [[ ${1:-} == 'verify' ]]; then
   MODE='-d'
 fi
 
-files="$(find . -type f -name '*.go' -not -path './.go/*' -not -path '*.pb.go' -not -path './.proto/*' -not -path './vendor/*' -not -path './site/*' -not -path '*/client/*' -not -name 'zz_generated*' -not -path '*/mocks/*' -not -path '*/_output/*')"
+files="$(find . -type f -name '*.go' -not -path './.go/*' -not -path '*.pb.go' -not -path './.proto/*'\
+-not -path './vendor/*' -not -path './site/*' -not -path '*/client/*' -not -name 'zz_generated*'\
+ -not -path '*/mocks/*' -not -path '*/_output/*')"
 log::status "Checking gofmt"
 for file in ${files}; do
   output=$(gofmt "${MODE}" -s "${file}")

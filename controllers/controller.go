@@ -24,6 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -31,6 +32,7 @@ import (
 
 const (
 	defaultReSyncPeriod = 5 * time.Minute
+	defaultMaxRetry     = 5
 )
 
 type Controller interface {
@@ -107,7 +109,11 @@ func (builder *controllerBuilder) Build() (Controller, error) {
 
 	return &controller{
 		name: builder.name,
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(),
+		queue: workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
+			workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 120*time.Second),
+			// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
+			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+		),
 			builder.name),
 		logger:           builder.logger,
 		handler:          builder.handler,
@@ -186,8 +192,6 @@ func (ctrl *controller) processNextItem() bool {
 	if quit {
 		return false
 	}
-	// always call done on this item, since if it fails we'll add
-	// it back with rate-limiting below
 	defer ctrl.queue.Done(key)
 
 	err := ctrl.handler(key.(string))
@@ -196,9 +200,15 @@ func (ctrl *controller) processNextItem() bool {
 		return true
 	}
 
-	ctrl.logger.WithError(err).WithField("restore", key).Error("Re-adding item  to queue")
-	ctrl.queue.AddRateLimited(key)
+	if ctrl.queue.NumRequeues(key) < defaultMaxRetry {
+		ctrl.logger.WithError(err).WithField("controller", ctrl.name).
+			WithField("resource", key).Error("Re-adding item  to queue")
+		ctrl.queue.AddRateLimited(key)
+		return true
+	}
 
+	ctrl.logger.Infof("Dropping %s (%s) out of the queue. %s", ctrl.name, key, err)
+	ctrl.queue.Forget(key)
 	return true
 }
 
