@@ -33,3 +33,11 @@ type ProviderListerExpansion interface{}
 // RestoreListerExpansion allows custom methods to be added to
 // RestoreLister.
 type RestoreListerExpansion interface{}
+
+// VolumeBackupContentListerExpansion allows custom methods to be added to
+// VolumeBackupContentLister.
+type VolumeBackupContentListerExpansion interface{}
+
+// VolumeRestoreContentListerExpansion allows custom methods to be added to
+// VolumeRestoreContentLister.
+type VolumeRestoreContentListerExpansion interface{}

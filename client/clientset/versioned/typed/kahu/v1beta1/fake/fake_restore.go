@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 )
@@ -85,6 +86,16 @@ func (c *FakeRestores) Create(ctx context.Context, restore *v1beta1.Restore, opt
 	return obj.(*v1beta1.Restore), err
 }
 
+// Update takes the representation of a restore and updates it. Returns the server's representation of the restore, and an error, if there is any.
+func (c *FakeRestores) Update(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (result *v1beta1.Restore, err error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootUpdateAction(restoresResource, restore), &v1beta1.Restore{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.Restore), err
+}
+
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 func (c *FakeRestores) UpdateStatus(ctx context.Context, restore *v1beta1.Restore, opts v1.UpdateOptions) (*v1beta1.Restore, error) {
@@ -109,4 +120,14 @@ func (c *FakeRestores) DeleteCollection(ctx context.Context, opts v1.DeleteOptio
 
 	_, err := c.Fake.Invokes(action, &v1beta1.RestoreList{})
 	return err
+}
+
+// Patch applies the patch and returns the patched restore.
+func (c *FakeRestores) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.Restore, err error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(restoresResource, name, pt, data, subresources...), &v1beta1.Restore{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.Restore), err
 }

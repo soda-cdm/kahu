@@ -32,58 +32,58 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// BackupLocationInformer provides access to a shared informer and lister for
-// BackupLocations.
-type BackupLocationInformer interface {
+// VolumeBackupContentInformer provides access to a shared informer and lister for
+// VolumeBackupContents.
+type VolumeBackupContentInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.BackupLocationLister
+	Lister() v1beta1.VolumeBackupContentLister
 }
 
-type backupLocationInformer struct {
+type volumeBackupContentInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 }
 
-// NewBackupLocationInformer constructs a new informer for BackupLocation type.
+// NewVolumeBackupContentInformer constructs a new informer for VolumeBackupContent type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewBackupLocationInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredBackupLocationInformer(client, resyncPeriod, indexers, nil)
+func NewVolumeBackupContentInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredVolumeBackupContentInformer(client, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredBackupLocationInformer constructs a new informer for BackupLocation type.
+// NewFilteredVolumeBackupContentInformer constructs a new informer for VolumeBackupContent type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredBackupLocationInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredVolumeBackupContentInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KahuV1beta1().BackupLocations().List(context.TODO(), options)
+				return client.KahuV1beta1().VolumeBackupContents().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KahuV1beta1().BackupLocations().Watch(context.TODO(), options)
+				return client.KahuV1beta1().VolumeBackupContents().Watch(context.TODO(), options)
 			},
 		},
-		&kahuv1beta1.BackupLocation{},
+		&kahuv1beta1.VolumeBackupContent{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *backupLocationInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredBackupLocationInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *volumeBackupContentInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredVolumeBackupContentInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *backupLocationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&kahuv1beta1.BackupLocation{}, f.defaultInformer)
+func (f *volumeBackupContentInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&kahuv1beta1.VolumeBackupContent{}, f.defaultInformer)
 }
 
-func (f *backupLocationInformer) Lister() v1beta1.BackupLocationLister {
-	return v1beta1.NewBackupLocationLister(f.Informer().GetIndexer())
+func (f *volumeBackupContentInformer) Lister() v1beta1.VolumeBackupContentLister {
+	return v1beta1.NewVolumeBackupContentLister(f.Informer().GetIndexer())
 }

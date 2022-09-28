@@ -12,10 +12,19 @@ spec:
     kind: BackupLocation
     listKind: BackupLocationList
     plural: backuplocations
+    shortNames:
+    - bl
     singular: backuplocation
   scope: Cluster
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.providerName
+      name: Provider
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: BackupLocation is the Schema for the backuplocations API
@@ -51,6 +60,7 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}
 status:
   acceptedNames:
     kind: ""
