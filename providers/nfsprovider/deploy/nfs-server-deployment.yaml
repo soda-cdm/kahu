@@ -17,6 +17,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nfs-server
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -30,6 +31,7 @@ spec:
       containers:
       - name: nfs-server
         image: k8s.gcr.io/volume-nfs:0.8
+        imagePullPolicy: IfNotPresent
         ports:
           - name: nfs
             containerPort: 2049

@@ -14,9 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package options
+// Package main provide NFS Provider entrypoint
+package main
 
-type NFSProviderOptions struct {
-	NFSServiceFlags
-	// TODO: Add configuration file options here
+import (
+	"github.com/soda-cdm/kahu/providers/nfsprovider/server"
+)
+
+func main() {
+	command := server.NewNFSProviderCommand()
+	if err := command.Execute(); err != nil {
+		return
+	}
 }
