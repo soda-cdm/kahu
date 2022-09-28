@@ -38,6 +38,7 @@ const (
 	SC                 = "StorageClass"
 	Backup             = "Backup"
 	VBC                = "VolumeBackupContent"
+	KahuSnapshot       = "VolumeSnapshot"
 	BackupLocation     = "BackupLocation"
 	Node               = "Node"
 	Event              = "Event"

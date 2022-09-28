@@ -29,6 +29,7 @@ readonly KAHU_STATIC_BINARIES=(
   controller-manager
   meta-service
   volume-service
+  openebs-zfs
   nfs-provider
 )
 
@@ -39,6 +40,7 @@ golang::targets() {
     cmd/meta-service
     cmd/volume-service
     providers/nfs/nfs-provider
+    cmd/openebs-zfs
   )
   echo "${targets[@]}"
 }
@@ -130,14 +132,6 @@ golang::build_binaries() {
     if [[ "${DBG:-}" != 1 ]]; then
         # Not debugging - disable symbols and DWARF.
         goldflags="${goldflags} -s -w"
-    fi
-
-    if [[ "${PLATFORM}" == X86 ]]; then
-        goldflags="${goldflags} -linkmode "external" -extldflags "-Wl,-z,now" -buildmode=pie"
-    fi
-
-    if [[ "${PLATFORM}" == ARM ]]; then
-        goldflags="${goldflags} -buildmode=pie"
     fi
 
     goasmflags="-trimpath=${KAHU_ROOT}"

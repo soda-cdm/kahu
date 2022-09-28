@@ -32,7 +32,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -46,7 +45,7 @@ import (
 )
 
 const (
-	probeInterval = 1 * time.Second
+	probeInterval               = 1 * time.Second
 	EventOwnerNotDeleted        = "OwnerNotDeleted"
 	EventCancelVolRestoreFailed = "CancelVolRestoreFailed"
 )
@@ -294,12 +293,12 @@ func CheckBackupSupport(pv corev1.PersistentVolume) error {
 		return errors.New(msg)
 	}
 
-	supportedCsiDrivers := sets.NewString(SupportedCsiDrivers...)
-	driver := pv.Spec.CSI.Driver
-	if !supportedCsiDrivers.Has(driver) {
-		msg := fmt.Sprintf("PV %s belongs to the driver(%s), not supported for backup.", pv.Name, driver)
-		return errors.New(msg)
-	}
+	//supportedCsiDrivers := sets.NewString(SupportedCsiDrivers...)
+	//driver := pv.Spec.CSI.Driver
+	//if !supportedCsiDrivers.Has(driver) {
+	//	msg := fmt.Sprintf("PV %s belongs to the driver(%s), not supported for backup.", pv.Name, driver)
+	//	return errors.New(msg)
+	//}
 	return nil
 }
 
@@ -309,4 +308,24 @@ func CheckServerUnavailable(err error) bool {
 	}
 
 	return false
+}
+
+func VolumeProvider(pv *corev1.PersistentVolume) string {
+	if pv.Spec.CSI != nil {
+		return pv.Spec.CSI.Driver
+	}
+	if pv.Spec.AWSElasticBlockStore != nil {
+		return "AWSElasticBlockStore"
+	}
+	if pv.Spec.AzureDisk != nil {
+		return "AzureDisk"
+	}
+	if pv.Spec.AzureFile != nil {
+		return "AzureFile"
+	}
+	if pv.Spec.CephFS != nil {
+		return "CephFS"
+	}
+
+	return ""
 }

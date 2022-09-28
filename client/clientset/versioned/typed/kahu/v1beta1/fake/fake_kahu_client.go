@@ -48,8 +48,16 @@ func (c *FakeKahuV1beta1) VolumeBackupContents() v1beta1.VolumeBackupContentInte
 	return &FakeVolumeBackupContents{c}
 }
 
+func (c *FakeKahuV1beta1) VolumeGroups() v1beta1.VolumeGroupInterface {
+	return &FakeVolumeGroups{c}
+}
+
 func (c *FakeKahuV1beta1) VolumeRestoreContents() v1beta1.VolumeRestoreContentInterface {
 	return &FakeVolumeRestoreContents{c}
+}
+
+func (c *FakeKahuV1beta1) VolumeSnapshots() v1beta1.VolumeSnapshotInterface {
+	return &FakeVolumeSnapshots{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

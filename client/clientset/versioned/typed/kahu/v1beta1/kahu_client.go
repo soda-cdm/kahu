@@ -31,7 +31,9 @@ type KahuV1beta1Interface interface {
 	ProvidersGetter
 	RestoresGetter
 	VolumeBackupContentsGetter
+	VolumeGroupsGetter
 	VolumeRestoreContentsGetter
+	VolumeSnapshotsGetter
 }
 
 // KahuV1beta1Client is used to interact with features provided by the kahu.io group.
@@ -59,8 +61,16 @@ func (c *KahuV1beta1Client) VolumeBackupContents() VolumeBackupContentInterface 
 	return newVolumeBackupContents(c)
 }
 
+func (c *KahuV1beta1Client) VolumeGroups() VolumeGroupInterface {
+	return newVolumeGroups(c)
+}
+
 func (c *KahuV1beta1Client) VolumeRestoreContents() VolumeRestoreContentInterface {
 	return newVolumeRestoreContents(c)
+}
+
+func (c *KahuV1beta1Client) VolumeSnapshots() VolumeSnapshotInterface {
+	return newVolumeSnapshots(c)
 }
 
 // NewForConfig creates a new KahuV1beta1Client for the given config.

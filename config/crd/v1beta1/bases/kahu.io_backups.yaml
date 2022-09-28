@@ -419,6 +419,10 @@ spec:
                       type: string
                     status:
                       description: Status is a state of the resource
+                      enum:
+                      - Pending
+                      - Processing
+                      - Completed
                       type: string
                   type: object
                 type: array

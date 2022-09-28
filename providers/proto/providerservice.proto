@@ -68,6 +68,7 @@ message ProviderCapability {
     enum Type {
       UNKNOWN = 0;
       NEED_SNAPSHOT = 1;
+      NEED_VOLUME = 2;
     }
     Type type = 1;
   }
@@ -209,12 +210,24 @@ message RestoreVolumeIdentity {
   map<string, string> volume_attributes = 9;
 }
 
+message VolBackup {
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  Snapshot snapshot = 2;
+}
+
+message Snapshot {
+  string snapshot_handle = 1;
+  map<string, string> snapshot_attributes = 9;
+}
+
 message StartBackupRequest {
   // Required field
   repeated k8s.io.api.core.v1.PersistentVolume pv = 1;
 
   // Backup content name
   string backup_content_name = 2;
+
+  repeated VolBackup backupInfo = 3;
 
   // optional
   map<string, string> parameters = 9;

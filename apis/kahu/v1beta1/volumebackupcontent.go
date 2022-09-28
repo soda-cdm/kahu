@@ -32,14 +32,14 @@ type VolumeBackupContentSpec struct {
 	// +nullable
 	Volumes []v1.PersistentVolume `json:"volumes,omitempty"`
 
-	VolumeBackupProvider *string `json:"volumeBackupProvider,omitempty"`
-
 	// Volume provider for set of volumes
 	VolumeProvider *string `json:"volumeProvider,omitempty"`
 
 	// Supported volume backup provider information
 	// +optional
 	Parameters map[string]string `json:"parameters,omitempty"`
+
+	BackupSourceRef *ResourceReference `json:"backupSourceRef,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
@@ -73,6 +73,9 @@ type VolumeBackupContentStatus struct {
 
 	// +optional
 	Phase VolumeBackupContentPhase `json:"phase,omitempty"`
+
+	// +optional
+	VolumeBackupProvider *string `json:"volumeBackupProvider,omitempty"`
 
 	// +optional
 	// +nullable

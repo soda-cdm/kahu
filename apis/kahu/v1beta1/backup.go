@@ -30,7 +30,6 @@ import (
 // +kubebuilder:printcolumn:name="MetadataLocation",type=string,JSONPath=`.spec.metadataLocation`
 // +kubebuilder:printcolumn:name="VolumeBackupLocations",type=string,JSONPath=`.spec.volumeBackupLocations`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-
 type Backup struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -194,6 +193,16 @@ type ReclaimPolicyType struct {
 	ReclaimPolicyRetain string `json:"reclaimPolicyRetain,omitempty"`
 }
 
+// +kubebuilder:validation:Enum=Pending;Processing;Completed
+// ResourceStatus is a state a resource during backup
+type ResourceStatus string
+
+const (
+	Pending    ResourceStatus = "Pending"
+	Processing ResourceStatus = "Processing"
+	Completed  ResourceStatus = "Completed"
+)
+
 // BackupResource indicates the current state of a resource that is backing up
 type BackupResource struct {
 	metav1.TypeMeta `json:",inline"`
@@ -208,17 +217,15 @@ type BackupResource struct {
 
 	// Status is a state of the resource
 	// +optional
-	Status string `json:"status,omitempty"`
+	Status ResourceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=Initial;PreHook;Resources;Volumes;PostHook;Finished
 // BackupStage is a stage of backup
-
 type BackupStage string
 
 // +kubebuilder:validation:Enum=New;Validating;Processing;Completed;Deleting;Failed
 // BackupState is a state in backup phase
-
 type BackupState string
 
 const (
