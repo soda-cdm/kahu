@@ -21,12 +21,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuv1 "github.com/soda-cdm/kahu/apis/kahu/v1"
 )
-
-var ResultantNamespace = []string{}
-
-var ResultantResource = []string{}
 
 type itemKey struct {
 	resource  string
@@ -35,9 +31,9 @@ type itemKey struct {
 }
 
 type PrepareBackup struct {
-	*kahuv1beta1.Backup
+	*kahuv1.Backup
 
-	StorageLocation *kahuv1beta1.BackupLocation
+	StorageLocation *kahuv1.BackupLocation
 	BackedUpItems   map[itemKey]struct{}
 }
 
