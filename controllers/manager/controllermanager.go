@@ -24,7 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime"
+	"k8s.io/client-go/tools/record"
+	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
@@ -36,10 +37,12 @@ import (
 	"github.com/soda-cdm/kahu/controllers/backup"
 	"github.com/soda-cdm/kahu/controllers/restore"
 	"github.com/soda-cdm/kahu/discovery"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ControllerManager struct {
 	ctx                      context.Context
+	runtimeClient            runtimeclient.Client
 	restConfig               *rest.Config
 	controllerRuntimeManager manager.Manager
 	completeConfig           *config.CompletedConfig
@@ -47,6 +50,7 @@ type ControllerManager struct {
 	kahuClient               versioned.Interface
 	kubeClient               kubernetes.Interface
 	discoveryHelper          discovery.DiscoveryHelper
+	EventBroadcaster         record.EventBroadcaster
 }
 
 func NewControllerManager(ctx context.Context,
@@ -71,6 +75,7 @@ func NewControllerManager(ctx context.Context,
 
 	return &ControllerManager{
 		ctx:                      ctx,
+		runtimeClient:            ctrlRuntimeManager.GetClient(),
 		restConfig:               clientConfig,
 		controllerRuntimeManager: ctrlRuntimeManager,
 		completeConfig:           completeConfig,
@@ -78,6 +83,7 @@ func NewControllerManager(ctx context.Context,
 		kubeClient:               completeConfig.KubeClient,
 		informerFactory:          informerFactory,
 		discoveryHelper:          completeConfig.DiscoveryHelper,
+		EventBroadcaster:         completeConfig.EventBroadcaster,
 	}, nil
 }
 
@@ -85,21 +91,31 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 	availableControllers := make(map[string]controllers.Controller, 0)
 	// add controllers here
 	// integrate backup controller
-	backupController, err := backup.NewController(&mgr.completeConfig.BackupControllerConfig,
-		mgr.restConfig,
+
+	backupController, err := backup.NewController(
+		mgr.ctx,
+		&mgr.completeConfig.BackupControllerConfig,
+		mgr.kubeClient,
 		mgr.kahuClient,
-		mgr.informerFactory.Kahu().V1beta1().Backups())
+		mgr.completeConfig.DynamicClient,
+		mgr.informerFactory,
+		mgr.EventBroadcaster,
+		mgr.completeConfig.DiscoveryHelper)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backup controller. %s", err)
 	}
 	availableControllers[backupController.Name()] = backupController
 
 	// integrate restore controller
-	restoreController, err := restore.NewController(mgr.completeConfig.KubeClient,
+	restoreController, err := restore.NewController(
+		mgr.ctx,
+		mgr.completeConfig.KubeClient,
 		mgr.kahuClient,
 		mgr.completeConfig.DynamicClient,
 		mgr.completeConfig.DiscoveryHelper,
-		mgr.informerFactory)
+		mgr.informerFactory,
+		mgr.kubeClient.CoreV1().RESTClient(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize restore controller. %s", err)
 	}

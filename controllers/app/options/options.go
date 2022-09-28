@@ -71,7 +71,6 @@ func (opt *optionsManager) Validate() error {
 	// validate all controllers options
 	errs = append(errs, opt.manager.Validate()...)
 	errs = append(errs, opt.kahuClient.Validate()...)
-	errs = append(errs, opt.backupController.Validate()...)
 
 	if len(errs) == 0 {
 		return nil

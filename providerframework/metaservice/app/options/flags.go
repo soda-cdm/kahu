@@ -35,6 +35,10 @@ const (
 	DefaultCompressionFormat   = string(compressors.GZipType)
 	DefaultArchivalYard        = "/tmp"
 	DefaultBackupDriverAddress = "/tmp/nfs.sock"
+	DefaultDeployNamespace     = "default"
+	DefaultServiceName         = "metadata-service"
+	namespaceEnv               = "NAMESPACE"
+	serviceNamesEnv            = "NAME"
 )
 
 type CompressionType string
@@ -45,6 +49,8 @@ type MetaServiceFlags struct {
 	CompressionFormat   string
 	ArchivalYard        string
 	BackupDriverAddress string
+	DeployedNamespace   string
+	ServiceName         string
 }
 
 func NewMetaServiceFlags() *MetaServiceFlags {
@@ -54,6 +60,8 @@ func NewMetaServiceFlags() *MetaServiceFlags {
 		CompressionFormat:   DefaultCompressionFormat,
 		ArchivalYard:        DefaultArchivalYard,
 		BackupDriverAddress: DefaultBackupDriverAddress,
+		DeployedNamespace:   DefaultDeployNamespace,
+		ServiceName:         DefaultServiceName,
 	}
 }
 
@@ -70,6 +78,10 @@ func (options *MetaServiceFlags) AddFlags(fs *pflag.FlagSet) {
 		options.ArchivalYard, "A directory for temporarily maintaining backup")
 	fs.StringVarP(&options.BackupDriverAddress, "driver-address", "D",
 		options.BackupDriverAddress, "The grpc address of target backup driver")
+	fs.StringVarP(&options.DeployedNamespace, "namespace", "n",
+		os.Getenv(namespaceEnv), "Namespace where metadata service is deployed")
+	fs.StringVarP(&options.ServiceName, "name", "s",
+		os.Getenv(serviceNamesEnv), "Name of the metadata service being deployed")
 }
 
 // Apply checks validity of available command line options
@@ -86,12 +98,20 @@ func (options *MetaServiceFlags) Apply() error {
 		return fmt.Errorf("invalid compression type %s", options.CompressionFormat)
 	}
 
-	if _, err := os.Stat(options.ArchivalYard); os.IsNotExist(err) {
+	if _, err := os.Stat(options.ArchivalYard); err != nil && os.IsNotExist(err) {
 		return fmt.Errorf("archival temporary directory(%s) does not exist", options.ArchivalYard)
 	}
 
 	if options.BackupDriverAddress == "" {
 		return errors.New("backup driver address can not be empty")
+	}
+
+	if options.DeployedNamespace == "" {
+		return errors.New("namespace can not be empty")
+	}
+
+	if options.ServiceName == "" {
+		return errors.New("name can not be empty")
 	}
 
 	return nil

@@ -4,9 +4,7 @@ Copyright 2022 The SODA Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
+  http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,6 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package options defines log options
 package logoptions
 
 import (
@@ -24,8 +23,8 @@ import (
 )
 
 const (
-	DefaultLogFormat = "text"
-	DefaultLogLevel  = log.InfoLevel
+	defaultLogFormat = "text"
+	defaultLogLevel  = log.InfoLevel
 )
 
 // LogOptions maintains log initialization flags
@@ -39,10 +38,14 @@ type LogOptions struct {
 // NewLogOptions initialize logging with default options and return logging flag object
 func NewLogOptions() *LogOptions {
 	loggingOptions := &LogOptions{
-		logFormat: DefaultLogFormat,
-		logLevel:  DefaultLogLevel.String(),
+		logFormat: defaultLogFormat,
+		logLevel:  defaultLogLevel.String(),
 	}
-	_ = loggingOptions.Apply()
+	err := loggingOptions.Apply()
+	if err != nil {
+		log.Error("fail to apply log options")
+		return nil
+	}
 	return loggingOptions
 }
 

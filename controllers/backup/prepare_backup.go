@@ -19,9 +19,8 @@ package backup
 import (
 	"strings"
 
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	kahuv1 "github.com/soda-cdm/kahu/apis/kahu/v1"
 )
 
 type itemKey struct {
@@ -31,9 +30,9 @@ type itemKey struct {
 }
 
 type PrepareBackup struct {
-	*kahuv1.Backup
+	*kahuapi.Backup
 
-	StorageLocation *kahuv1.BackupLocation
+	StorageLocation *kahuapi.BackupLocation
 	BackedUpItems   map[itemKey]struct{}
 }
 

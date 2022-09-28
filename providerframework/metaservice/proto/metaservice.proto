@@ -60,6 +60,10 @@ message RestoreRequest {
     BackupIdentifier id = 1;
 }
 
+message DeleteRequest {
+    BackupIdentifier id = 1;
+}
+
 message GetResponse {
   oneof Restore {
     BackupIdentifier identifier = 1;
@@ -74,5 +78,7 @@ service MetaService {
       returns (Empty) {}
   rpc Restore(RestoreRequest)
       returns (stream GetResponse) {}
+  rpc Delete(DeleteRequest)
+      returns (Empty) {}
 }
 

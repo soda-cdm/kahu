@@ -19,19 +19,48 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
-
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
+	providerservice "github.com/soda-cdm/kahu/providers/lib/go"
+)
+
+const (
+	probeInterval = 1 * time.Second
+
+	EventOwnerNotDeleted        = "OwnerNotDeleted"
+	EventCancelVolRestoreFailed = "CancelVolRestoreFailed"
+)
+
+var (
+	GVKPersistentVolumeClaim = schema.GroupVersionKind{Group: corev1.SchemeGroupVersion.Group,
+		Version: corev1.SchemeGroupVersion.Version, Kind: "PersistentVolumeClaim"}
+	GVKRestore = schema.GroupVersionKind{Group: kahuapi.SchemeGroupVersion.Group,
+		Version: kahuapi.SchemeGroupVersion.Version, Kind: "Restore"}
+	GVKBackup = schema.GroupVersionKind{Group: kahuapi.SchemeGroupVersion.Group,
+		Version: kahuapi.SchemeGroupVersion.Version, Kind: "Backup"}
+
+	DeletionHandlingMetaNamespaceKeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
 
 func GetConfig(kubeConfig string) (config *restclient.Config, err error) {
@@ -92,6 +121,91 @@ func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaServi
 	return backupClient
 }
 
+func GetGRPCConnection(endpoint string, dialOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	dialOptions = append(dialOptions,
+		grpc.WithInsecure(),                   // unix domain connection.
+		grpc.WithBackoffMaxDelay(time.Second), // Retry every second after failure.
+		grpc.WithBlock(),                      // Block until connection succeeds.
+		grpc.WithChainUnaryInterceptor(
+			AddGRPCRequestID, // add gRPC request id
+		),
+	)
+
+	unixPrefix := "unix://"
+	if strings.HasPrefix(endpoint, "/") {
+		// It looks like filesystem path.
+		endpoint = unixPrefix + endpoint
+	}
+
+	if !strings.HasPrefix(endpoint, unixPrefix) {
+		return nil, fmt.Errorf("invalid unix domain path [%s]",
+			endpoint)
+	}
+	log.Info("Probing volume provider endpoint")
+	return grpc.Dial(endpoint, dialOptions...)
+}
+
+func AddGRPCRequestID(ctx context.Context,
+	method string,
+	req, reply interface{},
+	cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker,
+	opts ...grpc.CallOption) error {
+	return invoker(ctx, method, req, reply, cc, opts...)
+}
+
+func Probe(conn grpc.ClientConnInterface, timeout time.Duration) error {
+	for {
+		log.Info("Probing driver for readiness")
+		probe := func(conn grpc.ClientConnInterface, timeout time.Duration) (bool, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			rsp, err := providerservice.
+				NewIdentityClient(conn).
+				Probe(ctx, &providerservice.ProbeRequest{})
+
+			if err != nil {
+				return false, err
+			}
+
+			r := rsp.GetReady()
+			if r == nil {
+				return true, nil
+			}
+			return r.GetValue(), nil
+		}
+
+		ready, err := probe(conn, timeout)
+		if err != nil {
+			st, ok := status.FromError(err)
+			if !ok {
+				return fmt.Errorf("driver probe failed: %s", err)
+			}
+			if st.Code() != codes.DeadlineExceeded {
+				return fmt.Errorf("driver probe failed: %s", err)
+			}
+			// Timeout -> driver is not ready. Fall through to sleep() below.
+			log.Warning("driver probe timed out")
+		}
+		if ready {
+			return nil
+		}
+		// sleep for retry again
+		time.Sleep(probeInterval)
+	}
+}
+
+func GetMetaserviceDeleteClient(address string, port uint) metaservice.MetaServiceClient {
+
+	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
+	if err != nil {
+		log.Errorf("error getting grpc connection %s", err)
+		return nil
+	}
+	return metaservice.NewMetaServiceClient(grpcconn)
+}
+
 func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
 	var subItemList []string
 	if isRegex {
@@ -111,13 +225,12 @@ func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
 	return subItemList
 }
 
-func FindMatchedStrings(kind string, allList []string, includeList, excludeList []v1beta1.ResourceIncluder) []string {
+func FindMatchedStrings(kind string, allList []string, includeList, excludeList []kahuapi.ResourceSpec) []string {
 	var collectAllIncludeds []string
 	var collectAllExcludeds []string
-	var resultantStrings []string
 
 	if len(includeList) == 0 {
-		resultantStrings = allList
+		collectAllIncludeds = allList
 	}
 	for _, resource := range includeList {
 		if resource.Kind == kind {
@@ -132,8 +245,100 @@ func FindMatchedStrings(kind string, allList []string, includeList, excludeList 
 		}
 	}
 	if len(collectAllIncludeds) > 0 {
-		resultantStrings = GetResultantItems(allList, collectAllIncludeds, collectAllExcludeds)
+		collectAllIncludeds = GetResultantItems(allList, collectAllIncludeds, collectAllExcludeds)
 	}
 
-	return resultantStrings
+	return collectAllIncludeds
+}
+
+func GetBackupLocation(
+	logger log.FieldLogger,
+	locationName string,
+	backupLocationLister kahulister.BackupLocationLister) (*kahuapi.BackupLocation, error) {
+	// fetch backup location
+	backupLocation, err := backupLocationLister.Get(locationName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Errorf("Backup location(%s) do not exist", locationName)
+			return nil, err
+		}
+		logger.Errorf("Failed to get backup location. %s", err)
+		return nil, err
+	}
+
+	return backupLocation, err
+}
+
+func GetProvider(
+	logger log.FieldLogger,
+	providerName string,
+	providerLister kahulister.ProviderLister) (*kahuapi.Provider, error) {
+	// fetch provider
+	provider, err := providerLister.Get(providerName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Errorf("Metadata Provider(%s) do not exist", providerName)
+			return nil, err
+		}
+		logger.Errorf("Failed to get metadata provider. %s", err)
+		return nil, err
+	}
+
+	return provider, nil
+}
+
+// StoreObjectUpdate updates given cache with a new object version from Informer
+// callback (i.e. with events from etcd) or with an object modified by the
+// controller itself. Returns "true", if the cache was updated, false if the
+// object is an old version and should be ignored.
+func StoreObjectUpdate(store cache.Store, obj interface{}, className string) (bool, error) {
+	objName, err := DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return false, fmt.Errorf("couldn't get key for object %+v: %w", obj, err)
+	}
+	oldObj, found, err := store.Get(obj)
+	if err != nil {
+		return false, fmt.Errorf("error finding %s %q in controller cache: %w", className, objName, err)
+	}
+
+	objAccessor, err := meta.Accessor(obj)
+	if err != nil {
+		return false, err
+	}
+
+	if !found {
+		// This is a new object
+		log.Debugf("storeObjectUpdate: adding %s %q, version %s", className, objName, objAccessor.GetResourceVersion())
+		if err = store.Add(obj); err != nil {
+			return false, fmt.Errorf("error adding %s %q to controller cache: %w", className, objName, err)
+		}
+		return true, nil
+	}
+
+	oldObjAccessor, err := meta.Accessor(oldObj)
+	if err != nil {
+		return false, err
+	}
+
+	objResourceVersion, err := strconv.ParseInt(objAccessor.GetResourceVersion(), 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("error parsing ResourceVersion %q of %s %q: %s", objAccessor.GetResourceVersion(), className, objName, err)
+	}
+	oldObjResourceVersion, err := strconv.ParseInt(oldObjAccessor.GetResourceVersion(), 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("error parsing old ResourceVersion %q of %s %q: %s", oldObjAccessor.GetResourceVersion(), className, objName, err)
+	}
+
+	// Throw away only older version, let the same version pass - we do want to
+	// get periodic sync events.
+	if oldObjResourceVersion > objResourceVersion {
+		log.Debugf("storeObjectUpdate: ignoring %s %q version %s", className, objName, objAccessor.GetResourceVersion())
+		return false, nil
+	}
+
+	log.Debugf("storeObjectUpdate updating %s %q with version %s", className, objName, objAccessor.GetResourceVersion())
+	if err = store.Update(obj); err != nil {
+		return false, fmt.Errorf("error updating %s %q in controller cache: %w", className, objName, err)
+	}
+	return true, nil
 }
