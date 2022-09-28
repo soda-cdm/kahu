@@ -49,6 +49,7 @@ import (
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/discovery"
+	"github.com/soda-cdm/kahu/hooks"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 )
@@ -66,6 +67,7 @@ type controller struct {
 	providerLister       kahulister.ProviderLister
 	restoreVolumeClient  kahuclient.VolumeRestoreContentInterface
 	restoreVolumeLister  kahulister.VolumeRestoreContentLister
+	podCommandExecutor   hooks.PodCommandExecutor
 	podGetter            cache.Getter
 	processedRestore     cache.Store
 }
@@ -77,6 +79,7 @@ func NewController(
 	dynamicClient dynamic.Interface,
 	discoveryHelper discovery.DiscoveryHelper,
 	informer externalversions.SharedInformerFactory,
+	podCommandExecutor hooks.PodCommandExecutor,
 	podGetter cache.Getter) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
@@ -93,6 +96,7 @@ func NewController(
 		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
 		restoreVolumeClient:  kahuClient.KahuV1beta1().VolumeRestoreContents(),
 		restoreVolumeLister:  informer.Kahu().V1beta1().VolumeRestoreContents().Lister(),
+		podCommandExecutor:   podCommandExecutor,
 		podGetter:            podGetter,
 		processedRestore:     processedRestoreCache,
 	}
@@ -146,6 +150,7 @@ type restoreContext struct {
 	resolver             Interface
 	hooksWaitGroup       sync.WaitGroup
 	hooksErrs            chan error
+	waitExecHookHandler  hooks.WaitExecHookHandler
 	hooksContext         context.Context
 	hooksCancelFunc      context.CancelFunc
 	processedRestore     cache.Store
@@ -154,7 +159,13 @@ type restoreContext struct {
 func newRestoreContext(name string, ctrl *controller) *restoreContext {
 	backupObjectIndexer := cache.NewIndexer(uidKeyFunc, newBackupObjectIndexers())
 	logger := ctrl.logger.WithField("restore", name)
-
+	hooksCtx, hooksCancelFunc := context.WithCancel(context.Background())
+	waitExecHookHandler := &hooks.DefaultWaitExecHookHandler{
+		PodCommandExecutor: ctrl.podCommandExecutor,
+		ListWatchFactory: &hooks.DefaultListWatchFactory{
+			PodsGetter: ctrl.podGetter,
+		},
+	}
 	return &restoreContext{
 		logger:               logger,
 		kubeClient:           ctrl.kubeClient,
@@ -171,6 +182,10 @@ func newRestoreContext(name string, ctrl *controller) *restoreContext {
 		filter:               constructFilterHandler(logger.WithField("context", "filter")),
 		mutator:              constructMutationHandler(logger.WithField("context", "mutator")),
 		resolver:             NewResolver(logger.WithField("context", "resolver")),
+		hooksErrs:            make(chan error),
+		waitExecHookHandler:  waitExecHookHandler,
+		hooksContext:         hooksCtx,
+		hooksCancelFunc:      hooksCancelFunc,
 		processedRestore:     ctrl.processedRestore,
 	}
 }

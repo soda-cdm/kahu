@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 const defaultTimeout = 30 * time.Second

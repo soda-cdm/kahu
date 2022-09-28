@@ -28,6 +28,7 @@ import (
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions"
 	"github.com/soda-cdm/kahu/controllers/backup"
 	"github.com/soda-cdm/kahu/discovery"
+	"github.com/soda-cdm/kahu/hooks"
 )
 
 const (
@@ -52,6 +53,8 @@ type CompletedConfig struct {
 	DynamicClient    dynamic.Interface
 	DiscoveryHelper  discovery.DiscoveryHelper
 	EventBroadcaster record.EventBroadcaster
+	HookExecutor     hooks.Hooks
+	PodCmdExecutor   hooks.PodCommandExecutor
 }
 
 func (cfg *Config) Complete() (*CompletedConfig, error) {
@@ -82,6 +85,20 @@ func (cfg *Config) Complete() (*CompletedConfig, error) {
 		return nil, err
 	}
 
+	// New Hook object
+	restConfig, err := clientFactory.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	podCommandExecutor := hooks.NewPodCommandExecutor(restConfig, kubeClient.CoreV1().RESTClient())
+
+	hookExecutor, err := hooks.NewHooks(kubeClient, restConfig, podCommandExecutor)
+	if err != nil {
+		log.Errorf("failed to create hook, error %s\n", err.Error())
+		return nil, err
+	}
+
 	return &CompletedConfig{
 		Config:           cfg,
 		ClientFactory:    clientFactory,
@@ -90,6 +107,8 @@ func (cfg *Config) Complete() (*CompletedConfig, error) {
 		DynamicClient:    dynamicClient,
 		DiscoveryHelper:  discoveryHelper,
 		EventBroadcaster: eventBroadcaster,
+		HookExecutor:     hookExecutor,
+		PodCmdExecutor:   podCommandExecutor,
 		KahuInformer:     kahuinformer.NewSharedInformerFactoryWithOptions(kahuClient, 0),
 	}, nil
 }

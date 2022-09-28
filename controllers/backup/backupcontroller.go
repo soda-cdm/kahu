@@ -45,6 +45,7 @@ import (
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/discovery"
+	"github.com/soda-cdm/kahu/hooks"
 	"github.com/soda-cdm/kahu/utils"
 )
 
@@ -67,6 +68,7 @@ type controller struct {
 	providerLister       kahulister.ProviderLister
 	volumeBackupClient   kahuv1client.VolumeBackupContentInterface
 	volumeBackupLister   kahulister.VolumeBackupContentLister
+	hookExecutor         hooks.Hooks
 	processedBackup      cache.Store
 }
 
@@ -78,7 +80,8 @@ func NewController(
 	dynamicClient dynamic.Interface,
 	informer kahuinformer.SharedInformerFactory,
 	eventBroadcaster record.EventBroadcaster,
-	discoveryHelper discovery.DiscoveryHelper) (controllers.Controller, error) {
+	discoveryHelper discovery.DiscoveryHelper,
+	hookExecutor hooks.Hooks) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
 	processedBackupCache := cache.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
@@ -95,6 +98,7 @@ func NewController(
 		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
 		volumeBackupClient:   kahuClient.KahuV1beta1().VolumeBackupContents(),
 		volumeBackupLister:   informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
+		hookExecutor:         hookExecutor,
 		processedBackup:      processedBackupCache,
 	}
 
@@ -302,6 +306,22 @@ func (ctrl *controller) syncBackup(backup *kahuapi.Backup) (err error) {
 				"update Prehook state to processing", backup.Name)
 			return err
 		}
+		// Execute pre hooks
+		err = ctrl.hookExecutor.ExecuteHook(ctrl.logger, &backup.Spec, hooks.PreHookPhase)
+		if err != nil {
+			if backup, err = ctrl.updateBackupStatusWithEvent(backup,
+				kahuapi.BackupStatus{State: kahuapi.BackupStateFailed},
+				v1.EventTypeWarning, EventPreHookFailed, "Pre hook execution failed"); err != nil {
+				ctrl.logger.Infof("Update to cleanup state for Pre hook reversal failed")
+				return err
+			}
+			ctrl.reversePreHooksExecutionOnFailure(backup,
+				kahuapi.BackupStagePreHook, EventPreHookFailed)
+			ctrl.logger.Infof("Pre hook reversal finished (%s)", backup.Name)
+			return nil
+		}
+		ctrl.eventRecorder.Event(backup, v1.EventTypeNormal,
+			string(kahuapi.BackupStagePreHook), "Pre hook execution successful")
 
 		backup, err = ctrl.updateBackupStatusWithEvent(backup,
 			kahuapi.BackupStatus{Stage: kahuapi.BackupStageVolumes, State: kahuapi.BackupStateNew},
@@ -326,6 +346,10 @@ func (ctrl *controller) syncBackup(backup *kahuapi.Backup) (err error) {
 				ctrl.logger.Errorf("Update to cleanup state for Pre hook reversal failed")
 				return err
 			}
+			ctrl.reversePreHooksExecutionOnFailure(backup,
+				kahuapi.BackupStageVolumes, EventVolumeBackupFailed)
+			ctrl.annotateBackup(annVolumeBackupFailHooks, backup)
+			ctrl.logger.Infof("Pre hook reversal finished (%s)", backup.Name)
 			return nil
 		}
 
@@ -346,6 +370,19 @@ func (ctrl *controller) syncBackup(backup *kahuapi.Backup) (err error) {
 		fallthrough
 
 	case kahuapi.BackupStagePostHook:
+		// Execute post hooks
+		err = ctrl.hookExecutor.ExecuteHook(ctrl.logger, &backup.Spec, hooks.PostHookPhase)
+		if err != nil {
+			ctrl.logger.Errorf("Failed to execute post hooks: %s", err.Error())
+			if _, err = ctrl.updateBackupStatusWithEvent(backup,
+				kahuapi.BackupStatus{State: kahuapi.BackupStateFailed},
+				v1.EventTypeWarning, EventPostHookFailed, "post hook execution failed"); err != nil {
+				return err
+			}
+			return nil
+		}
+		ctrl.eventRecorder.Event(backup, v1.EventTypeNormal,
+			string(kahuapi.BackupStagePostHook), "Post hook execution successful")
 		backup, err = ctrl.updateBackupStatusWithEvent(backup,
 			kahuapi.BackupStatus{Stage: kahuapi.BackupStageResources, State: kahuapi.BackupStateNew},
 			v1.EventTypeNormal, string(kahuapi.BackupStageResources), "Start resource backup")
@@ -497,6 +534,22 @@ func isBackupInitNeeded(backup *kahuapi.Backup) bool {
 	}
 
 	return false
+}
+
+func (ctrl *controller) reversePreHooksExecutionOnFailure(backup *kahuapi.Backup,
+	stage kahuapi.BackupStage, event string) {
+	// Execute post hooks for reverse, previous hook executions
+	ctrl.logger.Infof("Try executing post hooks to reverse pre hook, when failure on: %s", event)
+	err := ctrl.hookExecutor.ExecuteHook(ctrl.logger, &backup.Spec, hooks.PostHookPhase)
+	if err != nil {
+		ctrl.logger.Error("Failed to execute reverse post hooks")
+		ctrl.eventRecorder.Event(backup, v1.EventTypeWarning, event,
+			"Post hook execution to revert Pre hook also failed")
+		return
+	}
+	ctrl.eventRecorder.Event(backup, v1.EventTypeWarning, event,
+		"Post hook execution to revert Pre hook is success")
+	return
 }
 
 func (ctrl *controller) backupInitialize(backup *kahuapi.Backup) (*kahuapi.Backup, error) {

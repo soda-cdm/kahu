@@ -40,7 +40,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 func TestNewPodCommandExecutor(t *testing.T) {
