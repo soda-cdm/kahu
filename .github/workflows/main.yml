@@ -10,9 +10,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-go@v3
         with:
-          go-version: '>=1.17.19'
-      - run: |
-          make all        
+          go-version: '>=1.17.19'   
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
