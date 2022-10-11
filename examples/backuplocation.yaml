@@ -1,4 +1,4 @@
-apiVersion: kahu.io/v1
+apiVersion: kahu.io/v1beta1
 kind: BackupLocation
 metadata:
    name: nfs
