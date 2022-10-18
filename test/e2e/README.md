@@ -3,16 +3,17 @@ This document captures high-level design of a Go framework for testing component
 <br />
 We use Ginkgo framework for Kahu
 Ginkgo is a testing framework for Go designed to help you write expressive tests. It is best paired with the Gomega matcher library. When combined, Ginkgo and Gomega provide a rich and expressive DSL (Domain-specific Language) for writing tests.
+
 ## Goals
-*Properly documented framework to help with adoption
- *Easily express end-to-end test and suites using the built-in Go testing package
- *Rely and use Go testing package constructs to create test suites and test functions
- *Provide helper functions that abstracts Client-Go functionalities
- *Support Go test features to easily select/filter tests to run during execution
- *Define optional env/argument variables to control/pass data to tests
+* Properly documented framework to help with adoption
+* Easily express end-to-end test and suites using the built-in Go testing package
+* Rely and use Go testing package constructs to create test suites and test functions
+* Provide helper functions that abstracts Client-Go functionalities
+* Support Go test features to easily select/filter tests to run during execution
+* Does not specify how tests are built and executed (i.e. e2e.test binary)
+* Define optional env/argument variables to control/pass data to tests
 
 ## Non-Goals
-* Does not specify how tests are built and executed (i.e. e2e.test binary)
 * Maintain backward compatibility with existing e2e test framework
 * Not responsible for bootstrapping or executing the tests themselves (i.e. Ginkgo)
 * Initially, this framework will not be responsible for hosting clusters infra components (i.e. Kubetest/Kubetest2)
@@ -252,7 +253,8 @@ They can be sorted. They can be randomized. They can be filtered. They can be di
 To unlock these powerful capabilities Ginkgo makes an important, foundational, assumption about the specs in your suite:
 
 ### Spec Randomization
-???
+Not yet done
+
 ### Spec Parallelization
  This is especially useful when running large, complex, and slow integration suites where the only means to speed things up is to embrace parallelism.
 To run a Ginkgo suite in parallel you simply pass the -p flag to ginkgo:
@@ -415,3 +417,4 @@ To get help about Ginkgo's run flags you'll need to run ginkgo help run.
 
 ## Resources
 https://onsi.github.io/ginkgo/#ginkgo-cli-overview
+https://onsi.github.io/gomega/
