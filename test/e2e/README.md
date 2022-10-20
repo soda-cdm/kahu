@@ -20,7 +20,7 @@ Ginkgo is a testing framework for Go designed to help you write expressive tests
 * Excludes support for fake/mock cluster components for testing
 
 ## Design
-Suite Environment → setup operations → test steps in testcase function → cleanup operations →Suite environment
+![Ginkgo Design Diagram](resources/design_diagram.png?raw=true "Ginkgo Design Diagram")
 
 ## Installing Ginkgo
 Ginkgo uses go modules. To add Ginkgo to your project, assuming you have a go.mod file setup, just go install it:
@@ -253,7 +253,20 @@ They can be sorted. They can be randomized. They can be filtered. They can be di
 To unlock these powerful capabilities Ginkgo makes an important, foundational, assumption about the specs in your suite:
 
 ### Spec Randomization
-Not yet done
+By default, Ginkgo will randomize the order in which the specs in a suite run. This is done intentionally. By randomizing specs, Ginkgo can help suss out spec pollution - accidental dependencies between specs - throughout a suite's development.
+
+Ginkgo's default behavior is to only randomize the order of top-level containers -- the specs within those containers continue to run in the order in which they are specified in the test files. This is helpful when developing specs as it mitigates the cognitive overload of having specs within a container continuously change the order in which they run during a debugging session.
+
+When running on CI, or before committing code, it's good practice to instruct Ginkgo to randomize all specs in a suite. You do this with the --randomize-all flag:
+
+```
+ginkgo --randomize-all
+```
+Ginkgo uses the current time to seed the randomization and prints out the seed near the beginning of the suite output. If you notice intermittent spec failures that you think may be due to spec pollution, you can use the seed from a failing suite to exactly reproduce the spec order for that suite. To do this pass the --seed=SEED flag:
+
+```
+ginkgo --seed=17
+```
 
 ### Spec Parallelization
  This is especially useful when running large, complex, and slow integration suites where the only means to speed things up is to embrace parallelism.
