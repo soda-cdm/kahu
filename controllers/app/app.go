@@ -127,9 +127,13 @@ through the apiserver and makes attempts to move the current state towards the d
 				Identity:      id,
 				EventRecorder: eventRecorder,
 			}
+
+			if completeConfig.LeaderLockNamespace == "" {
+				completeConfig.LeaderLockNamespace = defaultLeaderLockNamespace
+			}
 			resourceLock, err := resourcelock.New(
 				resourcelock.ConfigMapsLeasesResourceLock,
-				defaultLeaderLockNamespace,
+				completeConfig.LeaderLockNamespace,
 				defaultLeaderLockObjectName,
 				completeConfig.KubeClient.CoreV1(),
 				completeConfig.KubeClient.CoordinationV1(),
@@ -139,9 +143,9 @@ through the apiserver and makes attempts to move the current state towards the d
 			}
 			leaderElectionConfig := leaderelection.LeaderElectionConfig{
 				Lock:          resourceLock,
-				LeaseDuration: 15 * time.Second,
-				RenewDeadline: 10 * time.Second,
-				RetryPeriod:   2 * time.Second,
+				LeaseDuration: completeConfig.LeaderLeaseDuration,
+				RenewDeadline: completeConfig.LeaderRenewDeadline,
+				RetryPeriod:   completeConfig.LeaderRetryPeriod,
 				Callbacks: leaderelection.LeaderCallbacks{
 					OnStartedLeading: func(ctx context.Context) {
 						if err := Run(ctx, completeConfig); err != nil {
@@ -150,6 +154,7 @@ through the apiserver and makes attempts to move the current state towards the d
 					},
 					OnStoppedLeading: func() {
 						log.Fatalf("Controller manager lost master")
+						cancel()
 					},
 					OnNewLeader: func(identity string) {
 						log.Infof("New leader elected. Current leader %s", identity)
@@ -159,6 +164,7 @@ through the apiserver and makes attempts to move the current state towards the d
 			leaderElector, err := leaderelection.NewLeaderElector(leaderElectionConfig)
 			if err != nil {
 				log.Fatalf("Error creating leader elector: %v", err)
+				os.Exit(1)
 			}
 			leaderElector.Run(ctx)
 		},
