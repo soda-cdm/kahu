@@ -62,6 +62,8 @@ type VolumeBackupState struct {
 	BackupAttributes map[string]string `json:"backupAttributes,omitempty"`
 
 	Progress int64 `json:"progress,omitempty"`
+
+	LastProgressUpdate int64 `json:"lastProgressUpdate,omitempty"`
 }
 
 // VolumeBackupContentStatus defines the observed state of VolumeBackupContent

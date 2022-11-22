@@ -78,6 +78,16 @@ type RestoreSpec struct {
 	// Hooks represent custom behaviors that should be executed during or post restore.
 	// +optional
 	Hooks RestoreHookSpec `json:"hook,omitempty"`
+
+	// PreserveNodePort enable to preserve service node port during restore
+	// Default behavior is to use assign fresh node port
+	// +optional
+	PreserveNodePort *bool `json:"preserveNodePort,omitempty"`
+
+	// PreserveClusterIpAddr enable to preserve cluster IP addresses during restore
+	// Default behavior is to use assign fresh cluster ip addr when it is not "None"
+	// +optional
+	PreserveClusterIpAddr *bool `json:"preserveClusterIpAddr,omitempty"`
 }
 
 // RestoreHookSpec is hook which should be executed at different phase of backup
@@ -168,19 +178,18 @@ type InitRestoreHook struct {
 	Timeout metav1.Duration `json:"timeout,omitempty"`
 }
 
-// // HookErrorMode defines how service should treat an error from a hook.
-// // +kubebuilder:validation:Enum=Continue;Fail
-// type HookErrorMode string
+// RestoreResource indicates the resources getting restored
+type RestoreResource struct {
+	metav1.TypeMeta `json:",inline"`
 
-// const (
-// 	// HookErrorModeContinue means that an error from a hook is acceptable, and the backup can
-// 	// proceed.
-// 	HookErrorModeContinue HookErrorMode = "Continue"
+	// ResourceName is a one of the item of backup that is backing up
+	// +optional
+	ResourceName string `json:"resourceName,omitempty"`
 
-// 	// HookErrorModeFail means that an error from a hook is problematic, and the backup should be in
-// 	// error.
-// 	HookErrorModeFail HookErrorMode = "Fail"
-// )
+	// Namespace of the backup resource
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
 
 // +kubebuilder:validation:Enum=Initial;PreHook;Resources;Volumes;PostHook;Finished
 
@@ -228,6 +237,10 @@ type RestoreStatus struct {
 	// +optional
 	// +kubebuilder:default=New
 	State RestoreState `json:"state,omitempty"`
+
+	// Resources tells the resources that is restored
+	// +optional
+	Resources []RestoreResource `json:"resources,omitempty"`
 
 	// +optional
 	// +nullable
