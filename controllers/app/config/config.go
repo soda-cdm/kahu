@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"time"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -42,6 +43,10 @@ type Config struct {
 	DisableControllers     []string
 	KahuClientConfig       client.Config
 	BackupControllerConfig backup.Config
+	LeaderLockNamespace    string
+	LeaderLeaseDuration    time.Duration
+	LeaderRenewDeadline    time.Duration
+	LeaderRetryPeriod      time.Duration
 }
 
 type CompletedConfig struct {

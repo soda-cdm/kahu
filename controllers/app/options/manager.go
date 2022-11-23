@@ -18,21 +18,31 @@ package options
 
 import (
 	"fmt"
-
-	"github.com/soda-cdm/kahu/controllers/app/config"
+	"os"
+	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/soda-cdm/kahu/controllers/app/config"
 )
 
 const (
 	defaultControllerWorkers = 4
 	defaultLeaderElection    = false
+	envLeaderLockNamespace   = "NAMESPACE"
+	leaseDuration            = 8 * time.Second
+	renewDeadline            = 6 * time.Second
+	retryPeriod              = 2 * time.Second
 )
 
 type controllerManagerOptions struct {
 	ControllerWorkers    int
-	EnableLeaderElection bool
 	DisableControllers   []string
+	EnableLeaderElection bool
+	LeaderLockNamespace  string
+	LeaderLeaseDuration  time.Duration
+	LeaderRenewDeadline  time.Duration
+	LeaderRetryPeriod    time.Duration
 }
 
 func NewGenericControllerOptions() *controllerManagerOptions {
@@ -46,16 +56,28 @@ func NewGenericControllerOptions() *controllerManagerOptions {
 func (opt *controllerManagerOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&opt.ControllerWorkers, "controllerWorkers", opt.ControllerWorkers,
 		"Number of worker for each controller")
-	fs.BoolVar(&opt.EnableLeaderElection, "enableLeaderElection", opt.EnableLeaderElection,
-		"Start a leader election client and gain leadership for controller-manager")
 	fs.StringArrayVar(&opt.DisableControllers, "disableControllers", opt.DisableControllers,
 		"Disable list of controller")
+	fs.BoolVar(&opt.EnableLeaderElection, "enableLeaderElection", opt.EnableLeaderElection,
+		"Start a leader election client and gain leadership for controller-manager")
+	fs.StringVar(&opt.LeaderLockNamespace, "leaderLockNamespace", os.Getenv(envLeaderLockNamespace),
+		"Configure leader election lock namespace")
+	fs.DurationVar(&opt.LeaderLeaseDuration, "leaderLeaseDuration", leaseDuration,
+		"Configure leader election lease duration")
+	fs.DurationVar(&opt.LeaderRenewDeadline, "leaderRenewDeadline", renewDeadline,
+		"Configure leader election lease renew deadline")
+	fs.DurationVar(&opt.LeaderRetryPeriod, "leaderRetryPeriod", retryPeriod,
+		"Configure leader election lease retry period")
 }
 
 func (opt *controllerManagerOptions) ApplyTo(cfg *config.Config) error {
 	cfg.ControllerWorkers = opt.ControllerWorkers
 	cfg.EnableLeaderElection = opt.EnableLeaderElection
 	cfg.DisableControllers = opt.DisableControllers
+	cfg.LeaderLockNamespace = opt.LeaderLockNamespace
+	cfg.LeaderLeaseDuration = opt.LeaderLeaseDuration
+	cfg.LeaderRenewDeadline = opt.LeaderRenewDeadline
+	cfg.LeaderRetryPeriod = opt.LeaderRetryPeriod
 	return nil
 }
 
