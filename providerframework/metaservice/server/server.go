@@ -119,12 +119,18 @@ func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
 	return nil
 }
 
-func (server *metaServer) Delete(ctxt context.Context, req *pb.DeleteRequest) (*pb.Empty, error) {
-	log.Info("Delete backup Called .... ")
-
+func (server *metaServer) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.Empty, error) {
 	empty := &pb.Empty{}
-	
-	return empty, nil
+	log.Info("Delete backup Called .... ")
+	backupHandle := req.GetId().BackupHandle
+	parameters := req.GetId().Parameters
+	err := server.backupRepo.Delete(backupHandle+archiveFileFormat, parameters)
+	if err != nil {
+		log.Errorf("failed to delete backup. %s", err)
+		return empty, status.Errorf(codes.Internal, "failed to delete backup. %s", err)
+	}
+
+	return empty, err
 }
 
 func getBackupHandle(service pb.MetaService_BackupServer) (string, error) {
@@ -154,8 +160,10 @@ func (server *metaServer) Restore(req *pb.RestoreRequest,
 	service pb.MetaService_RestoreServer) error {
 	log.Infof("Restore Called with request %+v", req)
 
+	archiveFileName := req.GetId().GetBackupHandle() + archiveFileFormat
+
 	// download backup file
-	filePath, err := server.backupRepo.Download(req.GetId().GetBackupHandle(), req.GetId().GetParameters())
+	filePath, err := server.backupRepo.Download(archiveFileName, req.GetId().GetParameters())
 	if err != nil {
 		log.Errorf("failed to upload backup. %s", err)
 		return status.Errorf(codes.Internal, "failed to upload backup. %s", err)
