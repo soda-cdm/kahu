@@ -162,3 +162,94 @@ func (handler *prefixMutation) updateDeploymentContent(prefixString string, unst
 	}
 	return handler.volumesSectionUpdate(prefixString, volumes, unstructuredResource)
 }
+
+func (handler *prefixMutation) volumeClaimTemplatesUpdate(prefixString string, volumeClaimTemplates []interface{}, unstructuredResource *unstructured.Unstructured) *unstructured.Unstructured {
+
+	if volumeClaimTemplates == nil {
+		handler.logger.Errorf("skipping as volumeClaimTemplates section of spec is empty.")
+		return nil
+	}
+	handler.logger.Infof("started adding prefix to volumes section")
+	for _, v := range volumeClaimTemplates {
+		// Update the pvc name
+		pvcName, found, err := unstructured.NestedString(v.(map[string]interface{}), "metadata", "name")
+		if !found || err != nil {
+			handler.logger.Warningf("pvcName not found!")
+			return unstructuredResource
+		}
+		v.(map[string]interface{})["metadata"].(map[string]interface{})["name"] = prefixString + pvcName
+		err = unstructured.SetNestedSlice(unstructuredResource.UnstructuredContent(), volumeClaimTemplates, "spec", "volumeClaimTemplates")
+		if err != nil {
+			handler.logger.Errorf("unable to add prefix to persistentVolumeClaim with error:%s", err)
+			return nil
+		}
+		// update storageclass
+		sc, found, err := unstructured.NestedString(v.(map[string]interface{}), "spec", "storageClassName")
+		if !found || err != nil {
+			handler.logger.Warningf("storageclass not found!")
+			return unstructuredResource
+		}
+		handler.logger.Infof("storage class name:%s", sc)
+		v.(map[string]interface{})["spec"].(map[string]interface{})["storageClassName"] = prefixString + sc
+		err = unstructured.SetNestedSlice(unstructuredResource.UnstructuredContent(), volumeClaimTemplates, "spec", "volumeClaimTemplates")
+		if err != nil {
+			handler.logger.Errorf("unable to add prefix to persistentVolumeClaim  sc with error:%s", err)
+			return nil
+		}
+	}
+
+	return unstructuredResource
+}
+
+func (handler *prefixMutation) containersSectionUpdate(prefixString string, containers []interface{}, unstructuredResource *unstructured.Unstructured) *unstructured.Unstructured {
+
+	if containers == nil {
+		handler.logger.Errorf("skipping as containers section of spec is empty.")
+		return nil
+	}
+	handler.logger.Infof("started adding prefix to containers section")
+	for _, c := range containers {
+		vmounts, found, err := unstructured.NestedSlice(c.(map[string]interface{}), "volumeMounts")
+		if !found || err != nil {
+			handler.logger.Warningf("vmountName not found!")
+			return unstructuredResource
+		}
+		for _, vmount := range vmounts {
+			vname, found, err := unstructured.NestedString(vmount.(map[string]interface{}), "name")
+			if !found || err != nil {
+				handler.logger.Warningf("vname not found!")
+				return unstructuredResource
+			}
+			vmount.(map[string]interface{})["name"] = prefixString + vname
+		}
+		c.(map[string]interface{})["volumeMounts"] = vmounts
+		err = unstructured.SetNestedSlice(unstructuredResource.UnstructuredContent(), containers, "spec", "template", "spec", "containers")
+		if err != nil {
+			handler.logger.Errorf("unable to add prefix to volumeMounts with error:%s", err)
+			return nil
+		}
+	}
+	return unstructuredResource
+}
+
+func (handler *prefixMutation) updateStatefulSetContent(prefixString string, unstructuredResource *unstructured.Unstructured) *unstructured.Unstructured {
+	handler.logger.Infof("started adding prefix to statefulset resource")
+	unstructuredResource = handler.serviceAccountSectionUpdate(prefixString, unstructuredResource)
+	if unstructuredResource == nil {
+		return nil
+	}
+
+	volumeClaimTemplates, found, err := unstructured.NestedSlice(unstructuredResource.UnstructuredContent(), "spec", "volumeClaimTemplates")
+	if !found || err != nil {
+		handler.logger.Warningf("volumeClaimTemplates section not found in spec")
+		return unstructuredResource
+	}
+	// get containers section
+	containers, found, err := unstructured.NestedSlice(unstructuredResource.UnstructuredContent(), "spec", "template", "spec", "containers")
+	if !found || err != nil {
+		handler.logger.Warningf("containers section not found in spec")
+		return unstructuredResource
+	}
+	unstructuredResource = handler.volumeClaimTemplatesUpdate(prefixString, volumeClaimTemplates, unstructuredResource)
+	return handler.containersSectionUpdate(prefixString, containers, unstructuredResource)
+}

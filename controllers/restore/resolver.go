@@ -18,14 +18,16 @@ package restore
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
-	"reflect"
+
+	"github.com/soda-cdm/kahu/utils"
 )
 
 type Interface interface {

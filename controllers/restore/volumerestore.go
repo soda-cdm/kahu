@@ -21,11 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -60,12 +60,73 @@ func (ctx *restoreContext) annotateRestore(annotation, value string,
 	return ctx.patchRestore(restore, restoreClone)
 }
 
+func (ctx *restoreContext) annotateVolRestoreContent(annotation string,
+	vrcData *kahuapi.VolumeRestoreContent) (*kahuapi.VolumeRestoreContent, error) {
+	if metav1.HasAnnotation(vrcData.ObjectMeta, annotation) {
+		ctx.logger.Infof("Volume restore content all-ready annotated with %s", annotation)
+		return vrcData, nil
+	}
+
+	vrcClone := vrcData.DeepCopy()
+	metav1.SetMetaDataAnnotation(&vrcClone.ObjectMeta, annotation, "true")
+	return ctx.patchVolRestoreContent(vrcData, vrcClone)
+}
+
+func (ctx *restoreContext) checkPVCRestored(restore *kahuapi.Restore,
+	indexer cache.Indexer) (bool, error) {
+	// all contents are prefetched based on restore backup spec
+	pvcs, err := ctx.parseRestorePVC(indexer)
+	if err != nil {
+		ctx.logger.Errorf("Unable to parse PVC. %s", err)
+		// retry to parse PVC
+		return false, err
+	}
+
+	// check all pvc restored
+	for _, pvc := range pvcs {
+		k8sPVC, err := ctx.kubeClient.CoreV1().
+			PersistentVolumeClaims(pvc.Namespace).
+			Get(context.TODO(), pvc.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			ctx.logger.Errorf("Restore PVC (%s) not available", pvc.Name)
+			restore.Status.State = kahuapi.RestoreStateFailed
+			restore.Status.FailureReason = fmt.Sprintf("Restore PVC (%s) not available", pvc.Name)
+			_, err = ctx.updateRestoreStatus(restore)
+			return false, err
+		}
+		if err != nil {
+			ctx.logger.Errorf("Failed to get PVC status. %s", err)
+			// retry to check PVC status from K8S
+			return false, err
+		}
+		if k8sPVC.Spec.VolumeName == "" {
+			ctx.logger.Errorf("Restored PVC (%s) is not bound. Considering PVC restore failed", pvc.Name)
+			restore.Status.State = kahuapi.RestoreStateFailed
+			restore.Status.FailureReason = fmt.Sprintf("Restored PVC (%s) is not bound. "+
+				"Considering PVC restore failed", pvc.Name)
+			_, err = ctx.updateRestoreStatus(restore)
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
 func (ctx *restoreContext) syncVolumeRestore(restore *kahuapi.Restore,
 	indexer cache.Indexer) (*kahuapi.Restore, error) {
 	if ctx.volumeRestoreFinished(restore) {
 		return restore, nil
 	}
 	if metav1.HasAnnotation(restore.ObjectMeta, annVolumeRestoreCompleted) {
+		// ensure all PVC are restored
+		restored, err := ctx.checkPVCRestored(restore, ctx.resolveObjects)
+		if err != nil {
+			ctx.logger.Errorf("Failed to check Volume restore(%s). Retrying volume restore check", err)
+			return restore, err
+		}
+		if !restored {
+			return restore, nil
+		}
 		// add volume backup content in resource backup list
 		restore.Status.State = kahuapi.RestoreStateCompleted
 		return ctx.updateRestoreStatus(restore)
@@ -148,6 +209,10 @@ func (ctx *restoreContext) checkVolumeRestoreStatus(pvcCount int,
 func (ctx *restoreContext) parseRestorePVC(indexer cache.Indexer) ([]*v1.PersistentVolumeClaim, error) {
 	pvcs := make([]*v1.PersistentVolumeClaim, 0)
 
+	if indexer == nil {
+		ctx.logger.Error("Invalid cached resource type")
+		return pvcs, nil
+	}
 	pvcObjects, err := indexer.ByIndex(backupObjectResourceIndex, utils.PVC)
 	if err != nil {
 		return pvcs, nil
@@ -323,6 +388,16 @@ func (ctx *restoreContext) removeVolumeRestore(
 		return errors.Wrap(err, "unable to get volume restore content list")
 	}
 
+	// If restore is not fully successful, trigger resource cleanup
+	if !(restore.Status.State == kahuapi.RestoreStateCompleted &&
+		restore.Status.Stage == kahuapi.RestoreStageFinished) {
+		ctx.logger.Infof("Preparing to cleanup vrc for the restore %s", restore.Name)
+		err := ctx.prepareVRCCleanup(vrcList)
+		if err != nil {
+			ctx.logger.Errorf("Unable to mark vrc cleanup for restore %s.", restore.Name)
+		}
+	}
+
 	for _, vrc := range vrcList.Items {
 		if vrc.DeletionTimestamp != nil { // ignore deleting volume backup content
 			continue
@@ -335,6 +410,43 @@ func (ctx *restoreContext) removeVolumeRestore(
 	}
 
 	return nil
+}
+
+// prepareVRCCleanup will add annotations to vrc to trigger the resource cleanup
+func (ctx *restoreContext) prepareVRCCleanup(vrcList *kahuapi.VolumeRestoreContentList) error {
+	for _, vrc := range vrcList.Items {
+		if vrc.DeletionTimestamp != nil { // ignore deleting volume restore content
+			continue
+		}
+		_, err := ctx.annotateVolRestoreContent(annVolumeResourceCleanup, &vrc)
+		if err != nil {
+			ctx.logger.Errorf("Failed to annotate volume restore content %s", err)
+			return errors.Wrap(err, "Unable to annotate volume restore content")
+		}
+	}
+	return nil
+}
+
+func (ctx *restoreContext) cleanupRestoredMetadata(restore *kahuapi.Restore) (*kahuapi.Restore, error) {
+
+	resCleanupFailed := false
+	Resources := restore.Status.Resources
+
+	for _, resource := range Resources {
+		err := ctx.deleteRestoredResource(&resource, restore)
+		if err != nil {
+			ctx.logger.Errorf("failed to cleanup the resource %s", resource.ResourceName)
+			resCleanupFailed = true
+		}
+	}
+
+	if resCleanupFailed == false {
+		newRestore := restore.DeepCopy()
+		utils.SetAnnotation(newRestore, annRestoreCleanupDone, "true")
+		ctx.logger.Infof("Cleanup completed for restore %s", restore.Name)
+		return ctx.patchRestore(restore, newRestore)
+	}
+	return restore, nil
 }
 
 func (ctx *restoreContext) ensureVolumeRestoreContent(
