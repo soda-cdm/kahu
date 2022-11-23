@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/kubernetes"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/utils"
@@ -381,6 +382,7 @@ type PodExecRestoreHook struct {
 func GroupRestoreExecHooks(
 	// resourceRestoreHooks []ResourceRestoreHook,
 	resourceHooks []kahuapi.RestoreResourceHookSpec,
+	client kubernetes.Interface,
 	pod *v1.Pod,
 	log logrus.FieldLogger,
 ) (map[string][]PodExecRestoreHook, error) {
@@ -415,7 +417,7 @@ func GroupRestoreExecHooks(
 	labels := metadata.GetLabels()
 	namespace := metadata.GetNamespace()
 	for _, resourceHook := range resourceHooks {
-		hookSpec := commonHookSpec{
+		hookSpec := CommonHookSpec{
 			Name:              resourceHook.Name,
 			IncludeNamespaces: resourceHook.IncludeNamespaces,
 			ExcludeNamespaces: resourceHook.ExcludeNamespaces,
@@ -423,8 +425,8 @@ func GroupRestoreExecHooks(
 			IncludeResources:  resourceHook.IncludeResources,
 			ExcludeResources:  resourceHook.ExcludeResources,
 		}
-		if !validateHook(log, hookSpec, pod.Name, namespace, labels) {
-			return byContainer, nil
+		if !validateHook(log, client, hookSpec, pod.Name, namespace, labels) {
+			continue
 		}
 		for _, rh := range resourceHook.PostHooks {
 			if rh.Exec == nil {

@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/utils"
@@ -60,6 +61,7 @@ type InitHooksHandler struct {
 // Otherwise, the supplied ResourceRestoreHooks are applied.
 func (i *InitHooksHandler) HandleInitHook(
 	logger log.FieldLogger,
+	client kubernetes.Interface,
 	groupResource schema.GroupResource,
 	obj runtime.Unstructured,
 	hookSpec *kahuapi.RestoreHookSpec,
@@ -94,7 +96,7 @@ func (i *InitHooksHandler) HandleInitHook(
 		labels := labels.Set(metadata.GetLabels())
 
 		for _, resources := range hookSpec.Resources {
-			hSpec := commonHookSpec{
+			hSpec := CommonHookSpec{
 				Name:              resources.Name,
 				IncludeNamespaces: resources.IncludeNamespaces,
 				ExcludeNamespaces: resources.ExcludeNamespaces,
@@ -102,7 +104,7 @@ func (i *InitHooksHandler) HandleInitHook(
 				IncludeResources:  resources.IncludeResources,
 				ExcludeResources:  resources.ExcludeResources,
 			}
-			if !validateHook(logger, hSpec, pod.Name, namespace, labels) {
+			if !validateHook(logger, client, hSpec, pod.Name, namespace, labels) {
 				continue
 			}
 			for _, hook := range resources.PostHooks {

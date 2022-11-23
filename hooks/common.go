@@ -33,16 +33,18 @@ import (
 	"github.com/soda-cdm/kahu/utils"
 )
 
-type commonHookSpec struct {
+type CommonHookSpec struct {
 	Name              string
 	IncludeNamespaces []string
 	ExcludeNamespaces []string
 	IncludeResources  []kahuapi.ResourceSpec
 	ExcludeResources  []kahuapi.ResourceSpec
 	LabelSelector     *metav1.LabelSelector
+	ContinueFlag      bool
+	Hooks             []kahuapi.ResourceHook
 }
 
-func filterHookNamespaces(allNamespaces sets.String, IncludeNamespaces, ExcludeNamespaces []string) sets.String {
+func FilterHookNamespaces(allNamespaces sets.String, IncludeNamespaces, ExcludeNamespaces []string) sets.String {
 	// Filter namespaces for hook
 	hooksNsIncludes := sets.NewString()
 	hooksNsExcludes := sets.NewString()
@@ -94,7 +96,8 @@ func checkInclude(in []string, ex []string, key string) bool {
 }
 
 func validateHook(log log.FieldLogger,
-	hookSpec commonHookSpec,
+	client kubernetes.Interface,
+	hookSpec CommonHookSpec,
 	name, namespace string,
 	slabels labels.Set) bool {
 	// Check namespace
@@ -102,28 +105,20 @@ func validateHook(log log.FieldLogger,
 	namespacesEx := hookSpec.ExcludeNamespaces
 
 	if !checkInclude(namespacesIn, namespacesEx, namespace) {
-		log.Infof("invalid namespace (%s), skipping  hook execution", namespace)
+		log.Infof("hook (%s), not for ns (%s) skipping execution", hookSpec.Name, namespace)
 		return false
 	}
-	// Check resource
-	for _, res := range hookSpec.IncludeResources {
-		if res.Kind != PodResource {
-			log.Errorf("invalid hook resource (%s for %s) in resource spec include, skipping resource", res.Kind, name)
-		}
-	}
-	for _, res := range hookSpec.ExcludeResources {
-		if res.Kind != PodResource {
-			log.Errorf("invalid hook resource (%s for %s) in resource spec exclude, skipping resource", res.Kind, name)
-		}
-	}
-	resourcesIn := hookSpec.IncludeResources
-	resourcesEx := hookSpec.ExcludeResources
 
-	var resourceNames []string
-	resourceNames = append(resourceNames, name)
-	names := utils.FindMatchedStrings(PodResource, resourceNames, resourcesIn, resourcesEx)
-	setNames := sets.NewString().Insert(names...)
-	if !setNames.Has(name) {
+	// Check resource
+	pods, err := GetAllPodsForNamespace(log, client, namespace, hookSpec.LabelSelector,
+		hookSpec.IncludeResources, hookSpec.ExcludeResources)
+	if err != nil {
+		log.Warningf("hook (%s), failed to get pods for ns (%s) skipping execution", hookSpec.Name, namespace)
+		return false
+	}
+
+	if !pods.Has(name) {
+		log.Infof("hook (%s), not for pod (%s) skipping execution", hookSpec.Name, name)
 		return false
 	}
 	// Check label
