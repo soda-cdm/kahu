@@ -72,11 +72,13 @@ const (
 type VolumeRestoreState struct {
 	VolumeName string `json:"volumeName,omitempty"`
 
-	VolumeHandle string `json:"backupHandle,omitempty"`
+	VolumeHandle string `json:"volumeHandle,omitempty"`
 
 	VolumeAttributes map[string]string `json:"volumeAttributes,omitempty"`
 
 	Progress int64 `json:"progress,omitempty"`
+
+	LastProgressUpdate int64 `json:"lastProgressUpdate,omitempty"`
 }
 
 // VolumeRestoreContentStatus defines the observed state of VolumeRestoreContent
@@ -99,7 +101,7 @@ type VolumeRestoreContentStatus struct {
 	FailureReason string `json:"failureReason,omitempty"`
 
 	// +optional
-	RestoreState []VolumeRestoreState `json:"backupState,omitempty"`
+	RestoreState []VolumeRestoreState `json:"restoreState,omitempty"`
 }
 
 // +genclient
