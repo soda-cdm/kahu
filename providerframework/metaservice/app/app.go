@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
@@ -46,6 +47,7 @@ const (
 	// MetaService component name
 	componentMetaService = "metaservice"
 	serviceAnnotation    = "kahu.io/provider-service"
+	defaultProbeTimeout  = 30 * time.Second
 )
 
 // NewMetaServiceCommand creates a *cobra.Command object with default parameters
@@ -135,7 +137,7 @@ func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []strin
 	}
 	if help {
 		_ = cmd.Help()
-		return err
+		return errors.New("help command executed, exiting")
 	}
 	return nil
 }
@@ -155,6 +157,13 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	if err != nil {
 		return err
 	}
+
+	err = utils.Probe(grpcConn, defaultProbeTimeout)
+	if err != nil {
+		log.Errorf("Unable to probe metadata provider. %s: ", err)
+		return err
+	}
+	log.Infoln("Probe completed with provider")
 
 	// Register the metadata provider
 	provider, err := providerIdentity.RegisterMetadataProvider(ctx, &grpcConn)
@@ -176,26 +185,38 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 		serviceOptions, repository))
 
 	go func(ctx context.Context, server *grpc.Server) {
-		<-ctx.Done()
-		server.Stop()
+		server.Serve(lis)
 	}(ctx, grpcServer)
 
-	return grpcServer.Serve(lis)
+	<-ctx.Done()
+
+	return cleanup(grpcServer)
+}
+
+func cleanup(server *grpc.Server) error {
+	server.Stop()
+	return nil
 }
 
 func annotateProvider(
-	annotation, serviceAddress string,
+	annotation, value string,
 	provider *v1.Provider) error {
 	providerName := provider.Name
 
 	_, ok := provider.Annotations[annotation]
 	if ok {
 		log.Infof("Provider(%s) all-ready annotated with %s", providerName, annotation)
-		return nil
+		log.Infof("Provider(%s) overriding annotation with %s", providerName, annotation)
 	}
 
 	providerClone := provider.DeepCopy()
-	metav1.SetMetaDataAnnotation(&providerClone.ObjectMeta, annotation, serviceAddress)
+	metav1.SetMetaDataAnnotation(&providerClone.ObjectMeta, annotation, value)
+	return patchProvider(provider, providerClone)
+}
+
+func patchProvider(
+	provider *v1.Provider, providerClone *v1.Provider) error {
+	providerName := provider.Name
 
 	origBytes, err := json.Marshal(provider)
 	if err != nil {

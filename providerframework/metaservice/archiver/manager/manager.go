@@ -32,11 +32,11 @@ type archivalManager struct {
 
 type compressorPluginManager struct {
 	sync.Mutex
-	compressionWriterPlugins map[archiver.CompressionType]func(archiver.Writer) archiver.Writer
-	compressionReaderPlugins map[archiver.CompressionType]func(reader archiver.Reader) archiver.Reader
+	compressionWriterPlugins map[archiver.CompressionType]func(archiver.Writer) (archiver.Writer, error)
+	compressionReaderPlugins map[archiver.CompressionType]func(reader archiver.Reader) (archiver.Reader, error)
 }
 
-var cpm *compressorPluginManager
+var cpm compressorPluginManager
 var dbConnOnce sync.Once
 
 func init() {
@@ -45,15 +45,16 @@ func init() {
 
 func initManager() {
 	dbConnOnce.Do(func() {
-		cpm = &compressorPluginManager{
-			compressionWriterPlugins: make(map[archiver.CompressionType]func(archiver.Writer) archiver.Writer),
-			compressionReaderPlugins: make(map[archiver.CompressionType]func(reader archiver.Reader) archiver.Reader),
+		cpm = compressorPluginManager{
+			compressionWriterPlugins: make(map[archiver.CompressionType]func(archiver.Writer) (archiver.Writer, error)),
+			compressionReaderPlugins: make(map[archiver.CompressionType]func(reader archiver.Reader) (archiver.Reader,
+				error)),
 		}
 	})
 }
 
 func RegisterCompressionWriterPlugins(name archiver.CompressionType,
-	invoke func(archiver.Writer) archiver.Writer) {
+	invoke func(archiver.Writer) (archiver.Writer, error)) {
 	cpm.Lock()
 	defer cpm.Unlock()
 
@@ -61,7 +62,7 @@ func RegisterCompressionWriterPlugins(name archiver.CompressionType,
 }
 
 func RegisterCompressionReaderPlugins(name archiver.CompressionType,
-	invoke func(reader archiver.Reader) archiver.Reader) {
+	invoke func(reader archiver.Reader) (archiver.Reader, error)) {
 	cpm.Lock()
 	defer cpm.Unlock()
 
@@ -117,7 +118,12 @@ func (mgr *archivalManager) GetArchiver(typ archiver.CompressionType,
 		return nil, "", err
 	}
 
-	return tar.NewArchiver(compressorFunc(file)), archiveFile, nil
+	arch, err := compressorFunc(file)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return tar.NewArchiver(arch), archiveFile, nil
 }
 
 func (mgr *archivalManager) GetArchiveReader(typ archiver.CompressionType,
@@ -140,5 +146,9 @@ func (mgr *archivalManager) GetArchiveReader(typ archiver.CompressionType,
 		return nil, err
 	}
 
-	return tar.NewArchiveReader(compressorFunc(file)), nil
+	reader, err := compressorFunc(file)
+	if err != nil {
+		return nil, err
+	}
+	return tar.NewArchiveReader(reader), nil
 }

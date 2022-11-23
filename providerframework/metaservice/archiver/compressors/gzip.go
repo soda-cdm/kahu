@@ -38,19 +38,22 @@ type gzipReader struct {
 }
 
 func init() {
-	manager.RegisterCompressionWriterPlugins(GZipType, func(writer archiver.Writer) archiver.Writer {
+	manager.RegisterCompressionWriterPlugins(GZipType, func(writer archiver.Writer) (archiver.Writer, error) {
 		return &gzipWriter{
 			writer: writer,
 			gzip:   gzip.NewWriter(writer),
-		}
+		}, nil
 	})
 
-	manager.RegisterCompressionReaderPlugins(GZipType, func(reader archiver.Reader) archiver.Reader {
-		newReader, _ := gzip.NewReader(reader)
+	manager.RegisterCompressionReaderPlugins(GZipType, func(reader archiver.Reader) (archiver.Reader, error) {
+		newReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return nil, err
+		}
 		return &gzipReader{
 			reader: reader,
 			gzip:   newReader,
-		}
+		}, nil
 	})
 }
 

@@ -67,7 +67,7 @@ func createProviderCR(
 		return provider, nil
 	}
 	if !apierrors.IsNotFound(err) {
-		return provider, err
+		return nil, err
 	}
 
 	provider = &apiv1.Provider{
