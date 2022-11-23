@@ -54,12 +54,7 @@ func (ctrl *controller) getServices(namespace string, backup *PrepareBackup,
 
 	for _, service := range allServices.Items {
 		if utils.Contains(allServicesList, service.Name) {
-			serviceData, err := ctrl.GetService(namespace, service.Name)
-			if err != nil {
-				return err
-			}
-
-			err = ctrl.backupSend(serviceData, serviceData.Name, backupClient)
+			err = ctrl.backupSend(&service, service.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -67,15 +62,6 @@ func (ctrl *controller) getServices(namespace string, backup *PrepareBackup,
 
 	}
 	return nil
-}
-
-func (ctrl *controller) GetService(namespace, name string) (*v1.Service, error) {
-	service, err := ctrl.kubeClient.CoreV1().
-		Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return service, err
 }
 
 func (ctrl *controller) getConfigMapS(namespace string, backup *PrepareBackup,
@@ -105,9 +91,7 @@ func (ctrl *controller) getConfigMapS(namespace string, backup *PrepareBackup,
 
 	for _, item := range configList.Items {
 		if utils.Contains(configAllLits, item.Name) {
-			config_data, err := ctrl.GetConfigMap(namespace, item.Name)
-
-			err = ctrl.backupSend(config_data, config_data.Name, backupClient)
+			err = ctrl.backupSend(&item, item.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -145,12 +129,7 @@ func (ctrl *controller) getSecrets(namespace string, backup *PrepareBackup,
 
 	for _, secret := range secretList.Items {
 		if utils.Contains(allSecretsList, secret.Name) {
-			secretData, err := ctrl.GetSecret(namespace, secret.Name)
-			if err != nil {
-				return err
-			}
-
-			err = ctrl.backupSend(secretData, secret.Name, backupClient)
+			err = ctrl.backupSend(&secret, secret.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -212,22 +191,6 @@ func (ctrl *controller) getEndpoints(namespace string, backup *PrepareBackup,
 	return nil
 }
 
-func (ctrl *controller) GetReplicaSetAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-	replicaset, err := ctrl.kubeClient.AppsV1().
-		ReplicaSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(replicaset, replicaset.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) replicaSetBackup(namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 	ctrl.logger.Infoln("Starting collecting replicaset")
@@ -264,7 +227,7 @@ func (ctrl *controller) replicaSetBackup(namespace string,
 			}
 
 			// backup the replicaset yaml
-			err = ctrl.GetReplicaSetAndBackup(replicaset.Name, replicaset.Namespace, backupClient)
+			err = ctrl.backupSend(&replicaset, replicaset.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -306,22 +269,6 @@ func (ctrl *controller) replicaSetBackup(namespace string,
 	return nil
 }
 
-func (ctrl *controller) GetStatefulSetAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-
-	statefulset, err := ctrl.kubeClient.AppsV1().StatefulSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(statefulset, statefulset.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 	backupClient metaservice.MetaService_BackupClient) error {
 	ctrl.logger.Infoln("starting collecting statefulsets")
@@ -350,7 +297,7 @@ func (ctrl *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 	for _, statefulset := range statefulList.Items {
 		if utils.Contains(statefulsetAllList, statefulset.Name) {
 			// backup the statefulset yaml
-			err = ctrl.GetStatefulSetAndBackup(statefulset.Name, statefulset.Namespace, backupClient)
+			err = ctrl.backupSend(&statefulset, statefulset.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -369,10 +316,13 @@ func (ctrl *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 				return err
 			}
 			for _, pvc := range pvcList.Items {
-				pvcData, err := ctrl.GetPVC(namespace, pvc.Name)
+				pvcData, err := ctrl.GetPVC(&pvc)
 				if err != nil {
 					ctrl.logger.Errorf("unable to get pvc:%s", pvc.Name, err)
 					return err
+				}
+				if pvcData == nil {
+					continue
 				}
 
 				err = ctrl.backupSend(pvcData, pvc.Name, backupClient)
@@ -453,10 +403,13 @@ func (ctrl *controller) GetVolumesSpec(podspec v1.PodSpec, namespace string,
 
 		// collect pvc used in deployment
 		if v.PersistentVolumeClaim != nil {
-			pvc, err := ctrl.GetPVC(namespace, v.PersistentVolumeClaim.ClaimName)
+			pvc, err := ctrl.GetPVCByName(namespace, v.PersistentVolumeClaim.ClaimName)
 			if err != nil {
 				ctrl.logger.Errorf("unable to get pvc:%s, error:%s", v.PersistentVolumeClaim.ClaimName, err)
 				return err
+			}
+			if pvc == nil {
+				continue
 			}
 
 			err = ctrl.backupSend(pvc, v.PersistentVolumeClaim.ClaimName, backupClient)

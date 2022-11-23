@@ -67,9 +67,8 @@ type controller struct {
 	discoveryHelper      discovery.DiscoveryHelper
 	providerLister       kahulister.ProviderLister
 	volumeBackupClient   kahuv1client.VolumeBackupContentInterface
-	volumeBackupLister   kahulister.VolumeBackupContentLister
 	hookExecutor         hooks.Hooks
-	processedBackup      cache.Store
+	processedBackup      utils.Store
 }
 
 func NewController(
@@ -84,7 +83,7 @@ func NewController(
 	hookExecutor hooks.Hooks) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
-	processedBackupCache := cache.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
+	processedBackupCache := utils.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
 	backupController := &controller{
 		ctx:                  ctx,
 		logger:               logger,
@@ -97,7 +96,6 @@ func NewController(
 		discoveryHelper:      discoveryHelper,
 		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
 		volumeBackupClient:   kahuClient.KahuV1beta1().VolumeBackupContents(),
-		volumeBackupLister:   informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
 		hookExecutor:         hookExecutor,
 		processedBackup:      processedBackupCache,
 	}
@@ -138,7 +136,7 @@ func NewController(
 	// start volume backup reconciler
 	go newReconciler(defaultReconcileTimeLoop,
 		backupController.logger.WithField("source", "reconciler"),
-		informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
+		backupController.volumeBackupClient,
 		backupController.backupClient,
 		backupController.backupLister).Run(ctx.Done())
 
@@ -180,7 +178,7 @@ func (ctrl *controller) processQueue(key string) error {
 
 	// TODO: Add check for already processed backup
 	newBackup := backup.DeepCopy()
-	new, err := utils.StoreObjectUpdate(ctrl.processedBackup, newBackup, "Backup")
+	new, err := utils.StoreRevisionUpdate(ctrl.processedBackup, newBackup, "Backup")
 	if err != nil {
 		ctrl.logger.Errorf("%s", err)
 	}
@@ -191,6 +189,14 @@ func (ctrl *controller) processQueue(key string) error {
 	if newBackup.DeletionTimestamp != nil {
 		return ctrl.deleteBackup(newBackup)
 	}
+
+	// Rollback backup in case of failure at any stage
+	defer func() {
+		if newBackup.Status.State == kahuapi.BackupStateFailed &&
+			!metav1.HasAnnotation(newBackup.ObjectMeta, annBackupCleanupDone) {
+			ctrl.deleteBackup(newBackup)
+		}
+	}()
 
 	switch newBackup.Status.Stage {
 	case "", kahuapi.BackupStageInitial:
@@ -204,9 +210,9 @@ func (ctrl *controller) processQueue(key string) error {
 		}
 
 		ctrl.logger.Infof("Validating backup(%s) specifications", backup.Name)
-		err = ctrl.validateBackup(newBackup)
-		if err != nil {
-			return err
+		isValid, err := ctrl.validateBackup(newBackup)
+		if isValid != true {
+			return nil
 		}
 
 		if newBackup, err = ctrl.ensureSupportedResourceList(newBackup); err != nil {
@@ -249,13 +255,13 @@ func (ctrl *controller) deleteBackup(backup *kahuapi.Backup) error {
 	}
 
 	// check if all volume backup contents are deleted
-	vbsList, err := ctrl.volumeBackupLister.List(
-		labels.Set{volumeContentBackupLabel: backup.Name}.AsSelector())
+	vbsList, err := ctrl.volumeBackupClient.List(context.TODO(),
+		metav1.ListOptions{LabelSelector: labels.Set{volumeContentBackupLabel: backup.Name}.AsSelector().String()})
 	if err != nil {
 		ctrl.logger.Errorf("Unable to get volume backup list. %s", err)
 		return err
 	}
-	if len(vbsList) > 0 {
+	if len(vbsList.Items) > 0 {
 		ctrl.logger.Info("Volume backup list is not empty. Continue to wait for Volume backup delete")
 		return nil
 	}
@@ -270,9 +276,15 @@ func (ctrl *controller) deleteBackup(backup *kahuapi.Backup) error {
 
 	backupUpdate := backup.DeepCopy()
 	utils.RemoveFinalizer(backupUpdate, backupFinalizer)
-	_, err = ctrl.patchBackup(backup, backupUpdate)
+	utils.SetAnnotation(backupUpdate, annBackupCleanupDone, "true")
+	backup, err = ctrl.patchBackup(backup, backupUpdate)
 	if err != nil {
 		ctrl.logger.Errorf("removing finalizer failed for %s", backup.Name)
+	}
+
+	err = utils.StoreClean(ctrl.processedBackup, backup, "Backup")
+	if err != nil {
+		ctrl.logger.Warningf("Failed to clean processed cache. %s", err)
 	}
 	return err
 }
@@ -469,7 +481,7 @@ func (ctrl *controller) syncResourceBackup(
 	return ctrl.processMetadataBackup(backup)
 }
 
-func (ctrl *controller) validateBackup(backup *kahuapi.Backup) error {
+func (ctrl *controller) validateBackup(backup *kahuapi.Backup) (bool, error) {
 	var validationErrors []string
 	backupSpec := backup.Spec
 	// namespace validation
@@ -505,25 +517,35 @@ func (ctrl *controller) validateBackup(backup *kahuapi.Backup) error {
 	}
 
 	if backupSpec.MetadataLocation != "" {
-		_, err := ctrl.backupLocationLister.Get(backupSpec.MetadataLocation)
+		backupLocation, err := ctrl.backupLocationLister.Get(backupSpec.MetadataLocation)
 		if apierrors.IsNotFound(err) {
 			validationErrors = append(validationErrors,
 				fmt.Sprintf("metadata location (%s) not found", backupSpec.MetadataLocation))
 		}
+		if err == nil && backupLocation != nil {
+			_, err := ctrl.providerLister.Get(backupLocation.Spec.ProviderName)
+			if apierrors.IsNotFound(err) {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("invalid provider name (%s) configured for metadata location (%s)",
+						backupLocation.Spec.ProviderName, backupSpec.MetadataLocation))
+			}
+		}
 	}
 
 	if len(validationErrors) == 0 {
-		return nil
+		return true, nil
 	}
 
 	ctrl.logger.Errorf("Backup validation failed. %s", strings.Join(validationErrors, ", "))
-	_, err := ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{
+	if _, err := ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{
 		State:            kahuapi.BackupStateFailed,
 		ValidationErrors: validationErrors,
 	}, v1.EventTypeWarning, string(kahuapi.BackupStateFailed),
-		fmt.Sprintf("Backup validation failed. %s", strings.Join(validationErrors, ", ")))
+		fmt.Sprintf("Backup validation failed. %s", strings.Join(validationErrors, ", "))); err != nil {
+		return false, errors.Wrap(err, "backup validation failed")
+	}
 
-	return errors.Wrap(err, "backup validation failed")
+	return false, errors.New("backup validation failed")
 }
 
 func isBackupInitNeeded(backup *kahuapi.Backup) bool {

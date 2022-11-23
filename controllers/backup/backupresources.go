@@ -23,15 +23,14 @@ import (
 	"regexp"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/labels"
-
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -46,7 +45,9 @@ import (
 
 var excludeResourceType = sets.NewString(
 	utils.Node,
-	utils.Event)
+	utils.Event,
+	utils.VolumeSnapshot,
+	utils.EndpointSlice)
 
 const (
 	AnnResourceSelector = "kahu.io/backup-resources"
@@ -546,7 +547,11 @@ func (r *backupResources) isResourceNeedBackup(
 				r.logger.Warningf("Unable to compile regex %s", spec.Name)
 				continue
 			}
-			return !regex.Match([]byte(resourceName))
+			// if regex  match with resourceName then return false else try
+			// contine for other excludedResources
+			if regex.Match([]byte(resourceName)) {
+				return false
+			}
 		} else if spec.Kind == resourceKind {
 			if resourceName == "" || resourceName == spec.Name {
 				return false
@@ -568,7 +573,11 @@ func (r *backupResources) isResourceNeedBackup(
 				r.logger.Warningf("Unable to compile regex %s", spec.Name)
 				continue
 			}
-			return regex.Match([]byte(resourceName))
+			// if regex  match with resourceName then return true else try
+			// contine for other includedResources
+			if regex.Match([]byte(resourceName)) {
+				return true
+			}
 		} else if spec.Kind == resourceKind {
 			if resourceName == "" || resourceName == spec.Name {
 				return true

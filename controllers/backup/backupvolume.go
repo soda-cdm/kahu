@@ -48,6 +48,14 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, resources Re
 
 	pvs, err := ctrl.getVolumes(backup, resources)
 	if err != nil {
+		ctrl.logger.Errorf("Volume backup validation failed. %s", err)
+
+		if _, err := ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{
+			State: kahuapi.BackupStateFailed,
+		}, corev1.EventTypeWarning, EventVolumeBackupFailed,
+			fmt.Sprintf("Volume backup validation failed. %s", err)); err != nil {
+			return backup, errors.Wrap(err, "Volume backup validation failed")
+		}
 		return backup, err
 	}
 
@@ -105,6 +113,16 @@ func (ctrl *controller) ensureVolumeBackupParameters(backup *kahuapi.Backup) (ma
 			return volBackupParam, validationErrors
 		}
 
+		if err == nil && volBackupLoc != nil {
+			_, err := ctrl.providerLister.Get(volBackupLoc.Spec.ProviderName)
+			if apierrors.IsNotFound(err) {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("invalid provider name (%s) configured for volume backup location (%s)",
+						volBackupLoc.Spec.ProviderName, volumeBackupLocation))
+				return volBackupParam, validationErrors
+			}
+		}
+
 		// TODO: Add Provider configurations
 		return volBackupLoc.Spec.Config, nil
 	}
@@ -159,9 +177,9 @@ func (ctrl *controller) getVolumes(
 				"pv. %s", unstructuredPV.GetName(), err)
 			return pvs, err
 		}
-		if pv.Spec.CSI == nil {
-			// ignoring non CSI Volumes
-			continue
+		err = utils.CheckBackupSupport(pv)
+		if err != nil {
+			return pvs, err
 		}
 
 		pvs = append(pvs, pv)
@@ -189,10 +207,14 @@ func (ctrl *controller) getVolumes(
 			return pvs, err
 		}
 
-		if k8sPV.Spec.CSI == nil || // ignore if not CSI
-			pvNames.Has(k8sPV.Name) { // ignore if all-ready considered
+		if pvNames.Has(k8sPV.Name) { // ignore if all-ready considered
 			// ignoring non CSI Volumes
 			continue
+		}
+
+		err = utils.CheckBackupSupport(*k8sPV)
+		if err != nil {
+			return pvs, err
 		}
 
 		var pv corev1.PersistentVolume
@@ -209,6 +231,7 @@ func (ctrl *controller) ensureVolumeBackupContent(
 	volBackupParam map[string]string,
 	pvProviderMap map[string][]corev1.PersistentVolume) error {
 	// ensure volume backup content
+
 	for provider, pvList := range pvProviderMap {
 		// check if volume content already available
 		// backup name and provider name is unique tuple for volume backup content
@@ -225,6 +248,23 @@ func (ctrl *controller) ensureVolumeBackupContent(
 		if len(vbcList.Items) > 0 {
 			continue
 		}
+
+		pvObjectRefs := make([]corev1.PersistentVolume, 0)
+		for _, pv := range pvList {
+			ctrl.logger.Infof("Preparing volume backup content with pv name %s UID %s", pv.Name, pv.UID )
+			pvObjectRefs = append(pvObjectRefs, corev1.PersistentVolume{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       pv.Kind,
+					APIVersion: pv.APIVersion,
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: pv.Namespace,
+					Name:      pv.Name,
+					UID:       pv.UID,
+				},
+			})
+		}
+
 		time := metav1.Now()
 		volumeBackupContent := &kahuapi.VolumeBackupContent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -236,7 +276,7 @@ func (ctrl *controller) ensureVolumeBackupContent(
 			},
 			Spec: kahuapi.VolumeBackupContentSpec{
 				BackupName:     backupName,
-				Volumes:        pvList,
+				Volumes:        pvObjectRefs,
 				VolumeProvider: &provider,
 				Parameters:     volBackupParam,
 			},

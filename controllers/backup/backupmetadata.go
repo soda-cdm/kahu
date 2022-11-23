@@ -163,79 +163,52 @@ func (ctrl *controller) runBackup(backup *PrepareBackup,
 			case utils.Pod:
 				err = ctrl.podBackup(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Deployment:
 				err = ctrl.deploymentBackup(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Configmap:
 				err = ctrl.getConfigMapS(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.PVC:
 				err = ctrl.getPersistentVolumeClaims(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
-				}
-			case utils.SC:
-				err = ctrl.getStorageClass(backup, backupClient)
-				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Service:
 				err = ctrl.getServices(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Secret:
 				err = ctrl.getSecrets(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Endpoint:
 				err = ctrl.getEndpoints(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.Replicaset:
 				err = ctrl.replicaSetBackup(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.StatefulSet:
 				err = ctrl.getStatefulsets(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			case utils.DaemonSet:
 				err = ctrl.daemonSetBackup(ns, backup, backupClient)
 				if err != nil {
-					backup.Status.State = kahuapi.BackupStateFailed
-				} else {
-					backup.Status.Stage = kahuapi.BackupStageFinished
+					return err
 				}
 			default:
 				continue

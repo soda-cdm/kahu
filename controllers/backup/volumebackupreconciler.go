@@ -46,13 +46,13 @@ type Reconciler interface {
 func newReconciler(
 	loopPeriod time.Duration,
 	logger log.FieldLogger,
-	volumeBackupLister kahulister.VolumeBackupContentLister,
+	volumeBackupClient kahuclient.VolumeBackupContentInterface,
 	backupClient kahuclient.BackupInterface,
 	backupLister kahulister.BackupLister) Reconciler {
 	return &reconciler{
 		loopPeriod:         loopPeriod,
 		logger:             logger,
-		volumeBackupLister: volumeBackupLister,
+		volumeBackupClient: volumeBackupClient,
 		backupLister:       backupLister,
 		backupClient:       backupClient,
 	}
@@ -61,7 +61,7 @@ func newReconciler(
 type reconciler struct {
 	loopPeriod         time.Duration
 	logger             log.FieldLogger
-	volumeBackupLister kahulister.VolumeBackupContentLister
+	volumeBackupClient kahuclient.VolumeBackupContentInterface
 	backupClient       kahuclient.BackupInterface
 	backupLister       kahulister.BackupLister
 }
@@ -109,15 +109,16 @@ func (rc *reconciler) reconcile() {
 		}
 
 		// annotate with volume completeness if no volume for backup
-		vbContents, err := rc.volumeBackupLister.List(labels.Set{
+		vbc, err := rc.volumeBackupClient.List(context.TODO(), metav1.ListOptions{LabelSelector: labels.Set{
 			volumeContentBackupLabel: backupName,
-		}.AsSelector())
+		}.AsSelector().String()})
 		if err != nil {
 			rc.logger.Errorf("Unable to list volume backup content for backup(%s). %s",
 				backupName, err)
 			continue
 		}
 
+		vbContents := vbc.Items
 		// may be lister not populated with volume backup contents
 		if len(vbContents) == 0 {
 			continue
@@ -159,16 +160,16 @@ func (rc *reconciler) reconcile() {
 func (rc *reconciler) isVolumeBackupContentDeleted(backup *kahuapi.Backup) (bool, error) {
 	backupName := backup.Name
 	// annotate with volume backup deletion if no volume for backup
-	vbContents, err := rc.volumeBackupLister.List(labels.Set{
+	vbContents, err := rc.volumeBackupClient.List(context.TODO(), metav1.ListOptions{LabelSelector: labels.Set{
 		volumeContentBackupLabel: backupName,
-	}.AsSelector())
-	if err == nil && len(vbContents) > 0 {
-		rc.logger.Debug("VolumeBackupContents still available in backup %s", backupName)
+	}.AsSelector().String()})
+	if err == nil && len(vbContents.Items) > 0 {
+		rc.logger.Debugf("VolumeBackupContents still available in backup %s", backupName)
 		return false, nil
 	}
 
 	if apierrors.IsNotFound(err) ||
-		len(vbContents) == 0 {
+		len(vbContents.Items) == 0 {
 		return true, nil
 	}
 
