@@ -18,6 +18,7 @@ package config
 
 import (
 	"encoding/json"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes"
@@ -42,6 +43,10 @@ type Config struct {
 	Provider             string            `json:"provider"`
 	Version              string            `json:"version,omitempty"`
 	Manifest             map[string]string `json:"manifest,omitempty"`
+	LeaderLockNamespace  string            `json:"leaderLockNamespace,omitempty"`
+	LeaderLeaseDuration  time.Duration
+	LeaderRenewDeadline  time.Duration
+	LeaderRetryPeriod    time.Duration
 }
 
 type CompletedConfig struct {

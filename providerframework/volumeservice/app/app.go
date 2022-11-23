@@ -51,7 +51,9 @@ const (
 	// Controllers component name
 	service                    = "volume-service"
 	defaultLeaderLockNamespace = "kube-system"
-	defaultProbeTimeout        = 3 * time.Second
+	defaultProbeTimeout        = 30 * time.Second
+	eventComponentName         = "Kahu-Volume-Service"
+	leaderLockObjectName       = "vs-"
 )
 
 // NewServiceCommand creates a *cobra.Command object with default parameters
@@ -101,26 +103,14 @@ state towards the desired state`,
 				return
 			}
 
-			runLeader(ctx, completeConfig, grpcConn)
+			runLeader(ctx, cancel, completeConfig, grpcConn)
 		},
 	}
 
 	// add flags
 	optManager.AddFlags(cleanFlagSet)
-	// add help flag
-	cleanFlagSet.BoolP("help", "h", false, fmt.Sprintf("help for %s", cmd.Name()))
 
-	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
-	cmd.SetUsageFunc(func(cmd *cobra.Command) error {
-		fmt.Fprintf(cmd.OutOrStderr(), usageFmt, cmd.UseLine(), cleanFlagSet.FlagUsagesWrapped(2))
-		return nil
-	})
-	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n"+usageFmt, cmd.Long, cmd.UseLine(),
-			cleanFlagSet.FlagUsagesWrapped(2))
-	})
-
-	return cmd
+	return setCmdHelp(cleanFlagSet, cmd)
 }
 
 func getConfig(optManager options.OptionManager) *config.CompletedConfig {
@@ -206,12 +196,30 @@ func validateFlags(
 	}
 	if help {
 		_ = cmd.Help()
-		return
+		os.Exit(0)
 	}
+}
 
+func setCmdHelp(
+	cleanFlagSet *pflag.FlagSet,
+	cmd *cobra.Command) *cobra.Command {
+	cleanFlagSet.BoolP("help", "h", false, fmt.Sprintf("help for %s", cmd.Name()))
+
+	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
+	cmd.SetUsageFunc(func(cmd *cobra.Command) error {
+		fmt.Fprintf(cmd.OutOrStderr(), usageFmt, cmd.UseLine(), cleanFlagSet.FlagUsagesWrapped(2))
+		return nil
+	})
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n"+usageFmt, cmd.Long, cmd.UseLine(),
+			cleanFlagSet.FlagUsagesWrapped(2))
+	})
+
+	return cmd
 }
 
 func runLeader(ctx context.Context,
+	cancel context.CancelFunc,
 	completeConfig *config.CompletedConfig,
 	grpcConn grpc.ClientConnInterface) {
 	providerName := completeConfig.Provider
@@ -227,10 +235,15 @@ func runLeader(ctx context.Context,
 		Identity:      id,
 		EventRecorder: eventRecorder,
 	}
+
+	if completeConfig.LeaderLockNamespace == "" {
+		completeConfig.LeaderLockNamespace = defaultLeaderLockNamespace
+	}
+
 	resourceLock, err := resourcelock.New(
 		resourcelock.ConfigMapsLeasesResourceLock,
-		defaultLeaderLockNamespace,
-		providerName,
+		completeConfig.LeaderLockNamespace,
+		leaderLockObjectName+providerName,
 		completeConfig.KubeClient.CoreV1(),
 		completeConfig.KubeClient.CoordinationV1(),
 		lockConfig)
@@ -240,9 +253,9 @@ func runLeader(ctx context.Context,
 
 	leaderElectionConfig := leaderelection.LeaderElectionConfig{
 		Lock:          resourceLock,
-		LeaseDuration: 15 * time.Second,
-		RenewDeadline: 10 * time.Second,
-		RetryPeriod:   2 * time.Second,
+		LeaseDuration: completeConfig.LeaderLeaseDuration,
+		RenewDeadline: completeConfig.LeaderRenewDeadline,
+		RetryPeriod:   completeConfig.LeaderRetryPeriod,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				if err := Run(ctx, completeConfig, grpcConn); err != nil {
@@ -251,6 +264,7 @@ func runLeader(ctx context.Context,
 			},
 			OnStoppedLeading: func() {
 				log.Fatalf("Volume service lost master")
+				cancel()
 			},
 			OnNewLeader: func(identity string) {
 				log.Infof("New leader elected. Current leader %s", identity)
@@ -317,15 +331,15 @@ func configureControllers(ctx context.Context,
 	backupProviderClient providerSvc.VolumeBackupClient) (map[string]controllers.Controller, error) {
 	availableControllers := make(map[string]controllers.Controller, 0)
 	// add controllers here, integrate backup controller
-	backupController, err := backup.NewController(ctx, config.KahuClient, config.InformerFactory,
-		config.EventBroadcaster, backupProviderClient)
+	backupController, err := backup.NewController(ctx, config.Provider, config.KahuClient, config.InformerFactory,
+		config.EventBroadcaster, backupProviderClient, config.KubeClient)
 	if err != nil {
 		return availableControllers, fmt.Errorf("failed to initialize volume backup controller. %s", err)
 	}
 	availableControllers[backupController.Name()] = backupController
 
-	restoreController, err := restore.NewController(config.KahuClient, config.InformerFactory,
-		config.EventBroadcaster, backupProviderClient, ctx.Done())
+	restoreController, err := restore.NewController(ctx, config.Provider, config.KahuClient, config.InformerFactory,
+		config.EventBroadcaster, backupProviderClient)
 	if err != nil {
 		return availableControllers, fmt.Errorf("failed to initialize volume backup controller. %s", err)
 	}
