@@ -52,10 +52,10 @@ func (opt *optionsManager) AddFlags(fs *pflag.FlagSet) {
 }
 
 func (opt *optionsManager) applyTo(cfg *config.Config) error {
-	if err := opt.service.ApplyTo(cfg); err != nil {
+	if err := opt.log.Apply(); err != nil {
 		return err
 	}
-	if err := opt.log.Apply(); err != nil {
+	if err := opt.service.ApplyTo(cfg); err != nil {
 		return err
 	}
 	if err := opt.kahuClient.ApplyTo(&cfg.KahuClientConfig); err != nil {

@@ -18,6 +18,8 @@ package options
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -28,6 +30,10 @@ const (
 	defaultControllerWorkers          = 4
 	defaultLeaderElection             = false
 	defaultVolumeBackupDriverEndpoint = "/tmp/volumeservice.sock"
+	envLeaderLockNamespace            = "NAMESPACE"
+	leaseDuration                     = 8 * time.Second
+	renewDeadline                     = 6 * time.Second
+	retryPeriod                       = 2 * time.Second
 )
 
 type serviceOptions struct {
@@ -35,6 +41,10 @@ type serviceOptions struct {
 	EnableLeaderElection bool
 	DriverEndpoint       string
 	DisableControllers   []string
+	LeaderLockNamespace  string
+	LeaderLeaseDuration  time.Duration
+	LeaderRenewDeadline  time.Duration
+	LeaderRetryPeriod    time.Duration
 }
 
 func NewServiceOptions() *serviceOptions {
@@ -55,12 +65,24 @@ func (opt *serviceOptions) AddFlags(fs *pflag.FlagSet) {
 		"Volume backup driver endpoint")
 	fs.StringArrayVar(&opt.DisableControllers, "disableControllers", opt.DisableControllers,
 		"Disable list of controller")
+	fs.StringVar(&opt.LeaderLockNamespace, "leaderLockNamespace", os.Getenv(envLeaderLockNamespace),
+		"Configure leader election lock namespace")
+	fs.DurationVar(&opt.LeaderLeaseDuration, "leaderLeaseDuration", leaseDuration,
+		"Configure leader election lease duration")
+	fs.DurationVar(&opt.LeaderRenewDeadline, "leaderRenewDeadline", renewDeadline,
+		"Configure leader election lease renew deadline")
+	fs.DurationVar(&opt.LeaderRetryPeriod, "leaderRetryPeriod", retryPeriod,
+		"Configure leader election lease retry period")
 }
 
 func (opt *serviceOptions) ApplyTo(cfg *config.Config) error {
 	cfg.ControllerWorkers = opt.ControllerWorkers
 	cfg.EnableLeaderElection = opt.EnableLeaderElection
 	cfg.DriverEndpoint = opt.DriverEndpoint
+	cfg.LeaderLockNamespace = opt.LeaderLockNamespace
+	cfg.LeaderLeaseDuration = opt.LeaderLeaseDuration
+	cfg.LeaderRenewDeadline = opt.LeaderRenewDeadline
+	cfg.LeaderRetryPeriod = opt.LeaderRetryPeriod
 	return nil
 }
 
