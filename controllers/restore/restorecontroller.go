@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -66,10 +67,9 @@ type controller struct {
 	backupLocationLister kahulister.BackupLocationLister
 	providerLister       kahulister.ProviderLister
 	restoreVolumeClient  kahuclient.VolumeRestoreContentInterface
-	restoreVolumeLister  kahulister.VolumeRestoreContentLister
 	podCommandExecutor   hooks.PodCommandExecutor
 	podGetter            cache.Getter
-	processedRestore     cache.Store
+	processedRestore     utils.Store
 }
 
 func NewController(
@@ -83,7 +83,7 @@ func NewController(
 	podGetter cache.Getter) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
-	processedRestoreCache := cache.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
+	processedRestoreCache := utils.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
 	restoreController := &controller{
 		logger:               logger,
 		kubeClient:           kubeClient,
@@ -95,7 +95,6 @@ func NewController(
 		backupLocationLister: informer.Kahu().V1beta1().BackupLocations().Lister(),
 		providerLister:       informer.Kahu().V1beta1().Providers().Lister(),
 		restoreVolumeClient:  kahuClient.KahuV1beta1().VolumeRestoreContents(),
-		restoreVolumeLister:  informer.Kahu().V1beta1().VolumeRestoreContents().Lister(),
 		podCommandExecutor:   podCommandExecutor,
 		podGetter:            podGetter,
 		processedRestore:     processedRestoreCache,
@@ -122,7 +121,7 @@ func NewController(
 
 	go newReconciler(defaultReconcileTimeLoop,
 		restoreController.logger.WithField("source", "reconciler"),
-		informer.Kahu().V1beta1().VolumeRestoreContents().Lister(),
+		restoreController.restoreVolumeClient,
 		restoreController.restoreClient,
 		restoreController.restoreLister).Run(ctx.Done())
 
@@ -142,7 +141,6 @@ type restoreContext struct {
 	backupLocationLister kahulister.BackupLocationLister
 	providerLister       kahulister.ProviderLister
 	restoreVolumeClient  kahuclient.VolumeRestoreContentInterface
-	restoreVolumeLister  kahulister.VolumeRestoreContentLister
 	backupObjectIndexer  cache.Indexer
 	resolveObjects       cache.Indexer
 	filter               filterHandler
@@ -153,7 +151,8 @@ type restoreContext struct {
 	waitExecHookHandler  hooks.WaitExecHookHandler
 	hooksContext         context.Context
 	hooksCancelFunc      context.CancelFunc
-	processedRestore     cache.Store
+	podCommandExecutor   hooks.PodCommandExecutor
+	processedRestore     utils.Store
 }
 
 func newRestoreContext(name string, ctrl *controller) *restoreContext {
@@ -178,12 +177,12 @@ func newRestoreContext(name string, ctrl *controller) *restoreContext {
 		discoveryHelper:      ctrl.discoveryHelper,
 		backupObjectIndexer:  backupObjectIndexer,
 		restoreVolumeClient:  ctrl.restoreVolumeClient,
-		restoreVolumeLister:  ctrl.restoreVolumeLister,
 		filter:               constructFilterHandler(logger.WithField("context", "filter")),
 		mutator:              constructMutationHandler(logger.WithField("context", "mutator")),
 		resolver:             NewResolver(logger.WithField("context", "resolver")),
 		hooksErrs:            make(chan error),
 		waitExecHookHandler:  waitExecHookHandler,
+		podCommandExecutor:   ctrl.podCommandExecutor,
 		hooksContext:         hooksCtx,
 		hooksCancelFunc:      hooksCancelFunc,
 		processedRestore:     ctrl.processedRestore,
@@ -232,7 +231,7 @@ func newBackupObjectIndexers() cache.Indexers {
 			case runtime.Unstructured:
 				keys = append(keys, u.GetObjectKind().GroupVersionKind().Kind)
 			default:
-				log.Warnf("%v is not unstructred object. %s skipped", obj,
+				log.Warningf("%v is not unstructred object. %s skipped", obj,
 					backupObjectResourceIndex)
 			}
 
@@ -262,7 +261,7 @@ func (ctrl *controller) processQueue(index string) error {
 
 	// avoid polluting restore object
 	restoreClone := restore.DeepCopy()
-	newObj, err := utils.StoreObjectUpdate(ctrl.processedRestore, restoreClone, "Restore")
+	newObj, err := utils.StoreRevisionUpdate(ctrl.processedRestore, restoreClone, "Restore")
 	if err != nil {
 		ctrl.logger.Errorf("%s", err)
 	}
@@ -284,8 +283,7 @@ func (ctrl *controller) processQueue(index string) error {
 }
 
 func (ctx *restoreContext) deleteRestore(restore *kahuapi.Restore) error {
-	ctx.logger.Infof("Deleting restore "+
-		"%s", restore.Name)
+	ctx.logger.Infof("Deleting restore %s", restore.Name)
 
 	err := ctx.removeVolumeRestore(restore)
 	if err != nil {
@@ -293,15 +291,25 @@ func (ctx *restoreContext) deleteRestore(restore *kahuapi.Restore) error {
 		return err
 	}
 
+	// If restore is not fully successful, trigger resource cleanup
+	if !(restore.Status.State == kahuapi.RestoreStateCompleted &&
+		restore.Status.Stage == kahuapi.RestoreStageFinished) {
+		// cleanup metadata except pv/pvc which has restoreName annotation
+		restore, err = ctx.cleanupRestoredMetadata(restore)
+		if err != nil {
+			ctx.logger.Errorf("Unable to cleanup restored metadata for restore %s. Reason: %s", restore.Name, err)
+		}
+	}
+
 	// check if all volume backup contents are deleted
-	vbsList, err := ctx.restoreVolumeLister.List(
-		labels.Set{volumeContentRestoreLabel: restore.Name}.AsSelector())
+	vrcList, err := ctx.restoreVolumeClient.List(context.TODO(), metav1.ListOptions{
+		LabelSelector: labels.Set{volumeContentRestoreLabel: restore.Name}.AsSelector().String()})
 	if err != nil {
 		ctx.logger.Errorf("Unable to get volume restore list. %s", err)
 		return err
 	}
-	if len(vbsList) > 0 {
-		ctx.logger.Info("Volume restore list is not empty. Continue to wait for Volume backup delete")
+	if len(vrcList.Items) > 0 {
+		ctx.logger.Infoln("Volume restore list is not empty. Continue to wait for Volume backup delete")
 		return nil
 	}
 
@@ -312,6 +320,11 @@ func (ctx *restoreContext) deleteRestore(restore *kahuapi.Restore) error {
 	_, err = ctx.patchRestore(restore, restoreClone)
 	if err != nil {
 		ctx.logger.Errorf("removing finalizer failed for %s", restore.Name)
+	}
+
+	err = utils.StoreClean(ctx.processedRestore, restore, "Restore")
+	if err != nil {
+		ctx.logger.Warningf("Failed to clean processed cache. %s", err)
 	}
 	return err
 }
@@ -352,6 +365,15 @@ func (ctx *restoreContext) restoreFailed(restore *kahuapi.Restore) bool {
 // Only restore object are passed on in Phases. The mechanism will help in failure/crash scenario
 func (ctx *restoreContext) syncRestore(restore *kahuapi.Restore) error {
 	var err error
+
+	// Rollback restore in case of failure at any stage
+	defer func() {
+		if ctx.restoreFailed(restore) &&
+			!metav1.HasAnnotation(restore.ObjectMeta, annRestoreCleanupDone) {
+			ctx.deleteRestore(restore)
+		}
+	}()
+
 	// do not process if restore failed already
 	if ctx.restoreFailed(restore) || ctx.restoreCompleted(restore) {
 		return nil
@@ -421,7 +443,11 @@ func (ctx *restoreContext) syncRestore(restore *kahuapi.Restore) error {
 			return nil
 		}
 		ctx.logger.Info("Resources restore successful. Moving on to Finishing restore")
-		restore.Status.State = kahuapi.RestoreStateNew
+		fallthrough
+	case kahuapi.RestoreStagePostHook:
+		if restore.Status.State != kahuapi.RestoreStateCompleted {
+			return nil
+		}
 		if restore, err = ctx.updateRestoreStage(restore, kahuapi.RestoreStageFinished); err != nil {
 			return err
 		}
@@ -500,7 +526,11 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to get backup content. %s", err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to fetch backup info")
 	}
 
 	// construct backup identifier
@@ -510,7 +540,11 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to get backup identifier. %s", err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to fetch backup identifier")
 	}
 
 	// fetch backup content and cache them
@@ -519,14 +553,22 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to get backup content. %s",
 			err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to fetch backup content")
 	}
 
 	restoreIndexer, err := ctx.cloneIndexer()
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = err.Error()
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to create index")
 	}
 
 	// filter resources from cache
@@ -534,7 +576,11 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to filter resources. %s", err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to filter resources from cache")
 	}
 
 	// resolve dependencies for restore candidates
@@ -542,7 +588,11 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to get dependency resources. %s", err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to resolve dependencies during restore validation")
 	}
 
 	// add mutation
@@ -550,12 +600,67 @@ func (ctx *restoreContext) populateRestoreResources(restore *kahuapi.Restore) (*
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to mutate resources. %s", err)
-		return ctx.updateRestoreStatus(restore)
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Failed to add mutation")
+	}
+
+	// update resolved resources in restore object
+	if restore, err = ctx.patchRestoreObjects(restore, restoreIndexer); err != nil {
+		ctx.logger.Warningf("Failed to sync restore resources with restore(%s)", restore.Name)
 	}
 
 	ctx.resolveObjects = restoreIndexer
 
+	err = ctx.checkForRestoreResConflict(restore)
+	if err != nil {
+		restore.Status.State = kahuapi.RestoreStateFailed
+		restore.Status.FailureReason = err.Error()
+		restore, err = ctx.updateRestoreStatus(restore)
+		if err != nil {
+			return restore, err
+		}
+		return restore, errors.New("Resource conflict occurred during restore validation, " +
+			"suggest to restore to new namespace or perform residual resource cleanup in source namespace")
+	}
+
 	return restore, nil
+}
+
+func (ctx *restoreContext) patchRestoreObjects(
+	restore *kahuapi.Restore,
+	indexer cache.Indexer) (*kahuapi.Restore, error) {
+	resourceList := indexer.List()
+	restoreObjects := make([]kahuapi.RestoreResource, 0)
+
+	var restoreResource *unstructured.Unstructured
+	for _, resource := range resourceList {
+		switch unstructuredResource := resource.(type) {
+		case *unstructured.Unstructured:
+			restoreResource = unstructuredResource
+		case unstructured.Unstructured:
+			restoreResource = unstructuredResource.DeepCopy()
+		default:
+			ctx.logger.Warningf("Unknown cached resource type. %s", reflect.TypeOf(resource))
+			continue
+		}
+
+		restoreObjects = append(restoreObjects, kahuapi.RestoreResource{
+			Namespace:    restoreResource.GetNamespace(),
+			ResourceName: restoreResource.GetName(),
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: restoreResource.GetAPIVersion(),
+				Kind:       restoreResource.GetKind(),
+			},
+		})
+	}
+
+	newRestore := restore.DeepCopy()
+	newRestore.Status.Resources = restoreObjects
+
+	return ctx.updateRestoreStatus(newRestore)
 }
 
 func (ctx *restoreContext) patchRestore(oldRestore, updatedRestore *kahuapi.Restore) (*kahuapi.Restore, error) {
@@ -583,12 +688,68 @@ func (ctx *restoreContext) patchRestore(oldRestore, updatedRestore *kahuapi.Rest
 		return nil, errors.Wrap(err, "error patching backup")
 	}
 
-	_, err = utils.StoreObjectUpdate(ctx.processedRestore, newRestore, "Restore")
+	_, err = utils.StoreRevisionUpdate(ctx.processedRestore, newRestore, "Restore")
 	if err != nil {
 		return newRestore, errors.Wrap(err, "Failed to updated processed restore cache")
 	}
 
 	return newRestore, nil
+}
+
+func (ctx *restoreContext) checkForRestoreResConflict(restore *kahuapi.Restore) error {
+	Resources := ctx.resolveObjects
+	resourceList := Resources.List()
+	var restoreResource *unstructured.Unstructured
+
+	for _, resource := range resourceList {
+		switch unstructuredResource := resource.(type) {
+		case *unstructured.Unstructured:
+			restoreResource = unstructuredResource
+		case unstructured.Unstructured:
+			restoreResource = unstructuredResource.DeepCopy()
+		default:
+			ctx.logger.Warningf("Unknown cached resource type. %s", reflect.TypeOf(resource))
+			continue
+		}
+
+		isResConflict := ctx.checkWorkloadConflict(restore, restoreResource)
+		if isResConflict == true {
+			msg := fmt.Sprintf("Resource(%s) kind(%s) namespace(%s) conflicts with existing resource label"+
+				" in cluster ", restoreResource.GetName(), restoreResource.GetKind(), restoreResource.GetNamespace())
+			ctx.logger.Errorf(msg)
+			return errors.New(msg)
+		}
+	}
+
+	return nil
+}
+
+func (ctx *restoreContext) patchVolRestoreContent(oldVrc, updatedVrc *kahuapi.VolumeRestoreContent) (*kahuapi.VolumeRestoreContent, error) {
+	origBytes, err := json.Marshal(oldVrc)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling original vrc")
+	}
+
+	updatedBytes, err := json.Marshal(updatedVrc)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling updated vrc")
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating json merge patch for vrc")
+	}
+
+	newVrc, err := ctx.restoreVolumeClient.Patch(context.TODO(),
+		oldVrc.Name,
+		types.MergePatchType,
+		patchBytes,
+		metav1.PatchOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "error patching vrc")
+	}
+
+	return newVrc, nil
 }
 
 func (ctx *restoreContext) updateRestoreStatus(restore *kahuapi.Restore) (*kahuapi.Restore, error) {
@@ -599,7 +760,7 @@ func (ctx *restoreContext) updateRestoreStatus(restore *kahuapi.Restore) (*kahua
 		return restore, err
 	}
 
-	_, err = utils.StoreObjectUpdate(ctx.processedRestore, updatedRestore, "Restore")
+	_, err = utils.StoreRevisionUpdate(ctx.processedRestore, updatedRestore, "Restore")
 	if err != nil {
 		return updatedRestore, errors.Wrap(err, "Failed to updated processed restore cache")
 	}

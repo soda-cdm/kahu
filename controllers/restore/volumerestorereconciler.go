@@ -46,13 +46,13 @@ type Reconciler interface {
 func newReconciler(
 	loopPeriod time.Duration,
 	logger log.FieldLogger,
-	volumeRestoreLister kahulister.VolumeRestoreContentLister,
+	volumeRestoreClient kahuclient.VolumeRestoreContentInterface,
 	restoreClient kahuclient.RestoreInterface,
 	restoreLister kahulister.RestoreLister) Reconciler {
 	return &reconciler{
 		loopPeriod:          loopPeriod,
 		logger:              logger,
-		volumeRestoreLister: volumeRestoreLister,
+		volumeRestoreClient: volumeRestoreClient,
 		restoreLister:       restoreLister,
 		restoreClient:       restoreClient,
 	}
@@ -61,7 +61,7 @@ func newReconciler(
 type reconciler struct {
 	loopPeriod          time.Duration
 	logger              log.FieldLogger
-	volumeRestoreLister kahulister.VolumeRestoreContentLister
+	volumeRestoreClient kahuclient.VolumeRestoreContentInterface
 	restoreClient       kahuclient.RestoreInterface
 	restoreLister       kahulister.RestoreLister
 }
@@ -109,9 +109,9 @@ func (rc *reconciler) reconcile() {
 		}
 
 		// annotate with volume completeness if no volume for restore
-		vbContents, err := rc.volumeRestoreLister.List(labels.Set{
+		vbContents, err := rc.volumeRestoreClient.List(context.TODO(), metav1.ListOptions{LabelSelector: labels.Set{
 			volumeContentRestoreLabel: restoreName,
-		}.AsSelector())
+		}.AsSelector().String()})
 		if err != nil {
 			rc.logger.Errorf("Unable to list volume restore content for restore(%s). %s",
 				restoreName, err)
@@ -119,13 +119,13 @@ func (rc *reconciler) reconcile() {
 		}
 
 		// may be lister not populated with volume restore contents
-		if len(vbContents) == 0 {
+		if len(vbContents.Items) == 0 {
 			continue
 		}
 
 		volumesRestoreDone := true
 		volumeRestoreFailed := false
-		for _, vbc := range vbContents {
+		for _, vbc := range vbContents.Items {
 			if vbc.Status.Phase == kahuapi.VolumeRestoreContentPhaseFailed {
 				volumeRestoreFailed = true
 				break
@@ -159,16 +159,16 @@ func (rc *reconciler) reconcile() {
 func (rc *reconciler) isVolumeRestoreContentDeleted(restore *kahuapi.Restore) (bool, error) {
 	restoreName := restore.Name
 	// annotate with volume restore deletion if no volume for restore
-	vbContents, err := rc.volumeRestoreLister.List(labels.Set{
+	vbContents, err := rc.volumeRestoreClient.List(context.TODO(), metav1.ListOptions{LabelSelector: labels.Set{
 		volumeContentRestoreLabel: restoreName,
-	}.AsSelector())
-	if err == nil && len(vbContents) > 0 {
+	}.AsSelector().String()})
+	if err == nil && len(vbContents.Items) > 0 {
 		rc.logger.Debug("VolumeRestoreContents still available in restore %s", restoreName)
 		return false, nil
 	}
 
 	if apierrors.IsNotFound(err) ||
-		len(vbContents) == 0 {
+		len(vbContents.Items) == 0 {
 		return true, nil
 	}
 

@@ -17,7 +17,9 @@ limitations under the License.
 package restore
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -30,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 
@@ -45,10 +48,123 @@ const (
 	daemonsetsResources   = "daemonsets"
 )
 
+var defaultRestorePriorities = []string{
+	"CustomResourceDefinition",
+	"MutatingWebhookConfiguration",
+	"ValidatingWebhookConfiguration",
+	"ClusterRole",
+	"ClusterRoleBinding",
+	"Namespace",
+	"Role",
+	"RoleBinding",
+	"StorageClass",
+	"VolumeSnapshotClass",
+	"VolumeSnapshotContent",
+	"VolumeSnapshot",
+	"PersistentVolume",
+	"PersistentVolumeClaim",
+	"Secret",
+	"ConfigMap",
+	"ServiceAccount",
+	"LimitRange",
+	"Pod",
+	"ReplicaSet",
+	"DaemonSet",
+	"Deployment",
+	"StatefulSet",
+	"Job",
+	"Cronjob",
+}
+
 type backupInfo struct {
 	backup         *kahuapi.Backup
 	backupLocation *kahuapi.BackupLocation
 	backupProvider *kahuapi.Provider
+}
+
+type RestorePodSet struct {
+	pods sets.String
+}
+type RestoreNamespaceSet struct {
+	namespaces sets.String
+	Pods       []RestorePodSet
+}
+
+type RestoreHookSet struct {
+	Hooks      []hooks.CommonHookSpec
+	Namespaces []RestoreNamespaceSet
+}
+
+func (ctx *restoreContext) collectAllRestoreHooksPods(restore *kahuapi.Restore) (*RestoreHookSet, error) {
+	ctx.logger.Infof("Collecting all pods for restore hook execution %s", restore.Name)
+	restoreHookSet := RestoreHookSet{
+		Hooks:      make([]hooks.CommonHookSpec, len(restore.Spec.Hooks.Resources)),
+		Namespaces: make([]RestoreNamespaceSet, len(restore.Spec.Hooks.Resources)),
+	}
+
+	namespaces, err := ctx.kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		ctx.logger.Errorf("unable to list namespaces for restore hooks %s", err.Error())
+		return nil, err
+	}
+	allNamespaces := sets.NewString()
+	for _, namespace := range namespaces.Items {
+		allNamespaces.Insert(namespace.Name)
+	}
+
+	for index, hookSpec := range restore.Spec.Hooks.Resources {
+		ctx.logger.Infof("Collecting all pods for restore post hook (%s)", hookSpec.Name)
+		if len(hookSpec.PostHooks) == 0 {
+			continue
+		}
+		commonHooks := make([]kahuapi.ResourceHook, 0)
+		for _, postHook := range hookSpec.PostHooks {
+			commonHook := kahuapi.ResourceHook{
+				Exec: &kahuapi.ExecHook{
+					Container: postHook.Exec.Container,
+					Command:   postHook.Exec.Command,
+					OnError:   postHook.Exec.OnError,
+					Timeout:   postHook.Exec.Timeout,
+				},
+			}
+			commonHooks = append(commonHooks, commonHook)
+		}
+		hookSpec := hooks.CommonHookSpec{
+			Name:              hookSpec.Name,
+			IncludeNamespaces: hookSpec.IncludeNamespaces,
+			ExcludeNamespaces: hookSpec.ExcludeNamespaces,
+			LabelSelector:     hookSpec.LabelSelector,
+			IncludeResources:  hookSpec.IncludeResources,
+			ExcludeResources:  hookSpec.ExcludeResources,
+			ContinueFlag:      true,
+			Hooks:             commonHooks,
+		}
+		hookNamespaces := hooks.FilterHookNamespaces(allNamespaces,
+			hookSpec.IncludeNamespaces,
+			hookSpec.ExcludeNamespaces)
+		restoreHookSet.Hooks[index] = hookSpec
+		restoreHookSet.Namespaces[index] = RestoreNamespaceSet{
+			namespaces: hookNamespaces,
+			Pods:       make([]RestorePodSet, hookNamespaces.Len()),
+		}
+		for nsIndex, namespace := range hookNamespaces.UnsortedList() {
+			ctx.logger.Infof("Collecting all pods for restore post hook namespace (%s)", namespace)
+			filteredPods, err := hooks.GetAllPodsForNamespace(ctx.logger,
+				ctx.kubeClient, namespace, hookSpec.LabelSelector,
+				hookSpec.IncludeResources, hookSpec.ExcludeResources)
+			if err != nil {
+				ctx.logger.Errorf("unable to list pod for namespace %s", namespace)
+				continue
+			}
+			ctx.logger.Infof("Collected pods: %+v", filteredPods.UnsortedList())
+			restoreHookSet.Namespaces[index].Pods[nsIndex] = RestorePodSet{
+				pods: filteredPods,
+			}
+		}
+
+	}
+
+	return &restoreHookSet, nil
 }
 
 func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore,
@@ -69,7 +185,7 @@ func (ctx *restoreContext) syncMetadataRestore(restore *kahuapi.Restore,
 	}
 
 	// process resources
-	err = ctx.applyIndexedResource(indexer, restore)
+	restore, err = ctx.applyIndexedResource(indexer, restore)
 	if err != nil {
 		restore.Status.State = kahuapi.RestoreStateFailed
 		restore.Status.FailureReason = fmt.Sprintf("Failed to apply resources. %s", err)
@@ -106,7 +222,13 @@ func (ctx *restoreContext) applyCRD(indexer cache.Indexer, restore *kahuapi.Rest
 	return nil
 }
 
-func (ctx *restoreContext) applyIndexedResource(indexer cache.Indexer, restore *kahuapi.Restore) error {
+func (ctx *restoreContext) applyIndexedResource(indexer cache.Indexer, restore *kahuapi.Restore) (*kahuapi.Restore, error) {
+	restoreHookSet, err := ctx.collectAllRestoreHooksPods(restore)
+	if err != nil {
+		ctx.logger.Errorf("failed to collect all resources for %v", restore.Name)
+		return restore, err
+	}
+	ctx.logger.Infof("Restore metadata for %v started", restore.Name)
 	indexedResources := indexer.List()
 	unstructuredResources := make([]*unstructured.Unstructured, 0)
 
@@ -126,16 +248,25 @@ func (ctx *restoreContext) applyIndexedResource(indexer cache.Indexer, restore *
 		unstructuredResources = append(unstructuredResources, unstructuredResource)
 	}
 
+	// prioritise the resources
+	unstructuredResources = ctx.prioritiseResources(unstructuredResources)
+
 	for _, unstructuredResource := range unstructuredResources {
-		ctx.logger.Infof("Processing %s/%s for restore",
-			unstructuredResource.GroupVersionKind(),
+		ctx.logger.Infof("Processing %s/%s for restore", unstructuredResource.GroupVersionKind(),
 			unstructuredResource.GetName())
-		err := ctx.applyResource(unstructuredResource, restore)
-		if err != nil {
-			return err
+		if err := ctx.applyResource(unstructuredResource, restore); err != nil {
+			return restore, err
 		}
 	}
 
+	restore, err = ctx.updateRestoreState(restore, kahuapi.RestoreStateCompleted)
+	if err != nil {
+		ctx.logger.Errorf("failed to update metadata state: %s", err.Error())
+	}
+	restore.Status.State = kahuapi.RestoreStateProcessing
+	if restore, err = ctx.updateRestoreStage(restore, kahuapi.RestoreStagePostHook); err != nil {
+		ctx.logger.Errorf("failed to update post hook stage: %s", err.Error())
+	}
 	// Wait for all of the restore hook goroutines to be done, which is
 	// only possible once all of their errors have been received by the loop
 	// below, then close the hooksErrs channel so the loop terminates.
@@ -146,17 +277,73 @@ func (ctx *restoreContext) applyIndexedResource(indexer cache.Indexer, restore *
 		close(ctx.hooksErrs)
 	}()
 	var errs []string
-	var err error
-	for err = range ctx.hooksErrs {
+	for err := range ctx.hooksErrs {
 		errs = append(errs, err.Error())
 	}
 	if len(errs) > 0 {
 		ctx.logger.Errorf("Failure while executing post exec hooks: %+v", errs)
-		return err
+		return restore, errors.New("failure while executing post exec hooks")
+	}
+
+	// handle external hooks sets
+	for hookIndex, hookSpec := range restoreHookSet.Hooks {
+		ctx.logger.Infof("Processing external restore post hook (%s)", hookSpec.Name)
+		for nsIndex, namespace := range restoreHookSet.Namespaces[hookIndex].namespaces.UnsortedList() {
+			ctx.logger.Infof("Processing namespace (%s) for hook %s", namespace, hookSpec.Name)
+			for _, pod := range restoreHookSet.Namespaces[hookIndex].Pods[nsIndex].pods.UnsortedList() {
+				ctx.logger.Infof("Processing pod (%s) for hook %s", pod, hookSpec.Name)
+				if len(hookSpec.Hooks) == 0 {
+					continue
+				}
+				err := hooks.CommonExecuteHook(ctx.logger, ctx.kubeClient, ctx.podCommandExecutor,
+					hookSpec, namespace, pod, hooks.PostHookPhase)
+				if err != nil {
+					ctx.logger.Errorf("failed to execute hook on pod %s, err %s", pod, err.Error())
+					return restore, err
+				}
+			}
+		}
+	}
+	restore, err = ctx.updateRestoreState(restore, kahuapi.RestoreStateCompleted)
+	if err != nil {
+		ctx.logger.Errorf("failed to update posthook state: %s", err.Error())
 	}
 	ctx.logger.Info("post hook stage finished")
 
-	return nil
+	return restore, nil
+}
+
+func canonicalName(resource *unstructured.Unstructured) string {
+	return resource.GetNamespace() + ":" +
+		resource.GetAPIVersion() + ":" +
+		resource.GetKind() + ":" +
+		resource.GetName()
+}
+
+func (ctx *restoreContext) prioritiseResources(
+	resources []*unstructured.Unstructured) []*unstructured.Unstructured {
+	prioritiseResources := make([]*unstructured.Unstructured, 0)
+
+	// sort resources based on priority
+	sortedResources := sets.NewString()
+	for _, kind := range defaultRestorePriorities {
+		for _, resource := range resources {
+			if resource.GetKind() == kind {
+				sortedResources.Insert(canonicalName(resource))
+				prioritiseResources = append(prioritiseResources, resource)
+			}
+		}
+	}
+
+	// append left out resources
+	for _, resource := range resources {
+		if sortedResources.Has(canonicalName(resource)) {
+			continue
+		}
+		prioritiseResources = append(prioritiseResources, resource)
+	}
+
+	return prioritiseResources
 }
 
 func (ctx *restoreContext) applyResource(resource *unstructured.Unstructured, restore *kahuapi.Restore) error {
@@ -210,6 +397,29 @@ func (ctx *restoreContext) applyResource(resource *unstructured.Unstructured, re
 	return nil
 }
 
+func (ctx *restoreContext) deleteRestoredResource(resource *kahuapi.RestoreResource, restore *kahuapi.Restore) error {
+	gvk := resource.GroupVersionKind()
+	gvr, _, err := ctx.discoveryHelper.ByGroupVersionKind(gvk)
+	if err != nil {
+		ctx.logger.Errorf("unable to fetch GroupVersionResource for %s", gvk)
+		return err
+	}
+
+	resourceClient := ctx.dynamicClient.Resource(gvr).Namespace(resource.Namespace)
+	bNeedCleanup := ctx.isCleanupNeeded(resourceClient, resource, restore.Name)
+	if bNeedCleanup != true {
+		return nil
+	}
+
+	err = resourceClient.Delete(context.TODO(), resource.ResourceName, metav1.DeleteOptions{})
+	if err != nil {
+		ctx.logger.Errorf("Failed to delete resource %s, error: %s", resource.ResourceName, err)
+		return err
+	}
+
+	return nil
+}
+
 func (ctx *restoreContext) preProcessResource(resource *unstructured.Unstructured) error {
 	// ensure namespace existence
 	if err := ctx.ensureNamespace(resource.GetNamespace()); err != nil {
@@ -220,6 +430,32 @@ func (ctx *restoreContext) preProcessResource(resource *unstructured.Unstructure
 
 	// TODO(Amit Roushan): Add resource specific handling
 	return nil
+}
+
+func (ctx *restoreContext) isCleanupNeeded(resourceClient dynamic.ResourceInterface,
+	resource *kahuapi.RestoreResource, restoreName string) bool {
+	existingResource, err := resourceClient.Get(context.TODO(), resource.ResourceName, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false
+	} else if apierrors.IsNotFound(err) {
+		ctx.logger.Infof("resource %s not found, skipping cleanup", resource.ResourceName)
+		return false
+	}
+
+	annots := existingResource.GetAnnotations()
+	if annots == nil || annots[annRestoreIdentifier] != restoreName {
+		ctx.logger.Infof("restore identifier annotation not found for resource %s, skipping cleanup",
+			resource.ResourceName)
+		return false
+	}
+
+	if existingResource.GetKind() == "PersistentVolumeClaim" ||
+		existingResource.GetKind() == "PersistentVolume" {
+		return false
+	}
+
+	ctx.logger.Infof("Resource %s, kind %s selected for cleanup", resource.ResourceName, existingResource.GetKind())
+	return true
 }
 
 func (ctx *restoreContext) ensureNamespace(namespace string) error {
@@ -251,6 +487,167 @@ func (ctx *restoreContext) ensureNamespace(namespace string) error {
 	}
 
 	return nil
+}
+
+func (ctx *restoreContext) isMatchingReplicaSetExist(resource *unstructured.Unstructured, backedupResName string) bool {
+	var labelSelectors map[string]string
+	var replicaset *appsv1.ReplicaSet
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &replicaset)
+	if err != nil {
+		return false
+	}
+
+	rsObj := replicaset.DeepCopy()
+	if rsObj.Spec.Selector.MatchLabels != nil {
+		labelSelectors = rsObj.Spec.Selector.MatchLabels
+	}
+	if len(labelSelectors) == 0 {
+		return false
+	}
+
+	replicaSets, err := ctx.kubeClient.AppsV1().ReplicaSets(resource.GetNamespace()).Get(context.TODO(),
+		backedupResName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	if labels.Equals(labelSelectors, replicaSets.Spec.Selector.MatchLabels) {
+		return true
+	}
+	return false
+}
+
+
+func (ctx *restoreContext) isMatchingStatefulSetExist(resource *unstructured.Unstructured, backedupResName string) bool {
+	var labelSelectors map[string]string
+	var statefulset *appsv1.StatefulSet
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &statefulset)
+	if err != nil {
+		return false
+	}
+
+	statefulSetObj := statefulset.DeepCopy()
+	if statefulSetObj.Spec.Selector.MatchLabels != nil {
+		labelSelectors = statefulSetObj.Spec.Selector.MatchLabels
+	}
+	if len(labelSelectors) == 0 {
+		return false
+	}
+
+	statefulSets, err := ctx.kubeClient.AppsV1().StatefulSets(resource.GetNamespace()).Get(context.TODO(),
+		backedupResName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if labels.Equals(labelSelectors, statefulSets.Spec.Selector.MatchLabels) {
+		return true
+	}
+	return false
+}
+
+func (ctx *restoreContext) isMatchingDaemonSetExist(resource *unstructured.Unstructured, backedupResName string) bool {
+	var labelSelectors map[string]string
+	var daemonset *appsv1.DaemonSet
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &daemonset)
+	if err != nil {
+		return false
+	}
+
+	daemonsetObj := daemonset.DeepCopy()
+	if daemonsetObj.Spec.Selector.MatchLabels != nil {
+		labelSelectors = daemonsetObj.Spec.Selector.MatchLabels
+	}
+	if len(labelSelectors) == 0 {
+		return false
+	}
+
+	daemonsets, err := ctx.kubeClient.AppsV1().DaemonSets(resource.GetNamespace()).Get(context.TODO(),
+		backedupResName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	if labels.Equals(labelSelectors, daemonsets.Spec.Selector.MatchLabels) {
+		return true
+	}
+	return false
+}
+
+func (ctx *restoreContext) isMatchingDeployExist(resource *unstructured.Unstructured, backedupResName string) bool {
+	var labelSelectors map[string]string
+	var deployment *appsv1.Deployment
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &deployment)
+	if err != nil {
+		return false
+	}
+
+	deploy := deployment.DeepCopy()
+	if deploy.Spec.Selector.MatchLabels != nil {
+		labelSelectors = deploy.Spec.Selector.MatchLabels
+	}
+	if len(labelSelectors) == 0 {
+		return false
+	}
+
+	deployments, err := ctx.kubeClient.AppsV1().Deployments(resource.GetNamespace()).Get(context.TODO(),
+		backedupResName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if labels.Equals(labelSelectors, deployments.Spec.Selector.MatchLabels) {
+		return true
+	}
+	return false
+}
+
+func (ctx *restoreContext) isMatchingPodExist(resource *unstructured.Unstructured, backedupResName string) bool {
+	var labelSelectors map[string]string
+	var pod *corev1.Pod
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(resource.Object, &pod)
+	if err != nil {
+		return false
+	}
+
+	podObj := pod.DeepCopy()
+	if podObj.Labels != nil {
+		labelSelectors = podObj.Labels
+	}
+	if len(labelSelectors) == 0 {
+		return false
+	}
+
+	pods, err := ctx.kubeClient.CoreV1().Pods(resource.GetNamespace()).Get(context.TODO(), backedupResName,
+		metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+
+	if labels.Equals(labelSelectors, pods.Labels) {
+		return true
+	}
+	return false
+}
+
+func (ctx *restoreContext) checkWorkloadConflict(restore *kahuapi.Restore, resource *unstructured.Unstructured) bool {
+	resName := resource.GetName()
+	resPrefix := restore.Spec.ResourcePrefix
+
+	backedupResName := string(bytes.TrimPrefix([]byte(resName), []byte(resPrefix)))
+
+	switch resource.GetKind() {
+	case utils.Pod:
+		return ctx.isMatchingPodExist(resource, backedupResName)
+	case utils.Deployment:
+		return ctx.isMatchingDeployExist(resource, backedupResName)
+	case utils.DaemonSet:
+		return ctx.isMatchingDaemonSetExist(resource, backedupResName)
+	case utils.StatefulSet:
+		return ctx.isMatchingStatefulSetExist(resource, backedupResName)
+	case utils.Replicaset:
+		return ctx.isMatchingReplicaSetExist(resource, backedupResName)
+	default:
+		return false
+	}
 }
 
 func (ctx *restoreContext) applyWorkloadResources(resource *unstructured.Unstructured,
@@ -405,7 +802,7 @@ func (ctx *restoreContext) applyPodResources(resource *unstructured.Unstructured
 	hookHandler := hooks.InitHooksHandler{}
 	var initRes *unstructured.Unstructured
 
-	initRes, err := hookHandler.HandleInitHook(ctx.logger, hooks.Pods, resource, &restore.Spec.Hooks)
+	initRes, err := hookHandler.HandleInitHook(ctx.logger, ctx.kubeClient, hooks.Pods, resource, &restore.Spec.Hooks)
 	if err != nil {
 		ctx.logger.Errorf("Failed to process init hook for Pod resource (%s)", resource.GetName())
 		return err
@@ -435,17 +832,18 @@ func (ctx *restoreContext) waitExec(resourceHooks []kahuapi.RestoreResourceHookS
 
 		pod := new(corev1.Pod)
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(createdObj.UnstructuredContent(), &pod); err != nil {
-			ctx.logger.WithError(err).Error("error converting unstructured pod")
+			ctx.logger.Errorf("error converting unstructured pod : %s", err)
 			ctx.hooksErrs <- err
 			return
 		}
 		execHooksByContainer, err := hooks.GroupRestoreExecHooks(
 			resourceHooks,
+			ctx.kubeClient,
 			pod,
 			ctx.logger,
 		)
 		if err != nil {
-			ctx.logger.WithError(err).Errorf("error getting exec hooks for pod %s/%s", pod.Namespace, pod.Name)
+			ctx.logger.Errorf("error getting exec hooks for pod %s/%s", pod.Namespace, pod.Name)
 			ctx.hooksErrs <- err
 			return
 		}

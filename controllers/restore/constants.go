@@ -19,6 +19,8 @@ package restore
 import (
 	"time"
 
+	"github.com/soda-cdm/kahu/utils"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -32,6 +34,9 @@ const (
 	restoreFinalizer                = "kahu.io/restore-protection"
 	annVolumeRestoreCompleted       = "kahu.io/volume-restore-completed"
 	annVolumeRestoreDeleteCompleted = "kahu.io/volume-restore-delete-completed"
+	annVolumeResourceCleanup        = "kahu.io/volume-resource-cleanup"
+	annRestoreIdentifier            = "kahu.io/restore-name"
+	annRestoreCleanupDone           = "kahu.io/restore-cleanup-done"
 )
 
 const (
@@ -42,6 +47,8 @@ var (
 	excludeRestoreResources = sets.NewString(
 		"CustomResourceDefinition",
 		"VolumeBackupContent",
+		utils.PV,  // Volume all ready restored
+		utils.PVC, // Volume all ready restored
 	)
 )
 
