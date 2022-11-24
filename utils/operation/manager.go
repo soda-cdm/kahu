@@ -35,19 +35,17 @@ const (
 type Handler struct {
 	Operation func(index string) (success bool, err error)
 	OnFailure func(index string, err error)
-	OnTimeout func(index string)
 	OnSuccess func(index string)
 }
 
 type Manager interface {
-	Run(index string, handlers Handler, timeout time.Duration) error
+	Run(index string, handlers Handler) error
 }
 
 type manager struct {
 	logger       log.FieldLogger
 	ctx          context.Context
-	operations   map[string]Handler
-	lock         sync.Mutex
+	ops          *operations
 	pollInterval time.Duration
 }
 
@@ -55,29 +53,25 @@ func NewOperationManager(ctx context.Context, logger log.FieldLogger) Manager {
 	return &manager{
 		logger:       logger.WithField(managerKey, managerValue),
 		ctx:          ctx,
-		operations:   make(map[string]Handler),
+		ops:          newOperations(),
 		pollInterval: defaultPollTime,
 	}
 }
 
-func (mgr *manager) Run(index string, handler Handler, timeout time.Duration) error {
-	mgr.lock.Lock()
-	defer mgr.lock.Unlock()
-
-	if _, ok := mgr.operations[index]; ok {
+func (mgr *manager) Run(index string, handler Handler) error {
+	if _, ok := mgr.ops.get(index); ok {
 		return NewAlreadyExistErr(index)
 	}
-	mgr.operations[index] = handler
+	mgr.ops.add(index, handler)
 
-	go mgr.operationFunc(index, handler, timeout)
-
+	go func(index string, handler Handler) {
+		mgr.operate(index, handler)
+		mgr.ops.delete(index)
+	}(index, handler)
 	return nil
 }
 
-func (mgr *manager) operationFunc(operationName string, handler Handler, timeout time.Duration) {
-	logger := mgr.logger.WithField("resource", operationName)
-	ctx, cancel := context.WithTimeout(mgr.ctx, timeout)
-	defer cancel()
+func (mgr *manager) operate(operationName string, handler Handler) {
 	tick := time.NewTicker(mgr.pollInterval)
 	defer tick.Stop()
 
@@ -88,12 +82,6 @@ func (mgr *manager) operationFunc(operationName string, handler Handler, timeout
 			if !opContinue {
 				return
 			}
-		case <-ctx.Done():
-			logger.Errorf("Timeout after %v", timeout)
-			if handler.OnTimeout != nil {
-				handler.OnTimeout(operationName)
-			}
-			return
 		}
 	}
 
@@ -144,4 +132,34 @@ func (err alreadyExistsError) Error() string {
 	return fmt.Sprintf(
 		"Failed to create operation with name %q. An operation with that name is already exist.",
 		err.operationName)
+}
+
+type operations struct {
+	handlers map[string]Handler
+	lock     sync.Mutex
+}
+
+func newOperations() *operations {
+	return &operations{
+		handlers: make(map[string]Handler, 0),
+	}
+}
+
+func (op *operations) add(key string, handler Handler) {
+	op.lock.Lock()
+	defer op.lock.Unlock()
+	op.handlers[key] = handler
+}
+
+func (op *operations) delete(key string) {
+	op.lock.Lock()
+	defer op.lock.Unlock()
+	delete(op.handlers, key)
+}
+
+func (op *operations) get(key string) (Handler, bool) {
+	op.lock.Lock()
+	defer op.lock.Unlock()
+	handler, ok := op.handlers[key]
+	return handler, ok
 }

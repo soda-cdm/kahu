@@ -54,6 +54,9 @@ func SetAnnotation(meta metav1.Object, annotation, value string) {
 
 	if !ContainsAnnotation(meta, annotation) {
 		annotations := meta.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string, 0)
+		}
 		annotations[annotation] = value
 		meta.SetAnnotations(annotations)
 	}

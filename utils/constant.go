@@ -18,26 +18,36 @@ package utils
 
 const (
 	BackupLocationServiceAnnotation = "kahu.io/provider-service"
+	NamespaceAnnotation             = "kahu.io/provider-namespace"
+	InsecureAnnotation              = "kahu.io/provider-insecure-grpc-connection"
+	NamespaceEnv                    = "NAMESPACE"
 )
 
 const (
-	Pod            = "Pod"
-	Service        = "Service"
-	Deployment     = "Deployment"
-	Replicaset     = "ReplicaSet"
-	StatefulSet    = "StatefulSet"
-	DaemonSet      = "DaemonSet"
-	Configmap      = "ConfigMap"
-	Secret         = "Secret"
-	PVC            = "PersistentVolumeClaim"
-	PV             = "PersistentVolume"
-	Endpoint       = "Endpoint"
-	SC             = "StorageClass"
-	Backup         = "Backup"
-	VBC            = "VolumeBackupContent"
-	BackupLocation = "BackupLocation"
-	Node           = "Node"
-	Event          = "Event"
+	Pod                = "Pod"
+	Service            = "Service"
+	Deployment         = "Deployment"
+	Replicaset         = "ReplicaSet"
+	StatefulSet        = "StatefulSet"
+	DaemonSet          = "DaemonSet"
+	Configmap          = "ConfigMap"
+	Secret             = "Secret"
+	PVC                = "PersistentVolumeClaim"
+	PV                 = "PersistentVolume"
+	Endpoint           = "Endpoint"
+	SC                 = "StorageClass"
+	Backup             = "Backup"
+	VBC                = "VolumeBackupContent"
+	BackupLocation     = "BackupLocation"
+	Node               = "Node"
+	Event              = "Event"
+	VolumeSnapshot     = "VolumeSnapshot"
+	ClusterRole        = "ClusterRole"
+	ClusterRoleBinding = "ClusterRoleBinding"
+	Role               = "Role"
+	RoleBinding        = "RoleBinding"
+	ServiceAccount     = "ServiceAccount"
+	EndpointSlice      = "EndpointSlice"
 
 	AnnBackupLocationParam = "kahu.io/backup-location-parameter"
 )
@@ -45,3 +55,5 @@ const (
 var SupportedResourceList = []string{Pod, Service, Deployment, Replicaset, StatefulSet,
 	DaemonSet, Configmap, Secret, PVC, PV, Endpoint, SC,
 }
+
+var SupportedCsiDrivers = []string{""}

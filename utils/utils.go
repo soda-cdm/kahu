@@ -15,11 +15,11 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -30,9 +30,9 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -47,7 +47,6 @@ import (
 
 const (
 	probeInterval = 1 * time.Second
-
 	EventOwnerNotDeleted        = "OwnerNotDeleted"
 	EventCancelVolRestoreFailed = "CancelVolRestoreFailed"
 )
@@ -287,58 +286,27 @@ func GetProvider(
 	return provider, nil
 }
 
-// StoreObjectUpdate updates given cache with a new object version from Informer
-// callback (i.e. with events from etcd) or with an object modified by the
-// controller itself. Returns "true", if the cache was updated, false if the
-// object is an old version and should be ignored.
-func StoreObjectUpdate(store cache.Store, obj interface{}, className string) (bool, error) {
-	objName, err := DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		return false, fmt.Errorf("couldn't get key for object %+v: %w", obj, err)
-	}
-	oldObj, found, err := store.Get(obj)
-	if err != nil {
-		return false, fmt.Errorf("error finding %s %q in controller cache: %w", className, objName, err)
+// CheckBackupSupport checks if PV is t be considered for backup or not
+func CheckBackupSupport(pv corev1.PersistentVolume) error {
+	if pv.Spec.CSI == nil {
+		// non CSI Volumes
+		msg := fmt.Sprintf("PV %s is non CSI volume, can not backup.", pv.Name)
+		return errors.New(msg)
 	}
 
-	objAccessor, err := meta.Accessor(obj)
-	if err != nil {
-		return false, err
+	supportedCsiDrivers := sets.NewString(SupportedCsiDrivers...)
+	driver := pv.Spec.CSI.Driver
+	if !supportedCsiDrivers.Has(driver) {
+		msg := fmt.Sprintf("PV %s belongs to the driver(%s), not supported for backup.", pv.Name, driver)
+		return errors.New(msg)
+	}
+	return nil
+}
+
+func CheckServerUnavailable(err error) bool {
+	if e, ok := status.FromError(err); ok {
+		return e.Code() == codes.Unavailable
 	}
 
-	if !found {
-		// This is a new object
-		log.Debugf("storeObjectUpdate: adding %s %q, version %s", className, objName, objAccessor.GetResourceVersion())
-		if err = store.Add(obj); err != nil {
-			return false, fmt.Errorf("error adding %s %q to controller cache: %w", className, objName, err)
-		}
-		return true, nil
-	}
-
-	oldObjAccessor, err := meta.Accessor(oldObj)
-	if err != nil {
-		return false, err
-	}
-
-	objResourceVersion, err := strconv.ParseInt(objAccessor.GetResourceVersion(), 10, 64)
-	if err != nil {
-		return false, fmt.Errorf("error parsing ResourceVersion %q of %s %q: %s", objAccessor.GetResourceVersion(), className, objName, err)
-	}
-	oldObjResourceVersion, err := strconv.ParseInt(oldObjAccessor.GetResourceVersion(), 10, 64)
-	if err != nil {
-		return false, fmt.Errorf("error parsing old ResourceVersion %q of %s %q: %s", oldObjAccessor.GetResourceVersion(), className, objName, err)
-	}
-
-	// Throw away only older version, let the same version pass - we do want to
-	// get periodic sync events.
-	if oldObjResourceVersion > objResourceVersion {
-		log.Debugf("storeObjectUpdate: ignoring %s %q version %s", className, objName, objAccessor.GetResourceVersion())
-		return false, nil
-	}
-
-	log.Debugf("storeObjectUpdate updating %s %q with version %s", className, objName, objAccessor.GetResourceVersion())
-	if err = store.Update(obj); err != nil {
-		return false, fmt.Errorf("error updating %s %q in controller cache: %w", className, objName, err)
-	}
-	return true, nil
+	return false
 }
