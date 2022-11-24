@@ -28,6 +28,8 @@ readonly KAHU_STATIC_BINARIES=(
   # add statically linked binaries here
   controller-manager
   meta-service
+  volume-service
+  nfs-provider
 )
 
 golang::targets() {
@@ -35,6 +37,8 @@ golang::targets() {
   local targets=(
     cmd/controller-manager
     cmd/meta-service
+    cmd/volume-service
+    providers/nfs/nfs-provider
   )
   echo "${targets[@]}"
 }
@@ -115,8 +119,10 @@ golang::build_binaries() {
 
     export GOPATH="${KAHU_GOPATH}"
     export GOCACHE="${KAHU_GOPATH}/cache"
-    #TODO: add platform specific handling in future
-    export GOBIN="${KAHU_GOPATH}/bin"
+    export GOARCH="${ARCH}"
+    export GOOS="${OS}"
+    unset GOBIN
+    export GO15VENDOREXPERIMENT=1
 
     local goflags goldflags goasmflags gogcflags gotags
 
@@ -124,6 +130,14 @@ golang::build_binaries() {
     if [[ "${DBG:-}" != 1 ]]; then
         # Not debugging - disable symbols and DWARF.
         goldflags="${goldflags} -s -w"
+    fi
+
+    if [[ "${PLATFORM}" == X86 ]]; then
+        goldflags="${goldflags} -linkmode "external" -extldflags "-Wl,-z,now" -buildmode=pie"
+    fi
+
+    if [[ "${PLATFORM}" == ARM ]]; then
+        goldflags="${goldflags} -buildmode=pie"
     fi
 
     goasmflags="-trimpath=${KAHU_ROOT}"
@@ -204,7 +218,7 @@ golang::build_some_binaries() {
         golang::create_coverage_dummy_test "${package}"
         util::trap_add "golang::delete_coverage_dummy_test \"${package}\"" EXIT
 
-        go test -c -o "$(golang::outfile_for_binary "${package}" "${platform}")" \
+        go test -c -o "$(golang::outdir_for_binary "${package}" "${platform}")" \
           -covermode count \
           -coverpkg github.com/soda-cdm/kahu/... \
           "${build_args[@]}" \
@@ -227,15 +241,17 @@ golang::build_some_binaries() {
 }
 
 # This will take binaries from $GOPATH/bin and copy them to the appropriate
-# place in ${KAHU_OUTPUT_BINDIR}
+# place in ${KAHU_OUTPUT_BINPATH}/${PLATFORM}
 golang::place_bins() {
-  V=2 log::status "Placing binaries in ${KAHU_OUTPUT_BINPATH}"
+  log::status "Placing binaries in ${KAHU_OUTPUT_BINPATH}/${platform//\//_}"
 
-  local full_binpath_src="${KAHU_GOPATH}/bin"
+  local full_binpath_src=$(golang::outdir_for_binary "${platform}")
   if [[ -d "${full_binpath_src}" ]]; then
-    mkdir -p "${KAHU_OUTPUT_BINPATH}"
+    mkdir -p "${KAHU_OUTPUT_BINPATH}/${platform//\//_}"
     find "${full_binpath_src}" -maxdepth 1 -type f -exec \
-      rsync -pc {} "${KAHU_OUTPUT_BINPATH}" \;
+      rsync -pc {} "${KAHU_OUTPUT_BINPATH}/${platform//\//_}" \;
+    cp "${KAHU_IMAGE_BINARIES[@]/#/${KAHU_OUTPUT_BINPATH}/${platform//\//_}/}" \
+      "${KAHU_OUTPUT_BINPATH}/"
   fi
 
 }
@@ -253,4 +269,20 @@ build::ldflags() {
       )
 
   echo "${ldflags[*]-}"
+}
+
+golang::host_platform() {
+  echo "$(go env GOHOSTOS)/$(go env GOHOSTARCH)"
+}
+
+golang::outdir_for_binary() {
+  local platform=$1
+  host_platform=$(golang::host_platform)
+  local output_path="${KAHU_GOPATH}/bin"
+
+  if [[ "${platform}" != "${host_platform}" ]]; then
+    output_path="${output_path}/${platform//\//_}"
+  fi
+
+  echo "${output_path}"
 }

@@ -37,6 +37,8 @@ build::get_docker_wrapped_binaries() {
   local targets=(
     controller-manager
     meta-service
+    volume-service
+    nfs-provider
   )
 
   echo "${targets[@]}"
@@ -76,7 +78,7 @@ function release::build_images() {
   # This fancy expression will expand to prepend a path
   # (${LOCAL_OUTPUT_BINPATH}/) to every item in the
   # KAHU_IMAGE_BINARIES array.
-  cp "${KAHU_IMAGE_BINARIES[@]/#/${LOCAL_OUTPUT_BINPATH}/}" \
+  cp "${KAHU_IMAGE_BINARIES[@]/#/${LOCAL_OUTPUT_BINPATH}/${platform//\//_}/}" \
     "${release_stage}/bin/"
 
   release::create_docker_images "${release_stage}/bin"
@@ -99,7 +101,7 @@ function release::create_docker_images() {
 
     local -r docker_registry=${BASE_IMAGE_REGISTRY}
     # Docker tags cannot contain '+'
-    local docker_tag="${VERSION/+/_}"
+    local docker_tag="${VERSION/+_}"
     if [[ -z "${docker_tag}" ]]; then
       log::error "git version information missing; cannot create Docker tag"
       return 1
@@ -131,10 +133,10 @@ function release::create_docker_images() {
 
         rm "${build_log}"
 
-        docker save -o "${binary_file_path}.tar" "${docker_image_tag}"
+        docker save -o "${binary_file_path}-${docker_tag}.tar" "${docker_image_tag}"
         echo "${docker_tag}" > "${binary_file_path}.docker_tag"
         rm -rf "${docker_build_path}"
-        ln "${binary_file_path}.tar" "${images_dir}/"
+        ln "${binary_file_path}-${docker_tag}.tar" "${images_dir}/"
 
         log::status "Deleting docker image ${docker_image_tag}"
         docker rmi "${docker_image_tag}" &>/dev/null || true
