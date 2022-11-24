@@ -53,7 +53,7 @@ func (ctrl *controller) patchBackup(oldBackup, newBackup *kahuapi.Backup) (*kahu
 		return nil, errors.Wrap(err, "error patching backup")
 	}
 
-	_, err = utils.StoreObjectUpdate(ctrl.processedBackup, updatedBackup, "Backup")
+	_, err = utils.StoreRevisionUpdate(ctrl.processedBackup, updatedBackup, "Backup")
 	if err != nil {
 		return updatedBackup, errors.Wrap(err, "Failed to updated processed backup cache")
 	}
@@ -115,7 +115,7 @@ func (ctrl *controller) updateBackupStatus(
 		if err != nil {
 			ctrl.logger.Errorf("Updating backup(%s) status: update status failed %s", backup.Name, err)
 		}
-		_, err = utils.StoreObjectUpdate(ctrl.processedBackup, backupClone, "Backup")
+		_, err = utils.StoreRevisionUpdate(ctrl.processedBackup, backupClone, "Backup")
 		if err != nil {
 			return backupClone, errors.Wrap(err, "Failed to updated processed backup cache")
 		}

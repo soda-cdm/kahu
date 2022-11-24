@@ -38,6 +38,7 @@ const (
 	annVolumeBackupCompleted       = "kahu.io/volume-backup-completed"
 	annVolumeBackupFailHooks       = "kahu.io/volume-backup-fail-hooks-completed"
 	annBackupContentSynced         = "kahu.io/backup-content-sync-completed"
+	annBackupCleanupDone           = "kahu.io/backup-cleanup-done"
 )
 
 const (

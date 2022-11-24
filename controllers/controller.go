@@ -32,7 +32,7 @@ import (
 
 const (
 	defaultReSyncPeriod = 5 * time.Minute
-	defaultMaxRetry     = 5
+	defaultMaxRetry     = 3
 )
 
 type Controller interface {
@@ -112,7 +112,7 @@ func (builder *controllerBuilder) Build() (Controller, error) {
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
 			workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 120*time.Second),
 			// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
-			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 25)},
 		),
 			builder.name),
 		logger:           builder.logger,

@@ -26,16 +26,6 @@ import (
 	"github.com/soda-cdm/kahu/utils"
 )
 
-func (ctrl *controller) GetPodAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-	pod, err := ctrl.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	return ctrl.backupSend(pod, pod.Name, backupClient)
-
-}
-
 func (ctrl *controller) podBackup(namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 	ctrl.logger.Infoln("Starting collecting pods")
@@ -73,7 +63,7 @@ func (ctrl *controller) podBackup(namespace string,
 
 			// Run pre hooks for the pod
 			// backup the deployment yaml
-			err = ctrl.GetPodAndBackup(pod.Name, pod.Namespace, backupClient)
+			err = ctrl.backupSend(&pod, pod.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -130,16 +120,11 @@ func (ctrl *controller) GetServiceForPod(namespace string, podLabelList []map[st
 	}
 
 	for _, service := range allServices.Items {
-		serviceData, err := ctrl.GetService(namespace, service.Name)
-		if err != nil {
-			return err
-		}
-
-		for skey, svalue := range serviceData.Spec.Selector {
+		for skey, svalue := range service.Spec.Selector {
 			for _, labels := range podLabelList {
 				for lkey, lvalue := range labels {
 					if skey == lkey && svalue == lvalue {
-						err = ctrl.backupSend(serviceData, serviceData.Name, backupClient)
+						err = ctrl.backupSend(&service, service.Name, backupClient)
 						if err != nil {
 							return err
 						}

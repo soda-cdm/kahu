@@ -28,22 +28,6 @@ import (
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
-func (ctrl *controller) GetDeploymentAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-	deployment, err := ctrl.kubeClient.AppsV1().
-		Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(deployment, deployment.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) deploymentBackup(namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 	ctrl.logger.Infoln("Starting collecting deployments")
@@ -71,7 +55,7 @@ func (ctrl *controller) deploymentBackup(namespace string,
 	for _, deployment := range dList.Items {
 		if utils.Contains(deploymentAllList, deployment.Name) {
 			// backup the deployment yaml
-			err = ctrl.GetDeploymentAndBackup(deployment.Name, deployment.Namespace, backupClient)
+			err = ctrl.backupSend(&deployment, deployment.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -113,22 +97,6 @@ func (ctrl *controller) deploymentBackup(namespace string,
 	return nil
 }
 
-func (ctrl *controller) GetDaemonSetAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-	daemonset, err := ctrl.kubeClient.AppsV1().
-		DaemonSets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(daemonset, daemonset.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) daemonSetBackup(namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 	ctrl.logger.Infoln("Starting collecting daemonset")
@@ -156,7 +124,7 @@ func (ctrl *controller) daemonSetBackup(namespace string,
 		if utils.Contains(daemonsetAllList, daemonset.Name) {
 
 			// backup the daemonset yaml
-			err = ctrl.GetDaemonSetAndBackup(daemonset.Name, daemonset.Namespace, backupClient)
+			err = ctrl.backupSend(&daemonset, daemonset.Name, backupClient)
 			if err != nil {
 				return err
 			}
@@ -258,10 +226,15 @@ func (ctrl *controller) getPersistentVolumeClaims(namespace string, backup *Prep
 	var storageClassName string
 	for _, item := range allPVC.Items {
 		if utils.Contains(allPVCList, item.Name) {
-			pvcData, err := ctrl.GetPVC(namespace, item.Name)
+			pvcData, err := ctrl.GetPVC(&item)
 			if err != nil {
 				return err
 			}
+
+			if pvcData == nil {
+				continue
+			}
+
 			err = ctrl.backupSend(pvcData, pvcData.Name, backupClient)
 			if err != nil {
 				return err
@@ -288,13 +261,34 @@ func (ctrl *controller) getPersistentVolumeClaims(namespace string, backup *Prep
 	return nil
 }
 
-func (ctrl *controller) GetPVC(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
+func (ctrl *controller) GetPVCByName(namespace, name string) (*corev1.PersistentVolumeClaim, error) {
 	pvc, err := ctrl.kubeClient.CoreV1().
 		PersistentVolumeClaims(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return pvc, err
+
+	return ctrl.GetPVC(pvc)
+}
+
+func (ctrl *controller) GetPVC(pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
+	if len(pvc.Spec.VolumeName) == 0 ||
+		pvc.DeletionTimestamp != nil {
+		return nil, nil
+	}
+
+	k8sPV, err := ctrl.kubeClient.CoreV1().PersistentVolumes().Get(context.TODO(),
+		pvc.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	err = utils.CheckBackupSupport(*k8sPV)
+	if err != nil {
+		return nil, err
+	}
+
+	return pvc, nil
 }
 
 func (ctrl *controller) getStorageClass(backup *PrepareBackup,
@@ -324,8 +318,7 @@ func (ctrl *controller) getStorageClass(backup *PrepareBackup,
 
 	for _, item := range allSC.Items {
 		if utils.Contains(allSCList, item.Name) {
-			scData, err := ctrl.GetSC(item.Name)
-			err = ctrl.backupSend(scData, scData.Name, backupClient)
+			err = ctrl.backupSend(&item, item.Name, backupClient)
 			if err != nil {
 				return err
 			}

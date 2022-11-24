@@ -22,21 +22,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (ctrl *controller) GetClusterRoleBindingAndBackup(name string,
-	backupClient metaservice.MetaService_BackupClient) error {
-	crb, err := ctrl.kubeClient.RbacV1().ClusterRoleBindings().Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(crb, crb.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) getclusterRoleBindings(serviceaccountName string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 
@@ -60,10 +45,12 @@ func (ctrl *controller) getclusterRoleBindings(serviceaccountName string,
 
 				// if whole rcluster to be backuped
 				ctrl.logger.Infof("collecting cbr, clusterole or roles.")
-				err = ctrl.GetClusterRoleBindingAndBackup(clusterrolebinding.Name, backupClient)
+
+				err = ctrl.backupSend(&clusterrolebinding, clusterrolebinding.Name, backupClient)
 				if err != nil {
 					return err
 				}
+
 				// now collect the role or cluserrole from filter clusterbindings
 				var kind, name string
 				if clusterrolebinding.RoleRef.Size() != 0 {
@@ -85,22 +72,6 @@ func (ctrl *controller) getclusterRoleBindings(serviceaccountName string,
 	return nil
 }
 
-func (ctrl *controller) GetRoleBindingAndBackup(name, namespace string,
-	backupClient metaservice.MetaService_BackupClient) error {
-
-	rb, err := ctrl.kubeClient.RbacV1().RoleBindings(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	err = ctrl.backupSend(rb, rb.Name, backupClient)
-	if err != nil {
-		return err
-	}
-	return nil
-
-}
-
 func (ctrl *controller) getRoleBindings(serviceaccountName string, namespace string,
 	backup *PrepareBackup, backupClient metaservice.MetaService_BackupClient) error {
 
@@ -119,12 +90,15 @@ func (ctrl *controller) getRoleBindings(serviceaccountName string, namespace str
 		// skip collecting the rolebinding whihc serviceaccountName is not in it's subjects list
 		for _, subject := range rolebinding.Subjects {
 			if subject.Kind == "ServiceAccount" && subject.Name == serviceaccountName {
+
 				// if whole rcluster to be backuped
 				ctrl.logger.Infof("collecting rolebindings, clusterole or roles.")
-				err = ctrl.GetRoleBindingAndBackup(rolebinding.Name, rolebinding.GetNamespace(), backupClient)
+
+				err = ctrl.backupSend(&rolebinding, rolebinding.Name, backupClient)
 				if err != nil {
 					return err
 				}
+
 				// now collect the role or cluserrole from filter of rolebindings
 				var kind, name string
 				if rolebinding.RoleRef.Size() != 0 {
