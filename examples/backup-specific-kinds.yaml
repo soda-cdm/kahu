@@ -1,9 +1,8 @@
 apiVersion: kahu.io/v1beta1
 kind: Backup
 metadata:
-  name: backup-demo-ns-1
+  name: backup-demo-kinds
 spec:
-  # includeResources:
   excludeResources: []
   includeNamespaces: [kube-system]
   metadataLocation: nfs

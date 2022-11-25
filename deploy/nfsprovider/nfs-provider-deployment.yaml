@@ -20,7 +20,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kahu-nfs-provider
-  namespace: test-ns
+  namespace: kahu
 spec:
   replicas: 1
   selector:
@@ -33,10 +33,10 @@ spec:
     spec:
       serviceAccountName: kahu-nfs-provider
       containers:
-      - image: docker.io/library/nfsprovider:v0.1.0
+      - image: sodacdm/kahu-nfs-provider:v0.2.0
         imagePullPolicy: IfNotPresent
         name: nfs-driver
-        command: ["/usr/local/bin/nfsprovider"]
+        command: ["/usr/local/bin/nfs-provider"]
         args:
         - "-d"
         - "/data"
@@ -46,10 +46,10 @@ spec:
           mountPath: "/data"
         - name: socket
           mountPath: "/tmp"
-      - image: docker.io/library/metaservice:v0.1.0
+      - image: sodacdm/kahu-meta-service:v0.2.0
         imagePullPolicy: IfNotPresent
         name: meta-service
-        command: ["/usr/local/bin/metaservice"]
+        command: ["/usr/local/bin/meta-service"]
         args:
         - "-p"
         - "8181"
@@ -84,7 +84,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: nfs-provider
-  namespace: test-ns
+  namespace: kahu
   labels:
     app: nfs-provider
 spec:
@@ -98,7 +98,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kahu-nfs-provider
-  namespace: test-ns
+  namespace: kahu
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -113,7 +113,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kahu-nfs-provider
-    namespace: test-ns
+    namespace: kahu
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -124,8 +124,5 @@ metadata:
 rules:
   - apiGroups: ["kahu.io"]
     resources: ["providers", "providers/status"]
-    verbs: ["create", "delete", "watch", "update", "patch", "get", "watch", "list"]
-  - apiGroups: [ "*" ]
-    resources: ["*"]
-    verbs: ["get", "list"]
+    verbs: ["create", "delete", "watch", "update", "patch", "get", "list"]
 ---

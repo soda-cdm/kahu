@@ -17,7 +17,7 @@ kind: Service
 apiVersion: v1
 metadata:
   name: nfs-server
-  namespace: test-ns
+  namespace: kahu
 spec:
   ports:
     - name: nfs
