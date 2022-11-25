@@ -18,7 +18,7 @@ limitations under the License.
 package main
 
 import (
-	"github.com/soda-cdm/kahu/providers/nfsprovider/server"
+	"github.com/soda-cdm/kahu/providers/nfs/server"
 )
 
 func main() {

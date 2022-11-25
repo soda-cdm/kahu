@@ -199,16 +199,6 @@ message RestoreIdentifier {
   BackupIdentity backup_identity = 2;
 }
 
-message OwnPVRequest {
-  // Persistent volume info
-  k8s.io.api.core.v1.PersistentVolume pv = 1;
-}
-
-message OwnPVResponse {
-  // Indicates if PV is owned by given provider or not
-  google.protobuf.BoolValue success = 1;
-}
-
 message RestoreVolumeIdentifier {
   string pvc_name = 1;
   RestoreVolumeIdentity volume_identity = 2;
@@ -342,10 +332,6 @@ message CancelRestoreResponse {
 }
 
 service VolumeBackup {
-  // Check if volume is owned by given driver
-  rpc IsOwnPV(OwnPVRequest)
-      returns (OwnPVResponse) {}
-
   // Create backup of the provided volumes
   rpc StartBackup(StartBackupRequest)
       returns (StartBackupResponse) {}

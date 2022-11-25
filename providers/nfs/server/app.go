@@ -19,18 +19,18 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 
 	nfsprovider "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfs/server/options"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
 )
@@ -128,7 +128,7 @@ func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []strin
 	}
 	if help {
 		_ = cmd.Help()
-		return err
+		return errors.New("help command executed, exiting")
 	}
 	return nil
 }
