@@ -17,16 +17,12 @@ limitations under the License.
 package main
 
 import (
-	"math/rand"
 	"os"
-	"time"
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app"
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	command := app.NewMetaServiceCommand()
 	if err := command.Execute(); err != nil {
 		os.Exit(1)

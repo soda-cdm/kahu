@@ -49,9 +49,9 @@ type Factory interface {
 
 
 type Config struct {
-	KubeConfig    string
-	ClientQPS     float32
-	ClientBurst   int
+	KubeConfig    string `json:"kubeConfig"`
+	ClientQPS     float32 `json:"clientQPS"`
+	ClientBurst   int `json:"clientBurst"`
 }
 
 
@@ -81,7 +81,7 @@ func NewFactory(agentBaseName string, cfg *Config) Factory {
 }
 
 func (cfg *Config) AddFlags(fs *pflag.FlagSet) {
-	fs.StringVarP(&cfg.KubeConfig, "kubeconfig", "k", cfg.KubeConfig,
+	fs.StringVarP(&cfg.KubeConfig, "kube-config", "k", cfg.KubeConfig,
 		"Path to the kubeconfig file to use to talk to the Kubernetes apiserver. "+
 			"If unset, try the environment variable KUBECONFIG, as well as in-cluster configuration")
 	fs.Float32VarP(&cfg.ClientQPS, "clientqps", "q", cfg.ClientQPS,
