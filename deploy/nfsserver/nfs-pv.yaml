@@ -23,8 +23,8 @@ spec:
   accessModes:
     - ReadWriteMany
   nfs:
-    # replace NFS_SERVER_IP with NFS Server service IP and path with export path
-    server: <server-Ip>
+    # replace NFS-SERVER-IP-ADDR with NFS Server service IP and path with export path
+    server: <NFS-SERVER-IP-ADDR>
     path: "/"
   mountOptions:
     - nfsvers=4.2
@@ -33,7 +33,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: nfs
-  namespace: test-ns
+  namespace: kahu
 spec:
   accessModes:
     - ReadWriteMany

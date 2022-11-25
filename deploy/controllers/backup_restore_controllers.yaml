@@ -1,8 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kahu-backup-controller
-  namespace: test-ns
+  name: kahu-service
+  namespace: kahu
 spec:
   replicas: 1
   selector:
@@ -15,10 +15,13 @@ spec:
     spec:
       serviceAccountName: kahu
       containers:
-        - image: docker.io/library/controllermanager:v0.1.0
+        - image: sodacdm/kahu-controller-manager:v0.2.0
           imagePullPolicy: IfNotPresent
           name: backup
-          command: ["/usr/local/bin/controllermanager"]
+          command: ["/usr/local/bin/controller-manager"]
+          args:   
+          #example of adding custom resourceList for backup. resources should be separated by comma
+          #- --supportedResources=Deployment,Pod,ReplicaSet
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -33,7 +36,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kahu
-    namespace: test-ns
+    namespace: kahu
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -42,45 +45,22 @@ metadata:
     provisioner: kahu
   name: kahu-backup-clusterrole
 rules:
-  - apiGroups:
-    - "kahu.io"
-    resources:
-      - backups
-      - backups/status
-      - restores
-      - restores/status
-      - backuplocations
-      - providers
-    verbs:
-      - get
-      - watch
-      - list
-      - patch
-      - update
+  - apiGroups: ["kahu.io"]
+    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "providers", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status"]
+    verbs: ["get", "list", "watch", "patch", "update", "delete"]
   - apiGroups: ["*"]
     resources: ["*"]
-    verbs:
-      - create
-      - get
-      - list
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  labels:
-    provisioner: kahu
-  name: kahu-backup-role-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: kahu-backup-role
-subjects:
-  - kind: ServiceAccount
-    name: kahu
-    namespace: test-ns
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resourceNames: ["backup"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [ "rbac.authorization.k8s.io" ]
+    resources: [ "clusterroles", "roles" ]
+    verbs: [ "bind", "escalate" ]
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kahu
-  namespace: test-ns
+  namespace: kahu
