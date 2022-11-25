@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/soda-cdm/kahu/providers/lib/go"
-	"github.com/soda-cdm/kahu/providers/nfsprovider/server/options"
+	"github.com/soda-cdm/kahu/providers/nfs/server/options"
 )
 
 const (
@@ -94,7 +94,8 @@ func (server *nfsServer) GetProviderCapabilities(
 
 // Probe checks the healthy/availability state of the provider
 func (server *nfsServer) Probe(ctx context.Context, probeRequest *pb.ProbeRequest) (*pb.ProbeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Probe not implemented")
+	log.Infof("Probe invoked of %v, request: %v", *server, probeRequest)
+	return &pb.ProbeResponse{}, nil
 }
 
 // Upload pushes the input data to the specified location at provider
@@ -114,7 +115,6 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	// use backup handle name for file
 	fileId := fileInfo.GetFileIdentifier()
 	if fileId == "" {
-		log.Errorf("failed to create archiver %s", err)
 		return status.Error(codes.Internal, "upload failed, invalid file identifier")
 	}
 
