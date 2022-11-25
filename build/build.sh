@@ -28,5 +28,5 @@ source "${KAHU_ROOT}/build/lib/golang.sh"
 log::status "Building golang binaries"
 golang::build_binaries "$@"
 
-log::status "Pacing binaries in ${KAHU_OUTPUT_BINPATH}"
+V=2 log::status "Placing binaries ..."
 golang::place_bins

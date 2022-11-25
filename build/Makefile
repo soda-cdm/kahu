@@ -26,6 +26,15 @@ PRJ_SRC_PATH := github.com/soda-cdm/kahu
 GENERATED_FILE_EXT := pb.go
 BASE_IMAGE_REGISTRY=docker.io
 VERSION ?= v0.1.0
+PLATFORM ?= X86
+ARCH ?= amd64
+OS ?= linux
+
+ifeq (${PLATFORM}, ARM)
+	ARCH = arm64
+endif
+
+platform := ${OS}/${ARCH}
 
 # This controls the verbosity of the build.  Higher numbers mean more output.
 KAHU_VERBOSE ?= 1
@@ -79,7 +88,7 @@ clean:
 	@echo "$$CLEAN_HELP_INFO"
 else
 clean:
-	build/make-clean.sh && \
+	@build/make-clean.sh && \
 $(MAKE) -f Makefile.generate_proto clean
 endif
 
@@ -95,7 +104,7 @@ release-images:
 	@echo "$$RELEASE_IMAGES_HELP_INFO"
 else
 release-images: all
-	build/release-images.sh
+	@build/release-images.sh
 endif
 
 define GENERATED_FILES_HELP_INFO
