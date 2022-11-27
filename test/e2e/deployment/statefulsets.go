@@ -17,112 +17,78 @@ limitations under the License.
 package deployment
 
 import (
-	"context"
-	"os"
-	"time"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/client"
-	"github.com/soda-cdm/kahu/controllers/app/options"
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 //testcase for E2E deployment backup and restore
 var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
-	Describe("statefulsetE2ETest", func() {
-		Context("Create backup of statefulset and restore", func() {
-			It("statefulset", func() {
+	Context("Create backup of statefulset and restore", func() {
+		It("statefulset", func() {
+			kubeClient, kahuClient := kahu.Clients()
+			//Create statefulset to test
+			ns := kahu.BackupNameSpace
+			labels := make(map[string]string)
+			image := "nginx"
+			replicas := 2
+			labels["statefulset"] = "statefulset"
 
-				optManager, err := options.NewOptionsManager()
-				Expect(err).To(BeNil())
-				if err != nil {
-					log.Fatalf("Failed to initialize controller option manager")
-				}
-				cfg, err := optManager.Config()
-				Expect(err).To(BeNil())
-				if err != nil {
-					log.Errorf("Failed to get configuration %s", err)
-					os.Exit(1)
-				}
+			UUIDgen, err := uuid.NewRandom()
+			Expect(err).To(BeNil())
+			name := "statefulset" + "-" + UUIDgen.String()
+			statefulSet, err := k8s.NewStatefulset(name, ns, int32(replicas), labels, image)
+			log.Infof("statefulset:%v\n", statefulSet)
+			statefulSet1, err := k8s.CreateStatefulset(kubeClient, ns, statefulSet)
+			log.Debugf("statefulset:%v\n", statefulSet1)
+			Expect(err).To(BeNil())
+			err = k8s.WaitForStatefulsetComplete(kubeClient, ns, name)
+			Expect(err).To(BeNil())
 
-				f := client.NewFactory(AgentBaseName, &cfg.KahuClientConfig)
-				kubeClient, err := f.KubeClient()
-				kahuClient, err := f.KahuClient()
+			//create backup for the statefulset
+			backupName := "backup" + "statefulset" + "-" + UUIDgen.String()
+			includeNs := kahu.BackupNameSpace
+			resourceType := "StatefulSet"
+			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
+			Expect(err).To(BeNil())
+			err = kahu.WaitForBackupCreate(kahuClient, backupName)
+			Expect(err).To(BeNil())
+			log.Infof("backup of statefulset is done\n")
 
-				//Create statefulset to test
-				ns := "default"
-				labels := make(map[string]string)
-				image := "nginx"
-				replicas := 2
-				labels["statefulset"] = "statefulset"
+			// create restore for the backup
+			restoreName := "restore" + "statefulset" + "-" + UUIDgen.String()
+			nsRestore := kahu.RestoreNameSpace
+			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
+			log.Debugf("restore is %v\n", restore)
+			Expect(err).To(BeNil())
+			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
+			Expect(err).To(BeNil())
+			log.Infof("restore of statefulset is created\n")
 
-				UUIDgen, _ := uuid.NewRandom()
-				name := "statefulset" + "-" + UUIDgen.String()
-				statefulSet, err := k8s.NewStatefulset(name, ns, int32(replicas), labels, image)
-				log.Infof("statefulset:%v\n", statefulSet)
-				statefulSet1, err := k8s.CreateStatefulset(kubeClient, ns, statefulSet)
-				log.Debugf("statefulset:%v\n", statefulSet1)
-				Expect(err).To(BeNil())
-				err = k8s.WaitForStatefulsetComplete(kubeClient, ns, name)
-				Expect(err).To(BeNil())
+			//check if the restored deployment is up
+			statefulSet, err = k8s.GetStatefulset(kubeClient, nsRestore, name)
+			log.Debugf("statefulset is %v\n", statefulSet)
+			Expect(err).To(BeNil())
+			err = k8s.WaitForStatefulsetComplete(kubeClient, nsRestore, name)
+			Expect(err).To(BeNil())
+			log.Infof("statefulset restored is up\n")
 
-				//create backup for the statefulset
-				backupName := "backup" + "statefulset" + "-" + UUIDgen.String()
-				includeNs := "default"
-				backup := kahu.NewBackup(backupName, includeNs, "StatefulSet")
-				opts := metav1.CreateOptions{}
-				ctx := context.TODO()
-				_, err = kahuClient.KahuV1beta1().Backups().Create(ctx, backup, opts)
-				Expect(err).To(BeNil())
-				log.Infof("backup of statefulset is done\n")
-				time.Sleep(40 * time.Second)
+			//Delete the. restore
+			err = kahu.DeleteRestore(kahuClient, restoreName)
+			Expect(err).To(BeNil())
+			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
+			Expect(err).To(BeNil())
+			log.Infof("restore of %v is deleted\n", name)
 
-				// create restore for the backup
-				restoreName := "restore" + "statefulset" + "-" + UUIDgen.String()
-				nsRestore := "restore-nsdemo"
-				restore := kahu.NewRestore(restoreName, nsRestore, includeNs, backupName)
-				log.Infof("restore is %v\n", restore)
-				restore1, err := kahuClient.KahuV1beta1().Restores().Create(ctx, restore, opts)
-				log.Debugf("restore1 is %v\n", restore1)
-				Expect(err).To(BeNil())
-				log.Infof("restore of statefulset is created\n")
-
-				time.Sleep(40 * time.Second)
-
-				//check if the restored deployment is up
-				statefulSet, err = k8s.GetStatefulset(kubeClient, nsRestore, name)
-				log.Debugf("statefulset is %v\n", statefulSet)
-				Expect(err).To(BeNil())
-				err = k8s.WaitForStatefulsetComplete(kubeClient, nsRestore, name)
-				Expect(err).To(BeNil())
-				log.Infof("statefulset restored is up\n")
-
-				//Delete the. restore
-				optsDel := metav1.DeleteOptions{}
-				err = kahuClient.KahuV1beta1().Restores().Delete(ctx, restoreName, optsDel)
-				Expect(err).To(BeNil())
-				log.Infof("restore of %v is deleted\n", name)
-
-				//Delete the backup
-				err = kahuClient.KahuV1beta1().Backups().Delete(ctx, backupName, optsDel)
-				Expect(err).To(BeNil())
-				log.Infof("backup  of %v is deleted\n", name)
-
-				//Delete statefulset created
-				err = k8s.DeleteStatefulSet(kubeClient, name, ns)
-				Expect(err).To(BeNil())
-				log.Infof("statefulset: %v of ns %v is deleted\n", name, ns)
-
-				//Delete restored statefulset
-				err = k8s.DeleteStatefulSet(kubeClient, name, nsRestore)
-				Expect(err).To(BeNil())
-				log.Infof("statefulset: %v of ns %v is deleted\n", name, nsRestore)
-			})
+			//Delete the backup
+			err = kahu.DeleteBackup(kahuClient, backupName)
+			Expect(err).To(BeNil())
+			err = kahu.WaitForBackupDelete(kahuClient, backupName)
+			Expect(err).To(BeNil())
+			log.Infof("backup of  %v is deleted\n", name)
 		})
 	})
 })
