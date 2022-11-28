@@ -14,74 +14,93 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
+
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )
 
 //testcase for E2E deployment backup and restore
-var _ = Describe("storageClassBackup", Label("storageClass"), func() {
-	Context("Create backup of storageClass and restore", func() {
-		It("storageClass", func() {
+var _ = Describe("roleBackup", Label("role"), func() {
+	Context("Create backup of role and restore", func() {
+		It("role", func() {
 			kubeClient, kahuClient := kahu.Clients()
-			//Create storageClass to test
+			//Create role to test
+			ns := kahu.BackupNameSpace
+			saNamespace := kahu.BackupNameSpace
+			ctx := context.TODO()
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
-			name := "storageclass" + "-" + UUIDgen.String()
+			rolename := "role" + "-" + UUIDgen.String()
+			serviceAccount := "serviceaccount" + "-" + UUIDgen.String()
+			rolebinding := "rolebinding" + "-" + UUIDgen.String()
+			podName := "pod" + "-" + UUIDgen.String()
 
-			storageClass, err := k8s.CreateStorageClass(kubeClient, name)
-			log.Infof("storageClass:%v\n", storageClass)
-			Expect(err).To(BeNil())
-			err = k8s.WaitUntilStorageClassCreated(kubeClient, name)
+			//create serviceAccount
+			err = k8s.CreateServiceAccount(ctx, kubeClient, ns, serviceAccount)
 			Expect(err).To(BeNil())
 
-			//create backup for the storageClass
-			backupName := "backup" + "storageclass" + "-" + UUIDgen.String()
+			//create pod with the serviceAccount
+			pod, err := k8s.CreatePodWithServiceAccount(kubeClient, ns, podName, serviceAccount)
+			log.Infof("pod with sa is %v\n", pod)
+			Expect(err).To(BeNil())
+
+			err = k8s.CreateRBACWithBindingSAWithRole(ctx, kubeClient, saNamespace, ns, serviceAccount, rolename, rolebinding)
+			Expect(err).To(BeNil())
+
+			//create backup for the role
+			backupName := "backup" + "role" + "-" + UUIDgen.String()
 			includeNs := kahu.BackupNameSpace
-			resourceType := "StorageClass"
-			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
+			resourceType := "Pod"
+			backup, err := kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupCreate(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of storageClass is done\n")
+			log.Infof("backup %v is done\n", backup)
 
 			// create restore for the backup
-			restoreName := "restore" + "storageclass" + "-" + UUIDgen.String()
+			restoreName := "restore" + "role" + "-" + UUIDgen.String()
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
 			log.Debugf("restore1 is %v\n", restore)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of storageClass is created\n")
+			log.Infof("restore is created\n")
 
-			//check if the restored deployment is up
-			storageClass, err = k8s.GetStorageClass(kubeClient, name)
-			log.Debugf("storageClass is %v\n", storageClass)
+			//check if the restored role is up
+			_, err = k8s.GetRole(ctx, kubeClient, rolename, nsRestore)
 			Expect(err).To(BeNil())
-			err = k8s.WaitUntilStorageClassCreated(kubeClient, name)
-			Expect(err).To(BeNil())
-			log.Infof("storageClass restored is up\n")
 
-			//Delete the. restore
+			err = k8s.WaitForPodComplete(kubeClient, nsRestore, podName)
+			Expect(err).To(BeNil())
+
+			_, err = k8s.GetRoleBinding(ctx, kubeClient, rolebinding, nsRestore)
+			Expect(err).To(BeNil())
+			log.Infof("pod restored is up\n")
+
+			//Delete the restore
 			err = kahu.DeleteRestore(kahuClient, restoreName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of %v is deleted\n", name)
+			log.Infof("restore of pod %v is deleted\n", podName)
 
 			//Delete the backup
 			err = kahu.DeleteBackup(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of  %v is deleted\n", name)
+			log.Infof("backup of roleBinding %v is deleted\n", podName)
+
 		})
 	})
 })

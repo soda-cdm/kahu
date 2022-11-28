@@ -14,91 +14,77 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
-	"context"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
+
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )
 
-//testcase for E2E deployment backup and restore
-var _ = Describe("rbacBackup", Label("rbac"), func() {
-	Context("Create backup of rbac and restore", func() {
-		It("rbac", func() {
+//testcase for E2E service backup and restore
+var _ = Describe("ServiceBackup", Label("service"), func() {
+	Context("Create backup of service and restore", func() {
+		It("service", func() {
 			kubeClient, kahuClient := kahu.Clients()
-			//Create rbac to test
+			//Create service to test
 			ns := kahu.BackupNameSpace
-			ctx := context.TODO()
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
-			clusterRolename := "clusterrole" + "-" + UUIDgen.String()
-			serviceAccount := "serviceaccount" + "-" + UUIDgen.String()
-			clusterrolebinding := "clusterrolebinding" + "-" + UUIDgen.String()
-			podName := "pod" + "-" + UUIDgen.String()
-
-			//create serviceAccount
-			err = k8s.CreateServiceAccount(ctx, kubeClient, ns, serviceAccount)
+			name := "service" + "-" + UUIDgen.String()
+			service, err := k8s.CreateService(kubeClient, ns, name)
+			log.Infof("service,err:%v,%v\n", service, err)
+			Expect(err).To(BeNil())
+			err = k8s.WaitUntilServiceCreated(kubeClient, ns, name)
 			Expect(err).To(BeNil())
 
-			//create pod with the serviceAccount
-			pod, err := k8s.CreatePodWithServiceAccount(kubeClient, ns, podName, serviceAccount)
-			log.Infof("pod with sa is %v\n", pod)
-			Expect(err).To(BeNil())
-
-			err = k8s.CreateRBACWithBindingSA(ctx, kubeClient, ns, serviceAccount, clusterRolename, clusterrolebinding)
-			Expect(err).To(BeNil())
-
-			_, err = k8s.GetClusterRoleBinding(ctx, kubeClient, clusterrolebinding)
-			Expect(err).To(BeNil())
-
-			//create backup for the rbac
-			backupName := "backup" + "rbac" + "-" + UUIDgen.String()
+			//create backup for the service
+			backupName := "backup" + "service" + "-" + UUIDgen.String()
 			includeNs := kahu.BackupNameSpace
-			resourceType := "Pod"
+			resourceType := "Service"
 			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupCreate(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of rbac is done\n")
+			log.Infof("backup of service is done %v\n", backupName)
 
 			// create restore for the backup
-			restoreName := "restore" + "rbac" + "-" + UUIDgen.String()
+			restoreName := "restore" + "service" + "-" + UUIDgen.String()
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
 			log.Debugf("restore1 is %v\n", restore)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore is created\n")
 
-			//check if the restored rbac is up
-			pod, err = k8s.GetPod(ctx, kubeClient, nsRestore, podName)
-			log.Infof("pod is %v\n", pod)
+			//check if the restored service is up
+			service, err = k8s.GetService(kubeClient, name, nsRestore)
+			log.Debugf("service is %v\n", service)
 			Expect(err).To(BeNil())
 
-			_, err = k8s.GetClusterRoleBinding(ctx, kubeClient, clusterrolebinding)
+			err = k8s.WaitUntilServiceCreated(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
-			log.Infof("pod restored is up\n")
+			log.Infof("restored service %v is up\n", name)
 
 			//Delete the. restore
 			err = kahu.DeleteRestore(kahuClient, restoreName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore %v is deleted\n", restoreName)
+			log.Infof("restore of %v is deleted\n", name)
 
 			//Delete the backup
 			err = kahu.DeleteBackup(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup %v is deleted\n", backupName)
+			log.Infof("backup of  %v is deleted\n", name)
 		})
 	})
 })
+
+//TODO need to create namespace include steps
