@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 
-	_ "github.com/soda-cdm/kahu/test/e2e/deployment"
+	_ "github.com/soda-cdm/kahu/test/e2e/k8sresources"
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )

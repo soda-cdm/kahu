@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
 	"github.com/google/uuid"
@@ -27,70 +27,71 @@ import (
 )
 
 //testcase for E2E deployment backup and restore
-var _ = Describe("DeploymentBackup", Label("deployment"), func() {
-	Context("Create backup of deployment and restore", func() {
-		It("deployment with replicas and pods", func() {
+var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
+	Context("Create backup of Daemonset and restore", func() {
+		It("Daemonset", func() {
 
 			kubeClient, kahuClient := kahu.Clients()
-			//Create deployment to test
+			//Create Daemonset to test
 			ns := kahu.BackupNameSpace
 			labels := make(map[string]string)
-			labels["deployment"] = "deployment"
 			image := "nginx"
+			replicas := 2
+			labels["daemonset"] = "daemonset"
+
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
-			name := "deployment" + "-" + UUIDgen.String()
-			replicas := 2
 
-			deployment := k8s.NewDeployment(name, ns, int32(replicas), labels, image)
-			log.Infof("deployment:%v\n", deployment)
-			deployment1, err := k8s.CreateDeployment(kubeClient, ns, deployment)
-			log.Debugf("deployment1:%v,err:%v\n", deployment1, err)
+			name := "daemonset" + "-" + UUIDgen.String()
+			daemonSet, err := k8s.NewDaemonset(name, ns, int32(replicas), labels, image)
+			log.Infof("daemonset:%v\n", daemonSet)
+			daemonSet1, err := k8s.CreateDaemonset(kubeClient, ns, daemonSet)
+			log.Debugf("daemonset:%v\n", daemonSet1)
 			Expect(err).To(BeNil())
-			err = k8s.WaitForReadyDeployment(kubeClient, ns, name)
+			err = k8s.WaitForDaemonsetComplete(kubeClient, ns, name)
 			Expect(err).To(BeNil())
 
-			//create backup for the deployment
-			backupName := "backup" + "deployment" + "-" + UUIDgen.String()
+			//create backup for the daemonset
+			backupName := "backup" + "daemonset" + "-" + UUIDgen.String()
 			includeNs := kahu.BackupNameSpace
-			resourceType := "Deployment"
+			resourceType := "DaemonSet"
 			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupCreate(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of deployment is done\n")
+			log.Infof("backup  of daemonset is done\n")
 
 			// create restore for the backup
-			restoreName := "restore" + "-" + UUIDgen.String()
+			restoreName := "restore" + "daemonset" + "-" + UUIDgen.String()
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
+			log.Debugf("restore is %v\n", restore)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of deployment :%v is created \n", restore)
+			log.Infof("restore of daemonset is created\n")
 
-			//check if the restored deployment is up
-			deployment, err = k8s.GetDeployment(kubeClient, nsRestore, name)
-			log.Debugf("deployment is %v\n", deployment)
+			//check if the restored daemonset is up
+			daemonSet, err = k8s.GetDaemonset(kubeClient, nsRestore, name)
+			log.Debugf("daemonset is %v\n", daemonSet)
 			Expect(err).To(BeNil())
-			err = k8s.WaitForReadyDeployment(kubeClient, nsRestore, name)
+			err = k8s.WaitForDaemonsetComplete(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
-			log.Infof("deployment restored is up\n")
+			log.Infof("daemonset restored  is up\n")
 
-			//Delete the. restore
+			//Delete the restore
 			err = kahu.DeleteRestore(kahuClient, restoreName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of deployment: %v is deleted\n", name)
+			log.Infof("restore of %v is deleted\n", name)
 
 			//Delete the backup
 			err = kahu.DeleteBackup(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of deployment: %v is deleted\n", name)
-
+			log.Infof("backup of %v is deleted\n", name)
 		})
 	})
 })

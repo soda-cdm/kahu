@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
 	"github.com/google/uuid"
@@ -27,71 +27,67 @@ import (
 )
 
 //testcase for E2E deployment backup and restore
-var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
-	Context("Create backup of Daemonset and restore", func() {
-		It("Daemonset", func() {
-
+var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
+	Context("Create backup of configmap and restore", func() {
+		It("configmap", func() {
 			kubeClient, kahuClient := kahu.Clients()
-			//Create Daemonset to test
+			//Create configmap to test
 			ns := kahu.BackupNameSpace
 			labels := make(map[string]string)
-			image := "nginx"
-			replicas := 2
-			labels["daemonset"] = "daemonset"
 
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
 
-			name := "daemonset" + "-" + UUIDgen.String()
-			daemonSet, err := k8s.NewDaemonset(name, ns, int32(replicas), labels, image)
-			log.Infof("daemonset:%v\n", daemonSet)
-			daemonSet1, err := k8s.CreateDaemonset(kubeClient, ns, daemonSet)
-			log.Debugf("daemonset:%v\n", daemonSet1)
-			Expect(err).To(BeNil())
-			err = k8s.WaitForDaemonsetComplete(kubeClient, ns, name)
+			name := "configmap" + "-" + UUIDgen.String()
+			configMap, err := k8s.CreateConfigMap(kubeClient, ns, name, labels)
+			log.Infof("configMap:%v\n", configMap)
 			Expect(err).To(BeNil())
 
-			//create backup for the daemonset
-			backupName := "backup" + "daemonset" + "-" + UUIDgen.String()
+			err = k8s.WaitForConfigMapComplete(kubeClient, ns, name)
+			Expect(err).To(BeNil())
+
+			//create backup for the configMap
+			backupName := "backup" + "configmap" + "-" + UUIDgen.String()
 			includeNs := kahu.BackupNameSpace
-			resourceType := "DaemonSet"
+			resourceType := "ConfigMap"
 			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupCreate(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup  of daemonset is done\n")
+			log.Infof("backup of configmap is done\n")
 
 			// create restore for the backup
-			restoreName := "restore" + "daemonset" + "-" + UUIDgen.String()
+			restoreName := "restore" + "configmap" + "-" + UUIDgen.String()
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
-			log.Debugf("restore is %v\n", restore)
+			log.Debugf("restore1 is %v\n", restore)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of daemonset is created\n")
+			log.Infof("restore is created\n")
 
-			//check if the restored daemonset is up
-			daemonSet, err = k8s.GetDaemonset(kubeClient, nsRestore, name)
-			log.Debugf("daemonset is %v\n", daemonSet)
+			//check if the restored configmap is up
+			configMap, err = k8s.GetConfigmap(kubeClient, nsRestore, name)
+			log.Debugf("configmap is %v\n", configMap)
 			Expect(err).To(BeNil())
-			err = k8s.WaitForDaemonsetComplete(kubeClient, nsRestore, name)
+
+			err = k8s.WaitForConfigMapComplete(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
-			log.Infof("daemonset restored  is up\n")
+			log.Infof("configmap restored is up\n")
 
 			//Delete the restore
 			err = kahu.DeleteRestore(kahuClient, restoreName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of %v is deleted\n", name)
+			log.Infof("restore of configmap %v is deleted\n", name)
 
 			//Delete the backup
 			err = kahu.DeleteBackup(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of %v is deleted\n", name)
+			log.Infof("backup of configmap %v is deleted\n", name)
 		})
 	})
 })

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
 	"github.com/google/uuid"
@@ -27,67 +27,67 @@ import (
 )
 
 //testcase for E2E deployment backup and restore
-var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
-	Context("Create backup of configmap and restore", func() {
-		It("configmap", func() {
+var _ = Describe("DeploymentBackup", Label("deployment"), func() {
+	Context("Create backup of deployment and restore", func() {
+		It("deployment with replicas and pods", func() {
+
 			kubeClient, kahuClient := kahu.Clients()
-			//Create configmap to test
+			//Create deployment to test
 			ns := kahu.BackupNameSpace
 			labels := make(map[string]string)
-
+			labels["deployment"] = "deployment"
+			image := "nginx"
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
+			name := "deployment" + "-" + UUIDgen.String()
+			replicas := 2
 
-			name := "configmap" + "-" + UUIDgen.String()
-			configMap, err := k8s.CreateConfigMap(kubeClient, ns, name, labels)
-			log.Infof("configMap:%v\n", configMap)
+			deployment := k8s.NewDeployment(name, ns, int32(replicas), labels, image)
+			log.Infof("deployment:%v\n", deployment)
+			deployment1, err := k8s.CreateDeployment(kubeClient, ns, deployment)
+			log.Debugf("deployment1:%v,err:%v\n", deployment1, err)
+			Expect(err).To(BeNil())
+			err = k8s.WaitForReadyDeployment(kubeClient, ns, name)
 			Expect(err).To(BeNil())
 
-			err = k8s.WaitForConfigMapComplete(kubeClient, ns, name)
-			Expect(err).To(BeNil())
-
-			//create backup for the configMap
-			backupName := "backup" + "configmap" + "-" + UUIDgen.String()
+			//create backup for the deployment
+			backupName := "backup" + "deployment" + "-" + UUIDgen.String()
 			includeNs := kahu.BackupNameSpace
-			resourceType := "ConfigMap"
+			resourceType := "Deployment"
 			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupCreate(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of configmap is done\n")
+			log.Infof("backup of deployment is done\n")
 
 			// create restore for the backup
-			restoreName := "restore" + "configmap" + "-" + UUIDgen.String()
+			restoreName := "restore" + "-" + UUIDgen.String()
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
-			log.Debugf("restore1 is %v\n", restore)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreCreate(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore is created\n")
+			log.Infof("restore of deployment :%v is created \n", restore)
 
-			//check if the restored configmap is up
-			configMap, err = k8s.GetConfigmap(kubeClient, nsRestore, name)
-			log.Debugf("configmap is %v\n", configMap)
+			//check if the restored deployment is up
+			err = k8s.WaitForReadyDeployment(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
+			log.Infof("deployment restored is up\n")
 
-			err = k8s.WaitForConfigMapComplete(kubeClient, nsRestore, name)
-			Expect(err).To(BeNil())
-			log.Infof("configmap restored is up\n")
-
-			//Delete the restore
+			//Delete the. restore
 			err = kahu.DeleteRestore(kahuClient, restoreName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForRestoreDelete(kahuClient, restoreName)
 			Expect(err).To(BeNil())
-			log.Infof("restore of configmap %v is deleted\n", name)
+			log.Infof("restore of deployment: %v is deleted\n", name)
 
 			//Delete the backup
 			err = kahu.DeleteBackup(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
-			log.Infof("backup of configmap %v is deleted\n", name)
+			log.Infof("backup of deployment: %v is deleted\n", name)
+
 		})
 	})
 })

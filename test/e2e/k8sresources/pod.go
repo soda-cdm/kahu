@@ -14,11 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package deployment
+package k8sresources
 
 import (
-	"context"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,7 +29,7 @@ import (
 //testcase for E2E pod backup and restore
 var _ = Describe("PodBackup", Label("pod"), func() {
 	Context("Create backup of pod and restore", func() {
-		It("pod with replicas and pods", func() {
+		It("pod with replicas", func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create pod to test
 			ns := kahu.BackupNameSpace
@@ -97,7 +95,6 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			Expect(err).To(BeNil())
 
 			name := "pod" + "-" + UUIDgen.String()
-			ctx := context.TODO()
 
 			pod, err := k8s.CreatePod(kubeClient, ns, name)
 			log.Infof("pod:%v,err:%v\n", pod, err)

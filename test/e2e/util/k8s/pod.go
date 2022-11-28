@@ -105,6 +105,7 @@ func WaitForPodComplete(c clientset.Interface, ns, name string) error {
 		if err != nil {
 			return false, err
 		}
+		logrus.Infof("pod %q in namespace %q is still being created...", name, ns)
 		return true, nil
 	})
 }
