@@ -23,16 +23,17 @@ import (
 
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/client"
-	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/controllers/app/options"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	waitutil "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	"github.com/soda-cdm/kahu/client"
+	"github.com/soda-cdm/kahu/client/clientset/versioned"
+	"github.com/soda-cdm/kahu/controllers/app/options"
 )
 
 const (
@@ -40,7 +41,7 @@ const (
 	BackupNameSpace  = "backup-namespace"
 	RestoreNameSpace = "restore-namespace"
 	PollInterval     = 2 * time.Second
-	PollTimeout      = 15 * time.Minute
+	PollTimeout      = 40 * time.Minute
 )
 
 func NewBackup(name string, ns string, objType string) *kahuapi.Backup {
@@ -138,7 +139,8 @@ func Clients() (kubernetes.Interface, versioned.Interface) {
 func WaitForBackupCreate(c versioned.Interface, backupName string) error {
 	getOpts := metav1.GetOptions{}
 	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
-		_, err := c.KahuV1beta1().Backups().Get(context.TODO(), backupName, getOpts)
+		backup, err := c.KahuV1beta1().Backups().Get(context.TODO(), backupName, getOpts)
+		log.Debugf("backup is %v:\n", backup)
 		if err != nil {
 			return false, err
 		}
@@ -149,7 +151,8 @@ func WaitForBackupCreate(c versioned.Interface, backupName string) error {
 func WaitForRestoreCreate(c versioned.Interface, restoreName string) error {
 	getOpts := metav1.GetOptions{}
 	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
-		_, err := c.KahuV1beta1().Restores().Get(context.TODO(), restoreName, getOpts)
+		restore, err := c.KahuV1beta1().Restores().Get(context.TODO(), restoreName, getOpts)
+		log.Debugf("restore %v:\n", restore)
 		if err != nil {
 			return false, err
 		}

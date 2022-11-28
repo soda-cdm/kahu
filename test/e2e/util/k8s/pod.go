@@ -19,13 +19,16 @@ package util
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
-	clientset "k8s.io/client-go/kubernetes"
-
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	waitutil "k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
 )
 
 func CreatePod(c clientset.Interface, ns, name string) (*corev1.Pod, error) {
@@ -104,4 +107,21 @@ func WaitForPodComplete(c clientset.Interface, ns, name string) error {
 		}
 		return true, nil
 	})
+}
+
+func WaitForPodDelete(c clientset.Interface, ns, name string) error {
+	if err := c.CoreV1().ConfigMaps(ns).Delete(context.TODO(), name, metav1.DeleteOptions{}); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("failed to delete  configmap in namespace %q", ns))
+	}
+	return waitutil.PollImmediateInfinite(5*time.Second,
+		func() (bool, error) {
+			if _, err := c.CoreV1().Pods(ns).Get(context.TODO(), ns, metav1.GetOptions{}); err != nil {
+				if apierrors.IsNotFound(err) {
+					return true, nil
+				}
+				return false, err
+			}
+			logrus.Debugf("pod %q in namespace %q is still being deleted...", name, ns)
+			return false, nil
+		})
 }

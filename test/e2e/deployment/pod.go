@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
+
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )
@@ -39,7 +40,6 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			UUIDgen, err := uuid.NewRandom()
 			Expect(err).To(BeNil())
 			name := "pod" + "-" + UUIDgen.String()
-			ctx := context.TODO()
 
 			pod, err := k8s.CreatePod(kubeClient, ns, name)
 			log.Infof("pod:%v,err:%v\n", pod, err)
@@ -69,8 +69,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			log.Infof("restore %v is created\n", restoreName)
 
 			//check if the restored pod is up
-			pod, err = k8s.GetPod(ctx, kubeClient, nsRestore, name)
-			log.Debugf("pod is %v\n", pod)
+			err = k8s.WaitForPodComplete(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
 
 			//Delete the. restore
@@ -86,7 +85,6 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			err = kahu.WaitForBackupDelete(kahuClient, backupName)
 			Expect(err).To(BeNil())
 			log.Infof("backup of pod %v is deleted\n", name)
-
 		})
 
 		It("pod with restore resourcePrefix", func() {
@@ -127,8 +125,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			Expect(err).To(BeNil())
 
 			//check if the restored pod is up
-			pod, err = k8s.GetPod(ctx, kubeClient, nsRestore, prefix+name)
-			log.Debugf("pod is %v\n", pod)
+			err = k8s.WaitForPodComplete(kubeClient, nsRestore, prefix+name)
 			Expect(err).To(BeNil())
 
 			//Delete the. restore

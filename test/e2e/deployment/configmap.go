@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
+
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )

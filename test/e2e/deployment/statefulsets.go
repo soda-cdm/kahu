@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
+
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )
@@ -69,9 +70,6 @@ var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 			log.Infof("restore of statefulset is created\n")
 
 			//check if the restored deployment is up
-			statefulSet, err = k8s.GetStatefulset(kubeClient, nsRestore, name)
-			log.Debugf("statefulset is %v\n", statefulSet)
-			Expect(err).To(BeNil())
 			err = k8s.WaitForStatefulsetComplete(kubeClient, nsRestore, name)
 			Expect(err).To(BeNil())
 			log.Infof("statefulset restored is up\n")
