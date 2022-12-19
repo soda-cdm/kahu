@@ -8,7 +8,7 @@ Kahu is part of SODA Container Data Management(CDM). Kahu provides seamless back
 ## High Level Architecture
 ![Kahu High Level Design](https://github.com/soda-cdm/documentation/blob/main/kahu/resources/Level_0_Arch.png)
 
-For more details, please refer [Design Doc](https://github.com/soda-cdm/documentation/blob/main/kahu/RequirementsDesignSpec.md)
+For more details, please refer [Design Doc](https://github.com/soda-cdm/documentation/blob/main/kahu/design_spec.md)
 
 
 ## Getting Started
