@@ -58,6 +58,10 @@ spec:
                   type: string
                 description: Manifest is the optional set of provider specific configurations
                 type: object
+              supportedVolumeProvisioners:
+                items:
+                  type: string
+                type: array
               type:
                 description: Type is type of the provider getting registered
                 enum:

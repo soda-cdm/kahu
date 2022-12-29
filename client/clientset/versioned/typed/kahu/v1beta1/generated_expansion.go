@@ -28,4 +28,8 @@ type RestoreExpansion interface{}
 
 type VolumeBackupContentExpansion interface{}
 
+type VolumeGroupExpansion interface{}
+
 type VolumeRestoreContentExpansion interface{}
+
+type VolumeSnapshotExpansion interface{}

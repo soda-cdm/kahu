@@ -38,6 +38,7 @@ build::get_docker_wrapped_binaries() {
     controller-manager
     meta-service
     volume-service
+    openebs-zfs
     nfs-provider
   )
 

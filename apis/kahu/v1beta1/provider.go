@@ -66,6 +66,9 @@ type ProviderSpec struct {
 	// Capabilities is the optional set of provider capabilities
 	// +optional
 	Capabilities map[string]bool `json:"capabilities,omitempty"`
+
+	// +optional
+	SupportedVolumeProvisioners []string `json:"supportedVolumeProvisioners,omitempty"`
 }
 
 // ProviderStatus defines the observed state of Provider

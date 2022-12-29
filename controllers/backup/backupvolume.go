@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/google/uuid"
@@ -32,11 +32,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	"github.com/soda-cdm/kahu/utils"
+)
+
+const (
+	waitForSnapshotTimeout = 10 * time.Minute
 )
 
 func getVBCName() string {
@@ -46,7 +49,7 @@ func getVBCName() string {
 func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, resources Resources) (*kahuapi.Backup, error) {
 	ctrl.logger.Infof("Processing Volume backup(%s)", backup.Name)
 
-	pvs, err := ctrl.getVolumes(backup, resources)
+	pvcs, err := ctrl.getVolumes(backup, resources)
 	if err != nil {
 		ctrl.logger.Errorf("Volume backup validation failed. %s", err)
 
@@ -59,38 +62,46 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup, resources Re
 		return backup, err
 	}
 
-	if len(pvs) == 0 {
+	if len(pvcs) == 0 {
 		ctrl.logger.Infof("No volume for backup. " +
 			"Setting stage to volume backup completed")
 		// set annotation for
 		return ctrl.annotateBackup(annVolumeBackupCompleted, backup)
 	}
 
-	// group pv with providers
-	pvProviderMap := make(map[string][]corev1.PersistentVolume, 0)
-	for _, pv := range pvs {
-		pvList, ok := pvProviderMap[pv.Spec.CSI.Driver]
-		if !ok {
-			pvList = make([]corev1.PersistentVolume, 0)
-		}
-		pvList = append(pvList, pv)
-		pvProviderMap[pv.Spec.CSI.Driver] = pvList
+	volumeGroup, err := ctrl.volumeHandler.Group().ByPVCs(backup.Name, pvcs)
+	if err != nil {
+		ctrl.logger.Errorf("Failed to ensure volume group. %s", err)
+		return backup, err
 	}
 
-	volBackupParam, validationErrors := ctrl.ensureVolumeBackupParameters(backup)
-	if len(validationErrors) != 0 {
-		ctrl.logger.Errorf("Backup validation failed. %s", strings.Join(validationErrors, ", "))
-		_, err := ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{
-			State:            kahuapi.BackupStateFailed,
-			ValidationErrors: validationErrors,
-		}, corev1.EventTypeWarning, string(kahuapi.BackupStateFailed),
-			fmt.Sprintf("Backup validation failed. %s", strings.Join(validationErrors, ", ")))
-
-		return backup, errors.Wrap(err, "backup validation failed")
+	snapshotter, err := ctrl.volumeHandler.Snapshot().ByVolumeGroup(volumeGroup)
+	if err != nil {
+		return backup, err
 	}
 
-	// ensure volume backup content
-	return backup, ctrl.ensureVolumeBackupContent(backup.Name, volBackupParam, pvProviderMap)
+	// initiate snapshotting
+	err = snapshotter.Apply()
+	if err != nil {
+		return backup, err
+	}
+
+	// wait for external snapshotter to finish snapshotting
+	if err = snapshotter.WaitForSnapshotToReady(backup.Name, waitForSnapshotTimeout); err != nil {
+		return backup, err
+	}
+
+	backupper, err := ctrl.volumeHandler.Backup().BySnapshot(snapshotter)
+	if err != nil {
+		return backup, err
+	}
+
+	err = backupper.Apply(backup.Name)
+	if err != nil {
+		return backup, err
+	}
+
+	return backup, nil
 }
 
 func (ctrl *controller) ensureVolumeBackupParameters(backup *kahuapi.Backup) (map[string]string, []string) {
@@ -159,71 +170,27 @@ func (ctrl *controller) removeVolumeBackup(
 
 func (ctrl *controller) getVolumes(
 	backup *kahuapi.Backup,
-	resources Resources) ([]corev1.PersistentVolume, error) {
+	resources Resources) ([]*corev1.PersistentVolumeClaim, error) {
 	// retrieve all persistent volumes for backup
 	ctrl.logger.Infof("Getting PersistentVolume for backup(%s)", backup.Name)
 
-	// check if volume backup content already available
 	unstructuredPVCs := resources.GetResourcesByKind(PVCKind)
-	unstructuredPVs := resources.GetResourcesByKind(PVKind)
-	pvs := make([]corev1.PersistentVolume, 0)
-	// list all PVs
-	pvNames := sets.NewString()
-	for _, unstructuredPV := range unstructuredPVs {
-		var pv corev1.PersistentVolume
-		err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.Object, &pv)
-		if err != nil {
-			ctrl.logger.Errorf("Failed to translate unstructured (%s) to "+
-				"pv. %s", unstructuredPV.GetName(), err)
-			return pvs, err
-		}
-		err = utils.CheckBackupSupport(pv)
-		if err != nil {
-			return pvs, err
-		}
-
-		pvs = append(pvs, pv)
-		pvNames.Insert(pv.Name)
-	}
+	pvcs := make([]*corev1.PersistentVolumeClaim, 0)
 
 	for _, unstructuredPVC := range unstructuredPVCs {
-		var pvc corev1.PersistentVolumeClaim
-		err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPVC.Object, &pvc)
+		pvc := new(corev1.PersistentVolumeClaim)
+		err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPVC.Object, pvc)
 		if err != nil {
 			ctrl.logger.Warningf("Failed to translate unstructured (%s) to "+
 				"pvc. %s", unstructuredPVC.GetName(), err)
-			return pvs, err
+			return pvcs, err
 		}
 
-		if len(pvc.Spec.VolumeName) == 0 ||
-			pvc.DeletionTimestamp != nil {
-			// ignore unbound PV
-			continue
-		}
-		k8sPV, err := ctrl.kubeClient.CoreV1().PersistentVolumes().Get(context.TODO(),
-			pvc.Spec.VolumeName, metav1.GetOptions{})
-		if err != nil {
-			ctrl.logger.Errorf("unable to get PV %s", pvc.Spec.VolumeName)
-			return pvs, err
-		}
+		pvcs = append(pvcs, pvc)
 
-		if pvNames.Has(k8sPV.Name) { // ignore if all-ready considered
-			// ignoring non CSI Volumes
-			continue
-		}
-
-		err = utils.CheckBackupSupport(*k8sPV)
-		if err != nil {
-			return pvs, err
-		}
-
-		var pv corev1.PersistentVolume
-		k8sPV.DeepCopyInto(&pv)
-		pvs = append(pvs, pv)
-		pvNames.Insert(pv.Name)
 	}
 
-	return pvs, nil
+	return pvcs, nil
 }
 
 func (ctrl *controller) ensureVolumeBackupContent(
@@ -251,7 +218,7 @@ func (ctrl *controller) ensureVolumeBackupContent(
 
 		pvObjectRefs := make([]corev1.PersistentVolume, 0)
 		for _, pv := range pvList {
-			ctrl.logger.Infof("Preparing volume backup content with pv name %s UID %s", pv.Name, pv.UID )
+			ctrl.logger.Infof("Preparing volume backup content with pv name %s UID %s", pv.Name, pv.UID)
 			pvObjectRefs = append(pvObjectRefs, corev1.PersistentVolume{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       pv.Kind,

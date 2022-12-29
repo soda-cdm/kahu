@@ -19,6 +19,7 @@ package backup
 import (
 	"context"
 	"fmt"
+	"github.com/soda-cdm/kahu/volume"
 	"regexp"
 	"strings"
 
@@ -69,6 +70,7 @@ type controller struct {
 	volumeBackupClient   kahuv1client.VolumeBackupContentInterface
 	hookExecutor         hooks.Hooks
 	processedBackup      utils.Store
+	volumeHandler        volume.Interface
 }
 
 func NewController(
@@ -80,7 +82,8 @@ func NewController(
 	informer kahuinformer.SharedInformerFactory,
 	eventBroadcaster record.EventBroadcaster,
 	discoveryHelper discovery.DiscoveryHelper,
-	hookExecutor hooks.Hooks) (controllers.Controller, error) {
+	hookExecutor hooks.Hooks,
+	volumeHandler volume.Interface) (controllers.Controller, error) {
 
 	logger := log.WithField("controller", controllerName)
 	processedBackupCache := utils.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
@@ -98,6 +101,7 @@ func NewController(
 		volumeBackupClient:   kahuClient.KahuV1beta1().VolumeBackupContents(),
 		hookExecutor:         hookExecutor,
 		processedBackup:      processedBackupCache,
+		volumeHandler:        volumeHandler,
 	}
 
 	// construct controller interface to process worker queue
@@ -189,14 +193,6 @@ func (ctrl *controller) processQueue(key string) error {
 	if newBackup.DeletionTimestamp != nil {
 		return ctrl.deleteBackup(newBackup)
 	}
-
-	// Rollback backup in case of failure at any stage
-	defer func() {
-		if newBackup.Status.State == kahuapi.BackupStateFailed &&
-			!metav1.HasAnnotation(newBackup.ObjectMeta, annBackupCleanupDone) {
-			ctrl.deleteBackup(newBackup)
-		}
-	}()
 
 	switch newBackup.Status.Stage {
 	case "", kahuapi.BackupStageInitial:
@@ -458,6 +454,7 @@ func (ctrl *controller) syncVolumeBackup(
 	if backup.Status.State != kahuapi.BackupStateNew {
 		return backup, nil
 	}
+
 	backupResources := NewBackupResources(ctrl.logger,
 		ctrl.dynamicClient, ctrl.kubeClient, ctrl.discoveryHelper, ctrl)
 	newBackup, err := backupResources.Sync(backup)

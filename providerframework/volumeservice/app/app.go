@@ -19,11 +19,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -38,12 +40,12 @@ import (
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/controllers"
-	providerSvc "github.com/soda-cdm/kahu/providers/lib/go"
 	providerIdentity "github.com/soda-cdm/kahu/providerframework/identityservice"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/config"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/options"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/backup"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/restore"
+	providerSvc "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 )
 
@@ -329,10 +331,20 @@ func Run(ctx context.Context, config *config.CompletedConfig, grpcConn grpc.Clie
 func configureControllers(ctx context.Context,
 	config *config.CompletedConfig,
 	backupProviderClient providerSvc.VolumeBackupClient) (map[string]controllers.Controller, error) {
+
+	clientset, err := config.ClientFactory.ClientConfig()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	csiSnapshotClient, err := snapshotclientset.NewForConfig(clientset)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
 	availableControllers := make(map[string]controllers.Controller, 0)
 	// add controllers here, integrate backup controller
 	backupController, err := backup.NewController(ctx, config.Provider, config.KahuClient, config.InformerFactory,
-		config.EventBroadcaster, backupProviderClient, config.KubeClient)
+		config.EventBroadcaster, backupProviderClient, config.KubeClient, csiSnapshotClient.SnapshotV1())
 	if err != nil {
 		return availableControllers, fmt.Errorf("failed to initialize volume backup controller. %s", err)
 	}

@@ -34,8 +34,12 @@ type Interface interface {
 	Restores() RestoreInformer
 	// VolumeBackupContents returns a VolumeBackupContentInformer.
 	VolumeBackupContents() VolumeBackupContentInformer
+	// VolumeGroups returns a VolumeGroupInformer.
+	VolumeGroups() VolumeGroupInformer
 	// VolumeRestoreContents returns a VolumeRestoreContentInformer.
 	VolumeRestoreContents() VolumeRestoreContentInformer
+	// VolumeSnapshots returns a VolumeSnapshotInformer.
+	VolumeSnapshots() VolumeSnapshotInformer
 }
 
 type version struct {
@@ -74,7 +78,17 @@ func (v *version) VolumeBackupContents() VolumeBackupContentInformer {
 	return &volumeBackupContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
+// VolumeGroups returns a VolumeGroupInformer.
+func (v *version) VolumeGroups() VolumeGroupInformer {
+	return &volumeGroupInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
 // VolumeRestoreContents returns a VolumeRestoreContentInformer.
 func (v *version) VolumeRestoreContents() VolumeRestoreContentInformer {
 	return &volumeRestoreContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// VolumeSnapshots returns a VolumeSnapshotInformer.
+func (v *version) VolumeSnapshots() VolumeSnapshotInformer {
+	return &volumeSnapshotInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
