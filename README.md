@@ -18,6 +18,7 @@ Please take a look at the following documents to get started
 2. [Deployment Guide](https://github.com/soda-cdm/documentation/blob/main/kahu/deployment_guide.md)
 3. [User Guide](https://github.com/soda-cdm/documentation/blob/main/kahu/user_guide.md)
 4. [API Reference](https://soda-cdm.github.io/kahu/)
+5. [Development Guide](https://github.com/soda-cdm/documentation/blob/main/kahu/development_guide.md)
 
 ## Community
  Please join [SODA Slack](https://sodafoundation.io/slack) and channel #soda-cdm.
