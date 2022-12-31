@@ -33,7 +33,7 @@ spec:
     spec:
       serviceAccountName: kahu-nfs-provider
       containers:
-      - image: sodacdm/kahu-nfs-provider:v0.1.1
+      - image: sodacdm/kahu-nfs-provider:v1.0.0
         imagePullPolicy: IfNotPresent
         name: nfs-driver
         command: ["/usr/local/bin/nfs-provider"]
@@ -46,7 +46,7 @@ spec:
           mountPath: "/data"
         - name: socket
           mountPath: "/tmp"
-      - image: sodacdm/kahu-meta-service:v0.1.1
+      - image: sodacdm/kahu-meta-service:v1.0.0
         imagePullPolicy: IfNotPresent
         name: meta-service
         command: ["/usr/local/bin/meta-service"]

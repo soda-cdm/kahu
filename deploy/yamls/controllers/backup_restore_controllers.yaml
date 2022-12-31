@@ -15,11 +15,11 @@ spec:
     spec:
       serviceAccountName: kahu
       containers:
-        - image: sodacdm/kahu-controller-manager:v0.1.1
+        - image: sodacdm/kahu-controller-manager:v1.0.0
           imagePullPolicy: IfNotPresent
           name: backup
           command: ["/usr/local/bin/controller-manager"]
-          args:   
+          #args:   
           #example of adding custom resourceList for backup. resources should be separated by comma
           #- --supportedResources=Deployment,Pod,ReplicaSet
 ---
@@ -46,11 +46,11 @@ metadata:
   name: kahu-backup-clusterrole
 rules:
   - apiGroups: ["kahu.io"]
-    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "providers", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status"]
+    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "providers", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status","volumesnapshots", "volumesnapshots/status", "volumegroups", "volumegroups/status"]
     verbs: ["get", "list", "watch", "patch", "update", "delete"]
   - apiGroups: ["*"]
     resources: ["*"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "list", "delete", "watch"]
   - apiGroups: ["coordination.k8s.io"]
     resourceNames: ["backup"]
     resources: ["leases"]
