@@ -1,0 +1,100 @@
+# Copyright 2022 The SODA Authors.
+# Copyright 2022 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This mounts the lvm volume claim into /mnt and continuously
+# overwrites /mnt/index.html with the time and hostname of the pod.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kahu-openebs-zfs-provider
+  namespace: kahu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openebs-zfs-provider
+  template:
+    metadata:
+      labels:
+        app: openebs-zfs-provider
+    spec:
+      serviceAccountName: kahu-openebs-zfs-provider
+      containers:
+      - image: sodacdm/kahu-openebs-zfs-provider:v1.0.0
+        imagePullPolicy: IfNotPresent
+        name: openebs-zfs-driver
+        command: ["/usr/local/bin/openebs-zfs"]
+        volumeMounts:
+        - name: socket
+          mountPath: "/tmp"
+      - image: sodacdm/kahu-volume-service:v1.0.0
+        imagePullPolicy: IfNotPresent
+        name: volume-service
+        command: ["/usr/local/bin/volume-service"]
+        env:
+        - name: NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.labels['app']
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        volumeMounts:
+          # name must match the volume name below
+          - name: socket
+            mountPath: "/tmp"
+      volumes:
+      - name: socket
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kahu-openebs-zfs-provider
+  namespace: kahu
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-openebs-zfs-provider-clusterrole-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kahu-openebs-zfs-provider-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: kahu-openebs-zfs-provider
+    namespace: kahu
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-openebs-zfs-provider-clusterrole
+rules:
+  - apiGroups: ["kahu.io"]
+    resources: ["providers", "providers/status"]
+    verbs: ["create", "delete", "watch", "update", "patch", "get", "watch", "list"]
+  - apiGroups: [ "*" ]
+    resources: ["*"]
+    verbs: ["create", "delete", "watch", "update", "patch", "get", "watch", "list"]
+---

@@ -1,0 +1,8 @@
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+   name: nfs
+spec:
+   providerName: nfs-provider
+   config: {key: "key", password: "password"}
+

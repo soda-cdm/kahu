@@ -1,0 +1,376 @@
+/*
+Copyright 2022 The SODA Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+syntax = "proto3";
+package kahu.providerservice;
+
+import "google/protobuf/wrappers.proto";
+import "k8s.io/api/core/v1/generated.proto";
+
+option go_package = "lib/go;providerservice";
+
+// Get basic information about provider
+message GetProviderInfoRequest{}
+
+// Response with basic provider information
+message GetProviderInfoResponse{
+  // Provider name which is mandatory
+  string provider = 1;
+
+  // Provider version which is mandatory
+  string version = 2;
+
+  // Optional provider specific parameters
+  map <string, string> manifest = 3;
+}
+
+// Get different feature level capabilities from provider
+message GetProviderCapabilitiesRequest{}
+
+// Response with supported feature level capabilities from provider
+message GetProviderCapabilitiesResponse{
+  repeated ProviderCapability capabilities = 1;
+}
+
+// Supported provider capability
+message ProviderCapability {
+  // Service types supported
+  message Service {
+    enum Type {
+      UNKNOWN = 0;
+      META_BACKUP_SERVICE = 1;
+      VOLUME_BACKUP_SERVICE = 2;
+    }
+    Type type = 1;
+  }
+
+  // Supported capabilities specific to metadata backup service
+  message MetaBackupServiceSupport {
+    enum Type {
+      UNKNOWN = 0;
+      NEED_SNAPSHOT = 1;
+    }
+    Type type = 1;
+  }
+
+  // Supported capabilities specific to volume backup service
+  message VolumeBackupServiceSupport {
+    enum Type {
+      UNKNOWN = 0;
+      NEED_SNAPSHOT = 1;
+      NEED_VOLUME = 2;
+    }
+    Type type = 1;
+  }
+
+  oneof type {
+    Service service = 1;
+    MetaBackupServiceSupport meta_backup_service = 2;
+    VolumeBackupServiceSupport volume_backup_service = 3;
+  }
+}
+
+// Probe request to check health/availability
+message ProbeRequest{}
+
+// Response to indicate health/availability status
+message ProbeResponse {
+ // Indicates if healthy/available or not
+ google.protobuf.BoolValue ready = 1;
+}
+
+message Empty {}
+
+message UploadRequest {
+  // File information and attributes
+  message FileInfo {
+    string file_identifier = 1;
+    map <string, string> attributes = 2;
+  }
+
+  oneof Data {
+    // File information and attributes
+    FileInfo info = 1;
+
+    // File content
+    bytes chunk_data = 2;
+  }
+}
+
+message ObjectExistsRequest {
+  // File identifier
+  string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
+  map <string, string> attributes = 2;
+}
+
+message ObjectExistsResponse{
+  // Indicates if file exists
+  bool exists = 1;
+}
+
+message DownloadRequest {
+  // File identifier
+  string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
+  map <string, string> attributes = 2;
+}
+
+message DownloadResponse {
+  message FileInfo {
+    // File identifier
+    string file_identifier = 1;
+
+    // Provider specific parameters passed in as opaque key-value pairs
+    map <string, string> attributes = 2;
+  }
+
+  oneof Data {
+    FileInfo info = 1;
+
+    // File content being downloaded
+    bytes chunk_data = 2;
+  }
+}
+
+message DeleteRequest {
+  // File identifier
+  string file_identifier = 1;
+
+  // Provider specific parameters passed in as opaque key-value pairs
+  map <string, string> attributes = 2;
+}
+
+service Identity {
+  // Get basic information from the provider
+  rpc GetProviderInfo(GetProviderInfoRequest)
+      returns (GetProviderInfoResponse) {}
+
+  // Get capabilities from the provider
+  rpc GetProviderCapabilities(GetProviderCapabilitiesRequest)
+      returns (GetProviderCapabilitiesResponse) {}
+
+  // Probe provider for availability check
+  rpc Probe(ProbeRequest)
+      returns (ProbeResponse) {}
+}
+
+service MetaBackup {
+  // Upload input metadata info to configured repo
+  rpc Upload(stream UploadRequest)
+      returns (Empty) {}
+
+  // Check if the input metadata object exists at configured repo
+  rpc ObjectExists(ObjectExistsRequest)
+      returns (ObjectExistsResponse) {}
+
+  // Download input metadata info from configured repo
+  rpc Download(DownloadRequest)
+      returns (stream DownloadResponse) {}
+
+  // Delete input metadata info from configured repo
+  rpc Delete(DeleteRequest)
+      returns (Empty) {}
+}
+
+message BackupIdentifier {
+  string pv_name = 1;
+  BackupIdentity backup_identity = 2;
+}
+
+message BackupIdentity {
+  string backup_handle = 1;
+  map<string, string> backup_attributes = 9;
+}
+
+message RestoreIdentifier {
+  k8s.io.api.core.v1.PersistentVolumeClaim pvc = 1;
+  BackupIdentity backup_identity = 2;
+}
+
+message RestoreVolumeIdentifier {
+  string pvc_name = 1;
+  RestoreVolumeIdentity volume_identity = 2;
+}
+
+message RestoreVolumeIdentity {
+  string volume_handle = 1;
+  map<string, string> volume_attributes = 9;
+}
+
+message VolBackup {
+  k8s.io.api.core.v1.PersistentVolume pv = 1;
+  Snapshot snapshot = 2;
+}
+
+message Snapshot {
+  string snapshot_handle = 1;
+  map<string, string> snapshot_attributes = 9;
+}
+
+message StartBackupRequest {
+  // Required field
+  repeated k8s.io.api.core.v1.PersistentVolume pv = 1;
+
+  // Backup content name
+  string backup_content_name = 2;
+
+  repeated VolBackup backupInfo = 3;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message StartBackupResponse {
+  // Required field
+  repeated BackupIdentifier backup_info = 1;
+
+  repeated string errors = 9;
+}
+
+message DeleteBackupRequest {
+  // Required field
+  repeated BackupIdentity backup_info = 1;
+
+  // Backup content name
+  string backup_content_name = 2;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message DeleteBackupResponse {
+  // Required field
+  google.protobuf.BoolValue success = 1;
+
+  repeated string errors = 9;
+}
+
+message CancelBackupRequest {
+  // Required field
+  repeated BackupIdentity backup_info = 1;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message CancelBackupResponse {
+  // Required field
+  google.protobuf.BoolValue success = 1;
+
+  repeated string errors = 2;
+}
+
+message GetBackupStatRequest {
+  // Backup handles
+  repeated BackupIdentity backup_info = 1;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message BackupStat {
+  string backup_handle = 1;
+
+  // optional
+  int64 progress = 9;
+}
+
+message GetBackupStatResponse {
+  repeated BackupStat backup_stats = 1;
+}
+
+message CreateVolumeFromBackupRequest {
+  // Required field
+  repeated RestoreIdentifier restore_info = 1;
+
+  // Restore content name
+  string restore_content_name = 2;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message CreateVolumeFromBackupResponse {
+  // Required field
+  repeated RestoreVolumeIdentifier volume_identifiers = 1;
+
+  repeated string errors = 9;
+}
+
+message GetRestoreStatRequest {
+  // restore volume handles
+  repeated RestoreVolumeIdentity restore_volume_identity = 1;
+
+  // optional
+  map<string, string> parameters = 2;
+}
+
+message RestoreStat {
+  string restore_volume_handle = 1;
+
+  // optional
+    int64 progress = 9;
+}
+
+message GetRestoreStatResponse {
+  repeated RestoreStat restore_volume_stat = 1;
+}
+
+message CancelRestoreRequest {
+  // Required field
+  repeated RestoreVolumeIdentity restore_volume_identity = 1;
+
+  // optional
+  map<string, string> parameters = 9;
+}
+
+message CancelRestoreResponse {
+  // Required field
+  google.protobuf.BoolValue success = 1;
+
+  repeated string errors = 9;
+}
+
+service VolumeBackup {
+  // Create backup of the provided volumes
+  rpc StartBackup(StartBackupRequest)
+      returns (StartBackupResponse) {}
+
+  // Delete given backup
+  rpc DeleteBackup(DeleteBackupRequest)
+      returns (DeleteBackupResponse) {}
+
+  // Cancel given backup
+  rpc CancelBackup(CancelBackupRequest)
+      returns (CancelBackupResponse) {}
+
+  // Get backup statistics
+  rpc GetBackupStat(GetBackupStatRequest)
+      returns (GetBackupStatResponse) {}
+
+  // Create volume from backup (for restore)
+  rpc CreateVolumeFromBackup(CreateVolumeFromBackupRequest)
+      returns (CreateVolumeFromBackupResponse) {}
+
+  // Cancel given restore
+  rpc CancelRestore(CancelRestoreRequest)
+      returns (CancelRestoreResponse) {}
+
+  // Get restore statistics
+  rpc GetRestoreStat(GetRestoreStatRequest)
+      returns (GetRestoreStatResponse) {}
+
+}

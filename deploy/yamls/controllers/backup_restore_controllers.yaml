@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kahu-service
+  namespace: kahu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backuprestore-controllers
+  template:
+    metadata:
+      labels:
+        app: backuprestore-controllers
+    spec:
+      serviceAccountName: kahu
+      containers:
+        - image: sodacdm/kahu-controller-manager:v1.0.0
+          imagePullPolicy: IfNotPresent
+          name: backup
+          command: ["/usr/local/bin/controller-manager"]
+          #args:   
+          #example of adding custom resourceList for backup. resources should be separated by comma
+          #- --supportedResources=Deployment,Pod,ReplicaSet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-backup-clusterrole-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kahu-backup-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: kahu
+    namespace: kahu
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    provisioner: kahu
+  name: kahu-backup-clusterrole
+rules:
+  - apiGroups: ["kahu.io"]
+    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "providers", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status","volumesnapshots", "volumesnapshots/status", "volumegroups", "volumegroups/status"]
+    verbs: ["get", "list", "watch", "patch", "update", "delete"]
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resourceNames: ["backup"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [ "rbac.authorization.k8s.io" ]
+    resources: [ "clusterroles", "roles" ]
+    verbs: [ "bind", "escalate" ]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kahu
+  namespace: kahu
