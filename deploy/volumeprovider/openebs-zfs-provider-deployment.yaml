@@ -33,14 +33,14 @@ spec:
     spec:
       serviceAccountName: kahu-openebs-zfs-provider
       containers:
-      - image: docker.io/library/openebs-zfs:v0.1.0
+      - image: sodacdm/kahu-openebs-zfs-provider:v1.0.0
         imagePullPolicy: IfNotPresent
         name: openebs-zfs-driver
         command: ["/usr/local/bin/openebs-zfs"]
         volumeMounts:
         - name: socket
           mountPath: "/tmp"
-      - image: docker.io/library/volume-service:v0.1.0
+      - image: sodacdm/kahu-volume-service:v1.0.0
         imagePullPolicy: IfNotPresent
         name: volume-service
         command: ["/usr/local/bin/volume-service"]
