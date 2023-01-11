@@ -19,6 +19,7 @@ package util
 import (
 	"context"
 
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	corev1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -55,7 +56,7 @@ func DeleteService(c clientset.Interface, namespace, name string) error {
 }
 
 func WaitUntilServiceCreated(c clientset.Interface, ns, name string) error {
-	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
+	return wait.Poll(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
 		_, err := c.CoreV1().Services(ns).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return false, err

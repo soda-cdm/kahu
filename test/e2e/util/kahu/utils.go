@@ -34,15 +34,17 @@ import (
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	"github.com/soda-cdm/kahu/controllers/app/options"
+	"github.com/soda-cdm/kahu/test/e2e/util"
 )
 
 const (
-	AgentBaseName    = "controller-manager"
-	BackupNameSpace  = "backup-namespace"
-	RestoreNameSpace = "restore-namespace"
-	PollInterval     = 2 * time.Second
-	PollTimeout      = 40 * time.Minute
+	AgentBaseName = "controller-manager"
+	PollInterval  = 2 * time.Second
+	PollTimeout   = 30 * time.Second
 )
+
+var BackupNameSpace string = util.GenerateUniqueName("backup")
+var RestoreNameSpace string = util.GenerateUniqueName("restore")
 
 func NewBackup(name string, ns string, objType string) *kahuapi.Backup {
 	backup := &kahuapi.Backup{}
@@ -51,6 +53,22 @@ func NewBackup(name string, ns string, objType string) *kahuapi.Backup {
 	backup.Name = name
 	backup.Spec.IncludeNamespaces = []string{ns}
 	resourceSpec := kahuapi.ResourceSpec{
+		Kind:    objType,
+		IsRegex: true,
+	}
+	backup.Spec.IncludeResources = []kahuapi.ResourceSpec{resourceSpec}
+	backup.Spec.MetadataLocation = "nfs"
+	return backup
+}
+
+func NewBackupSpecResource(name string, ns string, objType, objName string) *kahuapi.Backup {
+	backup := &kahuapi.Backup{}
+	backup.APIVersion = "kahu.io/v1beta1"
+	backup.Kind = "backup"
+	backup.Name = name
+	backup.Spec.IncludeNamespaces = []string{ns}
+	resourceSpec := kahuapi.ResourceSpec{
+		Name:    objName,
 		Kind:    objType,
 		IsRegex: true,
 	}
@@ -90,6 +108,15 @@ func CreateRestoreWithPrefix(c versioned.Interface, restoreName, prefix, backupN
 
 func CreateBackup(c versioned.Interface, backupName, nameSpace, resourceType string) (*v1beta1.Backup, error) {
 	backup := NewBackup(backupName, nameSpace, resourceType)
+	opts := metav1.CreateOptions{}
+	ctx := context.TODO()
+	backup, err := c.KahuV1beta1().Backups().Create(ctx, backup, opts)
+	return backup, err
+
+}
+
+func CreateBackupSpecResource(c versioned.Interface, backupName, nameSpace, resourceType, resourceName string) (*v1beta1.Backup, error) {
+	backup := NewBackupSpecResource(backupName, nameSpace, resourceType, resourceName)
 	opts := metav1.CreateOptions{}
 	ctx := context.TODO()
 	backup, err := c.KahuV1beta1().Backups().Create(ctx, backup, opts)
@@ -144,6 +171,10 @@ func WaitForBackupCreate(c versioned.Interface, backupName string) error {
 		if err != nil {
 			return false, err
 		}
+		if backup.Status.State != kahuapi.BackupState(v1beta1.BackupStateCompleted) {
+			logrus.Infof("backup %q  is still being created...", backupName)
+			return false, nil
+		}
 		return true, nil
 	})
 }
@@ -155,6 +186,10 @@ func WaitForRestoreCreate(c versioned.Interface, restoreName string) error {
 		log.Debugf("restore %v:\n", restore)
 		if err != nil {
 			return false, err
+		}
+		if restore.Status.State != kahuapi.RestoreStateCompleted {
+			logrus.Infof("restore %q  is still being created...", restoreName)
+			return false, nil
 		}
 		return true, nil
 	})

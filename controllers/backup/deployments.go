@@ -85,6 +85,18 @@ func (ctrl *controller) deploymentBackup(namespace string,
 				return err
 			}
 
+			// collect all envFrom and backup
+			err = ctrl.getEnvFromsForPodSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// collect all env value and backup
+			err = ctrl.getEnvValueForPodSpec(deployment.Spec.Template.Spec, deployment.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
 			// get services based on selectors
 			var selectorList []map[string]string
 			selectorList = append(selectorList, deployment.Spec.Selector.MatchLabels)
@@ -150,6 +162,18 @@ func (ctrl *controller) daemonSetBackup(namespace string,
 			// collect all the rolebindings
 			err = ctrl.getRoleBindings(daemonset.Spec.Template.Spec.ServiceAccountName, daemonset.Namespace, backup,
 				backupClient)
+			if err != nil {
+				return err
+			}
+
+			// collect all envFrom and backup
+			err = ctrl.getEnvFromsForPodSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// collect all env value and backup
+			err = ctrl.getEnvValueForPodSpec(daemonset.Spec.Template.Spec, daemonset.Namespace, backupClient)
 			if err != nil {
 				return err
 			}

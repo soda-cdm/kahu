@@ -369,6 +369,18 @@ func (ctrl *controller) getStatefulsets(namespace string, backup *PrepareBackup,
 				return err
 			}
 
+			// collect all envFrom and backup
+			err = ctrl.getEnvFromsForPodSpec(statefulset.Spec.Template.Spec, statefulset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// collect all env value and backup
+			err = ctrl.getEnvValueForPodSpec(statefulset.Spec.Template.Spec, statefulset.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
 			// get services based on selectors
 			var selectorList []map[string]string
 			selectorList = append(selectorList, statefulset.Spec.Selector.MatchLabels)
@@ -468,5 +480,207 @@ func (ctrl *controller) GetServiceAccountSpec(podspec v1.PodSpec, namespace stri
 		return ctrl.backupSend(sa, saName, backupClient)
 	}
 
+	return nil
+}
+
+//get all envFrom associated resources
+func (ctrl *controller) getEnvFromsForPodSpec(podspec v1.PodSpec, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+
+	// now collect envFrom name
+	err := ctrl.getEnvFromForContainers(podspec.Containers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+
+	err = ctrl.getEnvFromForContainers(podspec.InitContainers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+
+	err = ctrl.getEnvFromForEphemeralContainers(podspec.EphemeralContainers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+//get all envVal associated resources
+func (ctrl *controller) getEnvValueForPodSpec(podspec v1.PodSpec, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+
+	err := ctrl.getEnvValueForContainers(podspec.Containers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+
+	err = ctrl.getEnvValueForContainers(podspec.InitContainers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+
+	err = ctrl.getEnvValueForEphemeralContainers(podspec.EphemeralContainers, namespace, backupClient)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//get all envVal associated resources for containers
+func (ctrl *controller) getEnvValueForContainers(containers []v1.Container, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+	for _, container := range containers {
+		if container.Env != nil {
+			for _, envVar := range container.Env {
+
+				if envVar.ValueFrom.ConfigMapKeyRef != nil {
+					configName := envVar.ValueFrom.ConfigMapKeyRef.Name
+					configmap, err := ctrl.GetConfigMap(namespace, configName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get config map:%s, error:%s", configName, err)
+						return err
+					}
+					err = ctrl.backupSend(configmap, configName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup config map:%s, error:%s", configName, err)
+						return err
+					}
+				}
+
+				if envVar.ValueFrom.SecretKeyRef != nil {
+					secretName := envVar.ValueFrom.SecretKeyRef.Name
+					secret, err := ctrl.GetSecret(namespace, secretName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get secret:%s, error:%s", secretName, err)
+						return err
+					}
+					err = ctrl.backupSend(secret, secretName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup secret :%s, error:%s", secretName, err)
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+//get all envVal associated resources for ephemeral containers
+func (ctrl *controller) getEnvValueForEphemeralContainers(ephemeralContainers []v1.EphemeralContainer, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+	for _, container := range ephemeralContainers {
+		if container.Env != nil {
+			for _, envVar := range container.Env {
+
+				if envVar.ValueFrom.ConfigMapKeyRef != nil {
+					configName := envVar.ValueFrom.ConfigMapKeyRef.Name
+					configmap, err := ctrl.GetConfigMap(namespace, configName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get config map:%s, error:%s", configName, err)
+						return err
+					}
+					err = ctrl.backupSend(configmap, configName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup config map:%s, error:%s", configName, err)
+						return err
+					}
+				}
+
+				if envVar.ValueFrom.SecretKeyRef != nil {
+					secretName := envVar.ValueFrom.SecretKeyRef.Name
+					secret, err := ctrl.GetSecret(namespace, secretName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get secret:%s, error:%s", secretName, err)
+						return err
+					}
+					err = ctrl.backupSend(secret, secretName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup secret :%s, error:%s", secretName, err)
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+//get all envFrom associated resources for containers
+func (ctrl *controller) getEnvFromForContainers(containers []v1.Container, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+	for _, container := range containers {
+		if container.EnvFrom != nil {
+			for _, envFromSource := range container.EnvFrom {
+				if envFromSource.ConfigMapRef != nil {
+					configName := envFromSource.ConfigMapRef.Name
+					configmap, err := ctrl.GetConfigMap(namespace, configName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get config map:%s, error:%s", configName, err)
+						return err
+					}
+					err = ctrl.backupSend(configmap, configName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup config map:%s, error:%s", configName, err)
+						return err
+					}
+				}
+
+				if envFromSource.SecretRef != nil {
+					secretName := envFromSource.SecretRef.Name
+					secret, err := ctrl.GetSecret(namespace, secretName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get secret:%s, error:%s", secretName, err)
+						return err
+					}
+					err = ctrl.backupSend(secret, secretName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup secret:%s, error:%s", secretName, err)
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+//get all envFrom associated resources for ephemeral containers
+func (ctrl *controller) getEnvFromForEphemeralContainers(ephemeralContainers []v1.EphemeralContainer, namespace string,
+	backupClient metaservice.MetaService_BackupClient) error {
+	for _, container := range ephemeralContainers {
+		if container.EnvFrom != nil {
+			for _, envFromSource := range container.EnvFrom {
+				if envFromSource.ConfigMapRef != nil {
+					configName := envFromSource.ConfigMapRef.Name
+					configmap, err := ctrl.GetConfigMap(namespace, configName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get config map:%s, error:%s", configName, err)
+						return err
+					}
+					err = ctrl.backupSend(configmap, configName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup config map:%s, error:%s", configName, err)
+						return err
+					}
+				}
+
+				if envFromSource.SecretRef != nil {
+					secretName := envFromSource.SecretRef.Name
+					secret, err := ctrl.GetSecret(namespace, secretName)
+					if err != nil {
+						ctrl.logger.Errorf("unable to get secret:%s, error:%s", secretName, err)
+						return err
+					}
+					err = ctrl.backupSend(secret, secretName, backupClient)
+					if err != nil {
+						ctrl.logger.Errorf("unable to backup secret:%s, error:%s", secretName, err)
+						return err
+					}
+				}
+			}
+		}
+	}
 	return nil
 }
