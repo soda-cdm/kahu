@@ -93,6 +93,18 @@ func (ctrl *controller) podBackup(namespace string,
 				return err
 			}
 
+			// collect all envFrom and backup
+			err = ctrl.getEnvFromsForPodSpec(pod.Spec, pod.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
+			// collect all env value and backup
+			err = ctrl.getEnvValueForPodSpec(pod.Spec, pod.Namespace, backupClient)
+			if err != nil {
+				return err
+			}
+
 			// append the lables of pods to list
 			podLabelList = append(podLabelList, pod.Labels)
 		}

@@ -19,19 +19,14 @@ package util
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	apps "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
-)
-
-const (
-	// Poll is how often to Poll pods, nodes and claims.
-	PollInterval = 2 * time.Second
-	PollTimeout  = 15 * time.Minute
 )
 
 // newDeployment returns a RollingUpdate Deployment with a fake container image
@@ -85,7 +80,7 @@ func GetDeployment(c clientset.Interface, ns, name string) (*apps.Deployment, er
 
 // WaitForReadyDeployment waits for number of ready replicas to equal number of replicas.
 func WaitForReadyDeployment(c clientset.Interface, ns, name string) error {
-	if err := wait.PollImmediate(PollInterval, PollTimeout, func() (bool, error) {
+	if err := wait.PollImmediate(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
 		deployment, err := c.AppsV1().Deployments(ns).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to get deployment %q: %v", name, err)
@@ -95,4 +90,211 @@ func WaitForReadyDeployment(c clientset.Interface, ns, name string) error {
 		return fmt.Errorf("failed to wait for .readyReplicas to equal .replicas: %v", err)
 	}
 	return nil
+}
+
+//deployment with configmap
+func NewDeploymentWithEnvFromConfigmap(name, ns string, replicas int32, labels map[string]string, image string, configName string) *apps.Deployment {
+	return &apps.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+			Labels:    labels,
+		},
+		Spec: apps.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Strategy: apps.DeploymentStrategy{
+				Type:          apps.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: new(apps.RollingUpdateDeployment),
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    name,
+							Image:   image,
+							Command: []string{"sleep", "1000"},
+							EnvFrom: []corev1.EnvFromSource{{
+								ConfigMapRef: &corev1.ConfigMapEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: configName,
+									},
+								},
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+//deployment with secret
+func NewDeploymentWithEnvFromsecret(name, ns string, replicas int32, labels map[string]string, image string, secretName string) *apps.Deployment {
+	return &apps.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+			Labels:    labels,
+		},
+		Spec: apps.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Strategy: apps.DeploymentStrategy{
+				Type:          apps.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: new(apps.RollingUpdateDeployment),
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    name,
+							Image:   image,
+							Command: []string{"sleep", "1000"},
+							EnvFrom: []corev1.EnvFromSource{{
+								SecretRef: &corev1.SecretEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: secretName,
+									},
+								},
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+//NewDeploymentWithEnvValConfigmap
+func NewDeploymentWithEnvValConfigmap(name, ns string, replicas int32, labels map[string]string, image string, configName string) *apps.Deployment {
+	return &apps.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+			Labels:    labels,
+		},
+		Spec: apps.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Strategy: apps.DeploymentStrategy{
+				Type:          apps.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: new(apps.RollingUpdateDeployment),
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    name,
+							Image:   image,
+							Command: []string{"sleep", "1000"},
+							Env: []corev1.EnvVar{{
+								Name: "SPECIAL_LEVEL_KEY",
+								ValueFrom: &corev1.EnvVarSource{
+									ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: configName,
+										},
+										Key: "SPECIAL_LEVEL",
+									},
+								},
+							},
+								{
+									Name: "SPECIAL_TYPE_KEY",
+									ValueFrom: &corev1.EnvVarSource{
+										ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: configName,
+											},
+											Key: "SPECIAL_TYPE",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func NewDeploymentWithEnvValsecret(name, ns string, replicas int32, labels map[string]string, image string, secretName string) *apps.Deployment {
+	return &apps.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+			Labels:    labels,
+		},
+		Spec: apps.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Strategy: apps.DeploymentStrategy{
+				Type:          apps.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: new(apps.RollingUpdateDeployment),
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    name,
+							Image:   image,
+							Command: []string{"sleep", "1000"},
+							Env: []corev1.EnvVar{{
+								Name: "SPECIAL_LEVEL_KEY",
+								ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: secretName,
+										},
+										Key: "SPECIAL_LEVEL",
+									},
+								},
+							},
+								{
+									Name: "SPECIAL_TYPE_KEY",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: secretName,
+											},
+											Key: "SPECIAL_TYPE",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
