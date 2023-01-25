@@ -20,6 +20,11 @@ Please take a look at the following documents to get started
 4. [API Reference](https://soda-cdm.github.io/kahu/)
 5. [Development Guide](https://github.com/soda-cdm/documentation/blob/main/kahu/development_guide.md)
 
+## Biweekly Meetup
+
+- :speaking_head: [Zoom Link](https://us02web.zoom.us/j/86039856379?pwd=MW5MNlh0MVNSbzNGNFhoNldXWmk4Zz09)
+- :page_facing_up: Minutes: [Document](https://docs.google.com/document/d/1dP_i9TsiSfBvqoDwBwn4vl2xftanfSnL/edit)
+
 ## Community
  Please join [SODA Slack](https://sodafoundation.io/slack) and channel #soda-cdm.
  
