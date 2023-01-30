@@ -51,6 +51,7 @@ func (ctrl *controller) processMetadataBackup(backup *kahuapi.Backup) (*kahuapi.
 	}
 
 	provider := metaLocation.Spec.ProviderName
+	parameters := metaLocation.Spec.Config
 	ctrl.logger.Infof("Preparing backup request for Provider:%s", provider)
 	prepareBackupReq := ctrl.prepareBackupRequest(backup)
 
@@ -71,7 +72,7 @@ func (ctrl *controller) processMetadataBackup(backup *kahuapi.Backup) (*kahuapi.
 	}
 
 	// Initialize hooks
-	err = ctrl.runBackup(prepareBackupReq, backupClient)
+	err = ctrl.runBackup(prepareBackupReq, backupClient, parameters)
 	if err != nil {
 		prepareBackupReq.Status.State = kahuapi.BackupStateFailed
 	} else {
@@ -127,7 +128,7 @@ func (ctrl *controller) getResultant(backup *PrepareBackup) []string {
 }
 
 func (ctrl *controller) runBackup(backup *PrepareBackup,
-	backupClient metaservice.MetaService_BackupClient) (returnErr error) {
+	backupClient metaservice.MetaService_BackupClient, paramteres map[string]string) (returnErr error) {
 	ctrl.logger.Infoln("Starting to run backup")
 	var backupStatus = []string{}
 
@@ -135,6 +136,7 @@ func (ctrl *controller) runBackup(backup *PrepareBackup,
 		Backup: &metaservice.BackupRequest_Identifier{
 			Identifier: &metaservice.BackupIdentifier{
 				BackupHandle: backup.Name,
+				Parameters:   paramteres,
 			},
 		},
 	})

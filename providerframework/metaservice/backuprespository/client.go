@@ -33,7 +33,7 @@ import (
 )
 
 type BackupRepository interface {
-	Upload(filePath string) error
+	Upload(filePath string, attributes map[string]string) error
 	Download(fileID string, attributes map[string]string) (string, error)
 	Delete(filePath string, attributes map[string]string) error
 }
@@ -68,7 +68,7 @@ func NewBackupRepository(backupRepositoryAddress string) (BackupRepository, grpc
 	}, grpcConnection, nil
 }
 
-func (repo *backupRepository) Upload(filePath string) error {
+func (repo *backupRepository) Upload(filePath string, attributes map[string]string) error {
 	log.Infof("Archive file path %s", filePath)
 
 	file, err := os.Open(filePath)
@@ -87,12 +87,14 @@ func (repo *backupRepository) Upload(filePath string) error {
 		Data: &pb.UploadRequest_Info{
 			Info: &pb.UploadRequest_FileInfo{
 				FileIdentifier: path.Base(filePath),
+				Attributes:     attributes,
 			},
 		},
 	})
 	if err != nil {
 		return err
 	}
+	log.Infof("88888attributes are:8888 %v", attributes)
 
 	reader := bufio.NewReader(file)
 	buffer := make([]byte, 1024)
