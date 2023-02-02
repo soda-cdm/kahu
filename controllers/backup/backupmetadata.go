@@ -279,11 +279,23 @@ func (ctrl *controller) deleteMetadataBackup(backup *kahuapi.Backup) error {
 		return nil
 	}
 
+	// Validate the Metadatalocation
+	locationName := backup.Spec.MetadataLocation
+	backup.Status.ValidationErrors = []string{}
+	ctrl.logger.Infof("Preparing backup for backup location: %s ", locationName)
+	metaLocation, err := ctrl.backupLocationLister.Get(locationName)
+	if err != nil {
+		ctrl.logger.Errorf("failed to validate backup location, reason: %s", err)
+		return err
+	}
+	parameters := metaLocation.Spec.Config
 	deleteRequest := &metaservice.DeleteRequest{
 		Id: &metaservice.BackupIdentifier{
 			BackupHandle: backup.Name,
+			Parameters:   parameters,
 		},
 	}
+	ctrl.logger.Infof("8888paramteres in deleteMetadataBackup*******:%v", parameters)
 
 	metaservice, grpcConn, err := ctrl.fetchMetaServiceClient(backup.Spec.MetadataLocation)
 	if err != nil {

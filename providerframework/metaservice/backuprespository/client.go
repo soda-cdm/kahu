@@ -132,7 +132,7 @@ func (repo *backupRepository) Download(fileID string, attributes map[string]stri
 		FileIdentifier: fileID,
 		Attributes:     attributes,
 	}
-
+	log.Infof("88888attributes are in Download :8888 %v", attributes)
 	repoClient, err := repo.client.Download(context.Background(), downloadReq)
 	if err != nil {
 		return "", err
@@ -189,7 +189,7 @@ func (repo *backupRepository) Delete(fileID string, attributes map[string]string
 		FileIdentifier: fileID,
 		Attributes:     attributes,
 	}
-
+	log.Infof("88888attributes are in Delete :8888 %v", attributes)
 	IsBackupFileExist, err := repo.client.ObjectExists(context.Background(), objectExistsReq)
 	if err != nil || IsBackupFileExist == nil {
 		return err
