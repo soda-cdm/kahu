@@ -295,7 +295,7 @@ func (ctrl *controller) deleteMetadataBackup(backup *kahuapi.Backup) error {
 			Parameters:   parameters,
 		},
 	}
-	ctrl.logger.Infof("8888paramteres in deleteMetadataBackup*******:%v", parameters)
+	ctrl.logger.Infof("paramteres in deleteMetadataBackup:%v", parameters)
 
 	metaservice, grpcConn, err := ctrl.fetchMetaServiceClient(backup.Spec.MetadataLocation)
 	if err != nil {

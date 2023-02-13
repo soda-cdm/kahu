@@ -118,7 +118,7 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 		return status.Error(codes.Internal, "upload failed, invalid file identifier")
 	}
 	attributes := fileInfo.GetAttributes()
-	log.Infof("******attributes are***** %v", attributes)
+	log.Infof("attributes are %v", attributes)
 
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Create(fileName)
