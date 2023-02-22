@@ -17,9 +17,10 @@ limitations under the License.
 package restore
 
 import (
-	"github.com/soda-cdm/kahu/volume/volumegroup"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/soda-cdm/kahu/volume/group"
 )
 
 type Interface interface {
@@ -30,12 +31,12 @@ type Interface interface {
 type restore struct {
 	kubeClient    kubernetes.Interface
 	dynamicClient dynamic.Interface
-	volumeGroup   volumegroup.Interface
+	volumeGroup   group.Interface
 }
 
 func newRestore(kubeClient kubernetes.Interface,
 	dynamicClient dynamic.Interface,
-	volumeGroup volumegroup.Interface) (Interface, error) {
+	volumeGroup group.Interface) (Interface, error) {
 	return &restore{
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,

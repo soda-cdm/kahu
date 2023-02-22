@@ -19,7 +19,10 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"github.com/soda-cdm/kahu/providers/nfs/archiver/tar"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -34,37 +37,29 @@ import (
 const (
 	defaultProviderName    = "nfs-provider"
 	defaultProviderVersion = "v1"
-	// ReadBufferSize is size in bytes for read
-	ReadBufferSize int = 4096
+	fileExtension          = ".tar"
 )
 
 type nfsServer struct {
 	ctx     context.Context
 	options options.NFSProviderOptions
+	logger  log.FieldLogger
 }
 
 // NewMetaBackupServer creates a new Meta backup service
-func NewMetaBackupServer(ctx context.Context,
-	serviceOptions options.NFSProviderOptions) pb.MetaBackupServer {
+func NewNFSServer(ctx context.Context,
+	serviceOptions options.NFSProviderOptions) *nfsServer {
 	return &nfsServer{
 		ctx:     ctx,
 		options: serviceOptions,
-	}
-}
-
-// NewIdentityServer creates a new Identify service
-func NewIdentityServer(ctx context.Context,
-	serviceOptions options.NFSProviderOptions) pb.IdentityServer {
-	return &nfsServer{
-		ctx:     ctx,
-		options: serviceOptions,
+		logger:  log.WithField("module", "nfs-server"),
 	}
 }
 
 // GetProviderInfo returns the basic information from provider side
 func (server *nfsServer) GetProviderInfo(
-	ctx context.Context,
-	GetProviderInfoRequest *pb.GetProviderInfoRequest) (*pb.GetProviderInfoResponse, error) {
+	_ context.Context,
+	_ *pb.GetProviderInfoRequest) (*pb.GetProviderInfoResponse, error) {
 	log.Info("GetProviderInfo Called .... ")
 	response := &pb.GetProviderInfoResponse{
 		Provider: defaultProviderName,
@@ -98,51 +93,52 @@ func (server *nfsServer) Probe(ctx context.Context, probeRequest *pb.ProbeReques
 	return &pb.ProbeResponse{}, nil
 }
 
+func (server *nfsServer) filePath(fileName string) string {
+	return filepath.Join(server.options.DataPath, fileName)
+}
+
 // Upload pushes the input data to the specified location at provider
 func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
-	log.Info("Upload Called .... ")
-
 	uploadRequest, err := service.Recv()
 	if err != nil {
 		return status.Error(codes.Unknown, "upload request failed")
 	}
 
-	fileInfo := uploadRequest.GetInfo()
-	if fileInfo == nil {
-		return status.Error(codes.InvalidArgument, "first request is not upload file info")
+	bucket := uploadRequest.GetBucket()
+	if bucket == nil {
+		return status.Error(codes.Aborted, "first upload request doest not have bucket info")
 	}
 
-	// use backup handle name for file
-	fileId := fileInfo.GetFileIdentifier()
-	if fileId == "" {
-		return status.Error(codes.Internal, "upload failed, invalid file identifier")
-	}
+	server.logger.Infof("Upload request for %s", bucket)
 
-	fileName := server.options.DataPath + "/" + fileId
-	file, err := os.Create(fileName)
+	tarFilePath := tarFile(server.filePath(bucket.Handle))
+	archiver, err := tar.NewArchiveWriter(tarFilePath)
 	if err != nil {
-		log.Errorf("failed to open file for upload to NFS")
-		return status.Error(codes.Internal, "upload create file failed")
+		return status.Error(codes.Internal, fmt.Sprintf("failed to initialize file archiver. %s", err))
 	}
 	defer func() {
-		err := file.Close()
+		err := archiver.Close()
 		if err != nil {
-			log.Errorf("failed to close backup file")
+			server.logger.Errorf("failed to close archive file")
 		}
 	}()
 
 	for {
-		uploadRequest, err := service.Recv()
+		uploadRequest, err = service.Recv()
 		// If there are no more requests
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			log.Errorf("uploadRequest received error %s", err)
+			server.logger.Errorf("uploadRequest received error %s", err)
 			return status.Error(codes.Unknown, "error receiving request")
 		}
+		object := uploadRequest.GetObject()
+		if object == nil {
+			return status.Error(codes.Aborted, "invalid request. Object request expected")
+		}
 
-		_, err = file.Write(uploadRequest.GetChunkData())
+		err = archiver.WriteFile(object.GetIdentifier(), object.GetData())
 		if err != nil {
 			return status.Error(codes.Unknown, "failed to write to file")
 		}
@@ -159,89 +155,71 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 // Download pulls the input file from the specified location at provider
 func (server *nfsServer) Download(request *pb.DownloadRequest,
 	service pb.MetaBackup_DownloadServer) error {
-	log.Info("Download Called ...")
 
-	fileId := request.GetFileIdentifier()
-	if fileId == "" {
-		return status.Error(codes.InvalidArgument, "download file id is empty")
-	}
+	tarFilePath := tarFile(server.filePath(request.GetBucket().Handle))
+	server.logger.Infof("Download Called for %s ...", tarFilePath)
 
-	log.Printf("Download file id %v", fileId)
-	fileName := filepath.Join(server.options.DataPath, fileId)
-	file, err := os.Open(fileName)
+	archiver, err := tar.NewArchiveReader(tarFilePath)
 	if err != nil {
-		log.Error("failed to open file for download from NFS")
-		return status.Error(codes.Internal, "file not found")
+		return status.Error(codes.Internal, fmt.Sprintf("failed to initialize file archiver. %s", err))
 	}
 	defer func() {
-		err := file.Close()
+		err := archiver.Close()
 		if err != nil {
-			log.Error("failed to close backup file")
+			server.logger.Errorf("failed to close archive file")
 		}
 	}()
 
-	buffer := make([]byte, ReadBufferSize)
-
-	fi := pb.DownloadResponse_FileInfo{FileIdentifier: fileId}
-	fidData := pb.DownloadResponse{
-		Data: &pb.DownloadResponse_Info{Info: &fi},
-	}
-
-	// First, send file identifier
-	err = service.Send(&fidData)
-	if err != nil {
-		log.Errorf("download response got error %s", err)
-		return status.Error(codes.Unknown, "error sending response")
-	}
-
-	size := 0
-	// Second, send backup content in loop till file end
 	for {
-		n, err := file.Read(buffer)
+		header, file, err := archiver.ReadNext()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			log.Errorf("failed to read data from file %s", err)
-			return status.Error(codes.Unknown, "error sending response")
+			server.logger.Errorf("Error reading archive file. %s", err)
+			return status.Error(codes.Unknown, "error reading archive file")
 		}
 
-		size += n
-		data := pb.DownloadResponse{Data: &pb.DownloadResponse_ChunkData{ChunkData: buffer[:n]}}
-		err = service.Send(&data)
+		data, err := ioutil.ReadAll(file)
 		if err != nil {
-			log.Errorf("download response got error %s", err)
-			return status.Error(codes.Unknown, "error sending response")
+			server.logger.Errorf("Error reading archive file content. %s", err)
+			return status.Error(codes.Internal, "error reading archive file content")
+		}
+
+		err = service.Send(&pb.DownloadResponse{
+			Object: &pb.Object{
+				Identifier: header.Name,
+				Data:       data,
+			},
+		})
+		if err != nil {
+			server.logger.Errorf("Error sending download response. %s", err)
+			return status.Errorf(codes.Unknown, "error sending download response %s", err)
 		}
 	}
 
-	log.Infof("Download success!. size %d", size)
-
 	return nil
+}
+
+func tarFile(filePath string) string {
+	return filePath + fileExtension
 }
 
 // Delete removes the input file from the specified location at provider
 func (server *nfsServer) Delete(ctxt context.Context,
 	request *pb.DeleteRequest) (*pb.Empty, error) {
-	log.Info("Delete Called ...")
-
-	fileId := request.GetFileIdentifier()
+	bucketHandle := request.GetBucket().Handle
+	server.logger.Infof("Delete called for %s...", bucketHandle)
 	empty := pb.Empty{}
-	log.Printf("file to delete %v", fileId)
-	fileName := server.options.DataPath + "/" + fileId
-
-	// Try opening the file for Delete
-	file, err := os.Open(fileName)
-	if err != nil {
-		log.Error("failed to open file for delete from NFS")
-		return &empty, status.Error(codes.Internal, "open, backup file not found")
-	}
-	err = file.Close()
-	if err != nil {
-		log.Error("failed to close backupfile from NFS")
+	tarFilePath := tarFile(server.filePath(request.GetBucket().Handle))
+	if _, err := os.Stat(tarFilePath); err != nil {
+		if os.IsNotExist(err) {
+			return &empty, nil
+		}
+		return &empty, status.Error(codes.Unknown, "error checking file status")
 	}
 
-	err = os.Remove(fileName)
+	err := os.Remove(tarFilePath)
 	if err != nil {
 		log.Error("failed to delete file from NFS")
 		return &empty, status.Error(codes.Internal, "remove, backup file not found")
@@ -253,24 +231,15 @@ func (server *nfsServer) Delete(ctxt context.Context,
 // ObjectExists checks if input file exists at provider
 func (server *nfsServer) ObjectExists(ctxt context.Context,
 	request *pb.ObjectExistsRequest) (*pb.ObjectExistsResponse, error) {
-	log.Info("ObjectExists Called...")
+	tarFilePath := tarFile(server.filePath(request.GetBucket().Handle))
 
-	fileId := request.GetFileIdentifier()
-	log.Printf("checking existence for file_id: %v", fileId)
-	fileName := server.options.DataPath + "/" + fileId
-
-	// Try opening the file for checking existence
-	file, err := os.Open(fileName)
-	if err != nil {
-		log.Info("failed to open file while checking existence")
-		response := pb.ObjectExistsResponse{Exists: false}
-		return &response, nil
-	}
-	err = file.Close()
-	if err != nil {
-		log.Error("failed to close backup file")
+	server.logger.Infof("ObjectExists Called for %s...", tarFilePath)
+	if _, err := os.Stat(tarFilePath); err != nil {
+		if os.IsNotExist(err) {
+			return &pb.ObjectExistsResponse{Exists: true}, nil
+		}
+		return &pb.ObjectExistsResponse{Exists: false}, status.Error(codes.Unknown, "error checking file status")
 	}
 
-	response := pb.ObjectExistsResponse{Exists: true}
-	return &response, nil
+	return &pb.ObjectExistsResponse{Exists: true}, nil
 }

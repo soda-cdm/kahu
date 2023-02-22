@@ -24,11 +24,11 @@ type BackupLocationExpansion interface{}
 
 type ProviderExpansion interface{}
 
+type ProviderRegistrationExpansion interface{}
+
 type RestoreExpansion interface{}
 
 type VolumeBackupContentExpansion interface{}
-
-type VolumeGroupExpansion interface{}
 
 type VolumeRestoreContentExpansion interface{}
 

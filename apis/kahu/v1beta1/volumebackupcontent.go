@@ -39,7 +39,27 @@ type VolumeBackupContentSpec struct {
 	// +optional
 	Parameters map[string]string `json:"parameters,omitempty"`
 
-	BackupSourceRef *ResourceReference `json:"backupSourceRef,omitempty"`
+	BackupSource `json:",inline"`
+}
+
+type BackupVolumeReference struct {
+	Volume   ResourceReference `json:"volume,omitempty"`
+	Snapshot *SnapshotData     `json:"snapshot,omitempty"`
+}
+
+type SnapshotData struct {
+	Handle    string            `json:"handle,omitempty"`
+	Attribute map[string]string `json:"attribute,omitempty"`
+}
+
+type BackupSource struct {
+	VolumeRef   []BackupVolumeReference `json:"volumeRef,omitempty"`
+	VolumeMount []Mount                 `json:"volumeMount,omitempty"`
+}
+
+type Mount struct {
+	Name string `json:"name,omitempty"`
+	Path string `json:"Path,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
@@ -61,7 +81,7 @@ type VolumeBackupState struct {
 
 	BackupAttributes map[string]string `json:"backupAttributes,omitempty"`
 
-	Progress int64 `json:"progress,omitempty"`
+	Progress int32 `json:"progress,omitempty"`
 
 	LastProgressUpdate int64 `json:"lastProgressUpdate,omitempty"`
 }

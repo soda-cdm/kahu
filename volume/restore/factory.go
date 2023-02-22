@@ -17,14 +17,15 @@ limitations under the License.
 package restore
 
 import (
-	"github.com/soda-cdm/kahu/client"
-	"github.com/soda-cdm/kahu/volume/volumegroup"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/soda-cdm/kahu/client"
+	"github.com/soda-cdm/kahu/volume/group"
 )
 
 type Factory interface {
-	ByVolumeGroup(volumegroup.Interface) (Interface, error)
+	ByVolumeGroup(group.Interface) (Interface, error)
 }
 
 type factory struct {
@@ -49,6 +50,6 @@ func NewFactory(clientFactory client.Factory) (Factory, error) {
 	}, nil
 }
 
-func (f *factory) ByVolumeGroup(volumegroup.Interface) (Interface, error) {
+func (f *factory) ByVolumeGroup(group.Interface) (Interface, error) {
 	return nil, nil
 }

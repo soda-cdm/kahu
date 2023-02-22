@@ -94,7 +94,7 @@ func NewRestoreWithPrefix(name, nsRestore, nsBackup, backupName, prefix string) 
 	restore.ObjectMeta.Name = name
 	restore.Spec.BackupName = backupName
 	restore.Spec.NamespaceMapping = map[string]string{nsBackup: nsRestore}
-	restore.Spec.ResourcePrefix = prefix
+	// restore.Spec.ResourcePrefix = prefix
 	return restore
 }
 

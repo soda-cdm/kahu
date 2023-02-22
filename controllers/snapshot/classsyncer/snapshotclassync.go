@@ -222,5 +222,5 @@ func (syncer *snapshotClassSyncer) snapshotClassByPV(name string) (*snapshotapi.
 		return nil, err
 	}
 
-	return syncer.SnapshotClassByProvider(utils.VolumeProvider(pv))
+	return syncer.SnapshotClassByProvider(utils.VolumeProvisioner(pv))
 }

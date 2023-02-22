@@ -18,8 +18,6 @@ package config
 
 import (
 	"encoding/json"
-	"time"
-
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -35,18 +33,13 @@ const (
 )
 
 type Config struct {
-	ControllerWorkers    int               `json:"controllerWorkers"`
-	EnableLeaderElection bool              `json:"enableLeaderElection"`
-	DriverEndpoint       string            `json:"driverEndpoint"`
-	DisableControllers   []string          `json:"disableControllers"`
-	KahuClientConfig     client.Config     `json:",inline"`
-	Provider             string            `json:"provider"`
-	Version              string            `json:"version,omitempty"`
-	Manifest             map[string]string `json:"manifest,omitempty"`
-	LeaderLockNamespace  string            `json:"leaderLockNamespace,omitempty"`
-	LeaderLeaseDuration  time.Duration
-	LeaderRenewDeadline  time.Duration
-	LeaderRetryPeriod    time.Duration
+	Port             uint              `json:"port"`
+	Address          string            `json:"address"`
+	DriverEndpoint   string            `json:"driverEndpoint"`
+	KahuClientConfig client.Config     `json:",inline"`
+	Provider         string            `json:"provider"`
+	Version          string            `json:"version,omitempty"`
+	Manifest         map[string]string `json:"manifest,omitempty"`
 }
 
 type CompletedConfig struct {

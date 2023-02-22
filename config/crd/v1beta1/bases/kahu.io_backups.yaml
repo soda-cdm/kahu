@@ -16,9 +16,6 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.stage
-      name: Stage
-      type: string
     - jsonPath: .status.state
       name: State
       type: string
@@ -363,14 +360,13 @@ spec:
                   be stored
                 type: string
               reclaimPolicy:
+                default: Delete
                 description: ReclaimPolicy tells about reclamation of the backup.
                   It can be either delete or retain
-                properties:
-                  reclaimPolicyDelete:
-                    type: string
-                  reclaimPolicyRetain:
-                    type: string
-                type: object
+                enum:
+                - Delete
+                - Retain
+                type: string
               volumeBackupLocations:
                 description: VolumeBackupLocations is a list of all volume providers
                   included for backup. If empty, all providers are included
@@ -386,10 +382,6 @@ spec:
                 description: CompletionTimestamp is defines time when backup completed
                 format: date-time
                 nullable: true
-                type: string
-              lastBackup:
-                description: LastBackup defines the last backup time
-                format: date-time
                 type: string
               resources:
                 description: Conditions tells the current state of a resource that
@@ -418,30 +410,23 @@ spec:
                         is backing up
                       type: string
                     status:
+                      default: Pending
                       description: Status is a state of the resource
                       enum:
                       - Pending
                       - Processing
+                      - Failed
                       - Completed
                       type: string
                   type: object
                 type: array
-              stage:
-                description: Stage is the current phase of the backup
-                enum:
-                - Initial
-                - PreHook
-                - Resources
-                - Volumes
-                - PostHook
-                - Finished
-                type: string
               startTimestamp:
                 description: StartTimestamp is defines time when backup started
                 format: date-time
                 nullable: true
                 type: string
               state:
+                default: New
                 description: State is the current state in backup
                 enum:
                 - New

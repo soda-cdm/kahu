@@ -18,36 +18,28 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
-	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-	"google.golang.org/grpc"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-
-	v1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahuClient "github.com/soda-cdm/kahu/client"
-	providerIdentity "github.com/soda-cdm/kahu/providerframework/identityservice"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
-	repo "github.com/soda-cdm/kahu/providerframework/metaservice/backuprespository"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/server"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
 )
 
 const (
 	// MetaService component name
 	componentMetaService = "metaservice"
-	serviceAnnotation    = "kahu.io/provider-service"
-	defaultProbeTimeout  = 30 * time.Second
+
+	defaultProbeTimeout = 30 * time.Second
 )
 
 // NewMetaServiceCommand creates a *cobra.Command object with default parameters
@@ -64,12 +56,12 @@ func NewMetaServiceCommand() *cobra.Command {
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			// validate flags
-			if err := validateFlags(cmd, cleanFlagSet, args); err != nil {
+			if err := parseFlags(cmd, cleanFlagSet, args); err != nil {
 				return
 			}
 
-			// validate and apply initial MetaService Flags
-			if err := metaServiceFlags.Apply(); err != nil {
+			// validate MetaService Flags
+			if err := metaServiceFlags.Validate(); err != nil {
 				log.Error("Failed to validate meta service flags ", err)
 				return
 			}
@@ -80,7 +72,6 @@ func NewMetaServiceCommand() *cobra.Command {
 				return
 			}
 
-			// TODO: Setup signal handler with context
 			ctx, cancel := context.WithCancel(context.Background())
 			// setup signal handler
 			utils.SetupSignalHandler(cancel)
@@ -112,8 +103,8 @@ func NewMetaServiceCommand() *cobra.Command {
 	return cmd
 }
 
-// validateFlags validates metadata service arguments
-func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []string) error {
+// parseFlags parse metadata service arguments
+func parseFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []string) error {
 	// initial flag parse, since we disable cobra's flag parsing
 	if err := cleanFlagSet.Parse(args); err != nil {
 		log.Error("Failed to parse metadata service flag ", err)
@@ -153,7 +144,7 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	}
 
 	// initialize backup repository
-	repository, grpcConn, err := repo.NewBackupRepository(serviceOptions.BackupDriverAddress)
+	grpcConn, err := backupRepoConnection(serviceOptions.BackupDriverAddress)
 	if err != nil {
 		return err
 	}
@@ -165,24 +156,9 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	}
 	log.Infoln("Probe completed with provider")
 
-	// Register the metadata provider
-	provider, err := providerIdentity.RegisterMetadataProvider(ctx, &grpcConn)
-	if err != nil {
-		log.Error("Failed to get provider info: ", err)
-		return err
-	}
-	serviceAddress := serviceOptions.ServiceName + "." + serviceOptions.DeployedNamespace + ":" +
-		fmt.Sprintf("%d", serviceOptions.Port)
-	err = annotateProvider(serviceAnnotation, serviceAddress, provider)
-	if err != nil {
-		log.Error("Failed to add annotation to provider info: ", err)
-		return err
-	}
-
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
-	metaservice.RegisterMetaServiceServer(grpcServer, server.NewMetaServiceServer(ctx,
-		serviceOptions, repository))
+	metaservice.RegisterMetaServiceServer(grpcServer, server.NewMetaServiceServer(ctx, serviceOptions, grpcConn))
 
 	go func(ctx context.Context, server *grpc.Server) {
 		server.Serve(lis)
@@ -190,64 +166,32 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 
 	<-ctx.Done()
 
-	return cleanup(grpcServer)
+	return cleanup(grpcServer, grpcConn)
 }
 
-func cleanup(server *grpc.Server) error {
+func cleanup(server *grpc.Server, repoClient *grpc.ClientConn) error {
 	server.Stop()
+	repoClient.Close()
 	return nil
 }
 
-func annotateProvider(
-	annotation, value string,
-	provider *v1.Provider) error {
-	providerName := provider.Name
-
-	_, ok := provider.Annotations[annotation]
-	if ok {
-		log.Infof("Provider(%s) all-ready annotated with %s", providerName, annotation)
-		log.Infof("Provider(%s) overriding annotation with %s", providerName, annotation)
+func backupRepoConnection(backupRepositoryAddress string) (*grpc.ClientConn, error) {
+	unixPrefix := "unix://"
+	if strings.HasPrefix(backupRepositoryAddress, "/") {
+		// It looks like filesystem path.
+		backupRepositoryAddress = unixPrefix + backupRepositoryAddress
 	}
 
-	providerClone := provider.DeepCopy()
-	metav1.SetMetaDataAnnotation(&providerClone.ObjectMeta, annotation, value)
-	return patchProvider(provider, providerClone)
-}
+	if !strings.HasPrefix(backupRepositoryAddress, unixPrefix) {
+		return nil, fmt.Errorf("invalid unix domain path [%s]",
+			backupRepositoryAddress)
+	}
 
-func patchProvider(
-	provider *v1.Provider, providerClone *v1.Provider) error {
-	providerName := provider.Name
-
-	origBytes, err := json.Marshal(provider)
+	grpcConnection, err := grpc.Dial(backupRepositoryAddress, grpc.WithInsecure(),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
 	if err != nil {
-		return errors.Wrap(err, "error marshalling backup")
+		return nil, err
 	}
 
-	updatedBytes, err := json.Marshal(providerClone)
-	if err != nil {
-		return errors.Wrap(err, "error marshalling updated backup")
-	}
-
-	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
-	if err != nil {
-		return errors.Wrap(err, "error creating json merge patch for backup")
-	}
-
-	cfg := kahuClient.NewFactoryConfig()
-	clientFactory := kahuClient.NewFactory(componentMetaService, cfg)
-	client, err := clientFactory.KahuClient()
-	if err != nil {
-		return err
-	}
-
-	provider, err = client.KahuV1beta1().Providers().Patch(context.TODO(), providerName,
-		types.MergePatchType, patchBytes, metav1.PatchOptions{})
-	if err != nil {
-		log.Errorf("Unable to update provider(%s) for service annotation. %s",
-			providerName, err)
-		return errors.Wrap(err, "error annotating volume backup completeness")
-	}
-
-	log.Infof("Annotation updated for the provider:%s", providerName)
-	return nil
+	return grpcConnection, nil
 }

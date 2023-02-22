@@ -33,6 +33,10 @@ const (
 	ProviderStateUnavailable ProviderState = "Unavailable"
 )
 
+const (
+	AnnDefaultVolumeProvider = "kahu.io/defaultVolumeProvider"
+)
+
 // ProviderType is the type of Provider.
 // +kubebuilder:validation:Enum=MetadataProvider;VolumeProvider
 // +kubebuilder:default=MetadataProvider
@@ -65,18 +69,21 @@ type ProviderSpec struct {
 
 	// Capabilities is the optional set of provider capabilities
 	// +optional
-	Capabilities map[string]bool `json:"capabilities,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 
 	// +optional
-	SupportedVolumeProvisioners []string `json:"supportedVolumeProvisioners,omitempty"`
+	SupportedVolumeProvisioner *string `json:"supportedVolumeProvisioner,omitempty"`
 }
 
 // ProviderStatus defines the observed state of Provider
 type ProviderStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
+	// +kubebuilder:default=Available
+	// +optional
 	State ProviderState `json:"state,omitempty"`
+
+	Message string `json:"message,omitempty"`
 }
 
 // +genclient

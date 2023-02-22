@@ -102,22 +102,22 @@ func GetMetaserviceClient(grpcConnection *grpc.ClientConn) metaservice.MetaServi
 	return metaservice.NewMetaServiceClient(grpcConnection)
 }
 
-func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaService_BackupClient {
-
-	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
-	if err != nil {
-		log.Errorf("error getting grpc connection %s", err)
-		return nil
-	}
-	metaClient := metaservice.NewMetaServiceClient(grpcconn)
-
-	backupClient, err := metaClient.Backup(context.Background())
-	if err != nil {
-		log.Errorf("error getting backupclient %s", err)
-		return nil
-	}
-	return backupClient
-}
+//func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaService_BackupClient {
+//
+//	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
+//	if err != nil {
+//		log.Errorf("error getting grpc connection %s", err)
+//		return nil
+//	}
+//	metaClient := metaservice.NewMetaServiceClient(grpcconn)
+//
+//	backupClient, err := metaClient.Backup(context.Background())
+//	if err != nil {
+//		log.Errorf("error getting backupclient %s", err)
+//		return nil
+//	}
+//	return backupClient
+//}
 
 func GetGRPCConnection(endpoint string, dialOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions = append(dialOptions,
@@ -153,27 +153,27 @@ func AddGRPCRequestID(ctx context.Context,
 }
 
 func Probe(conn grpc.ClientConnInterface, timeout time.Duration) error {
-	for {
-		log.Info("Probing driver for readiness")
-		probe := func(conn grpc.ClientConnInterface, timeout time.Duration) (bool, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
+	probe := func(conn grpc.ClientConnInterface, timeout time.Duration) (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
 
-			rsp, err := providerservice.
-				NewIdentityClient(conn).
-				Probe(ctx, &providerservice.ProbeRequest{})
+		rsp, err := providerservice.
+			NewIdentityClient(conn).
+			Probe(ctx, &providerservice.ProbeRequest{})
 
-			if err != nil {
-				return false, err
-			}
-
-			r := rsp.GetReady()
-			if r == nil {
-				return true, nil
-			}
-			return r.GetValue(), nil
+		if err != nil {
+			return false, err
 		}
 
+		r := rsp.GetReady()
+		if r == nil {
+			return true, nil
+		}
+		return r.GetValue(), nil
+	}
+
+	for {
+		log.Info("Probing driver for readiness")
 		ready, err := probe(conn, timeout)
 		if err != nil {
 			st, ok := status.FromError(err)
@@ -310,7 +310,7 @@ func CheckServerUnavailable(err error) bool {
 	return false
 }
 
-func VolumeProvider(pv *corev1.PersistentVolume) string {
+func VolumeProvisioner(pv *corev1.PersistentVolume) string {
 	if pv.Spec.CSI != nil {
 		return pv.Spec.CSI.Driver
 	}
@@ -328,4 +328,11 @@ func VolumeProvider(pv *corev1.PersistentVolume) string {
 	}
 
 	return ""
+}
+
+func ToResourceID(apiVersion, kind, namespace, name string) string {
+	if namespace == "" {
+		return fmt.Sprintf("%s.%s/%s", kind, apiVersion, name)
+	}
+	return fmt.Sprintf("%s.%s/%s/%s", kind, apiVersion, namespace, name)
 }

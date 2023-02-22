@@ -20,11 +20,13 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
+
+	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
 )
 
 const (
 	// NFSService component name
-	unixSocketPath = "/tmp/nfs.sock"
+	unixSocketPath = options.DefaultBackupDriverAddress
 	// DataPath defines directory of backup files
 	DataPath = "/data"
 )

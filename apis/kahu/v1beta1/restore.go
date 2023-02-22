@@ -71,9 +71,9 @@ type RestoreSpec struct {
 	// +optional
 	IncludeClusterResource bool `json:"includeClusterResource,omitempty"`
 
-	// ResourcePrefix gets prepended in each restored resource name
-	// +optional
-	ResourcePrefix string `json:"resourcePrefix,omitempty"`
+	//// ResourcePrefix gets prepended in each restored resource name
+	//// +optional
+	//ResourcePrefix string `json:"resourcePrefix,omitempty"`
 
 	// Hooks represent custom behaviors that should be executed during or post restore.
 	// +optional
@@ -189,24 +189,17 @@ type RestoreResource struct {
 	// Namespace of the backup resource
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+
+	// Status is a state of the resource
+	// +optional
+	// +kubebuilder:default=Pending
+	Status ResourceStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Initial;PreHook;Resources;Volumes;PostHook;Finished
-
-type RestoreStage string
-
 // +kubebuilder:validation:Enum=New;Validating;Failed;Processing;Completed;Deleting
-
 type RestoreState string
 
 const (
-	RestoreStageInitial   RestoreStage = "Initial"
-	RestoreStagePreHook   RestoreStage = "PreHook"
-	RestoreStageResources RestoreStage = "Resources"
-	RestoreStageVolumes   RestoreStage = "Volumes"
-	RestoreStagePostHook  RestoreStage = "PostHook"
-	RestoreStageFinished  RestoreStage = "Finished"
-
 	RestoreStateNew        RestoreState = "New"
 	RestoreStateValidating RestoreState = "Validating"
 	RestoreStateFailed     RestoreState = "Failed"
@@ -231,11 +224,8 @@ type RestoreStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// +optional
-	Stage RestoreStage `json:"stage,omitempty"`
-
-	// +optional
 	// +kubebuilder:default=New
+	// +optional
 	State RestoreState `json:"state,omitempty"`
 
 	// Resources tells the resources that is restored
@@ -267,7 +257,6 @@ type RestoreStatus struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Stage",type=string,JSONPath=`.status.stage`
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="BackupName",type=string,JSONPath=`.spec.backupName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

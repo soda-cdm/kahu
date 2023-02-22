@@ -112,7 +112,7 @@ function release::create_docker_images() {
 
       local binary_file_path="${binary_dir}/${binary_name}"
       local docker_build_path="${binary_file_path}.dockerbuild"
-      local docker_image_tag="${docker_registry}/${binary_name}:${docker_tag}"
+      local docker_image_tag="${docker_registry}/kahu-${binary_name}:${docker_tag}"
 
       local docker_file_path="${KAHU_ROOT}/Dockerfile"
 

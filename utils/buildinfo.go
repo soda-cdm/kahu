@@ -68,3 +68,19 @@ func (info BuildInfo) Print() {
 	}
 	log.Infof("%s", string(printPretty))
 }
+
+func (info BuildInfo) String() string {
+	build, err := json.Marshal(&info)
+	if err != nil {
+		return fmt.Sprintf("GitVersion   %s\n"+
+			"GitCommit    %s\n"+
+			"GitTreeState %s\n"+
+			"BuildDate    %s\n"+
+			"GoVersion    %s\n"+
+			"Compiler     %s\n"+
+			"Platform     %s", info.GitVersion, info.GitCommit, info.GitTreeState,
+			info.BuildDate, info.GoVersion, info.Compiler, info.Platform)
+	}
+
+	return string(build)
+}

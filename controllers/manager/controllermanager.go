@@ -19,17 +19,14 @@ package manager
 import (
 	"context"
 	"fmt"
+
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/controllers/snapshot"
-	"github.com/soda-cdm/kahu/controllers/snapshot/classsyncer"
-	"github.com/soda-cdm/kahu/controllers/snapshot/csi"
-	"github.com/soda-cdm/kahu/controllers/volumebackup"
-	"github.com/soda-cdm/kahu/volume"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	controllerruntime "sigs.k8s.io/controller-runtime"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	kahuv1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
@@ -39,10 +36,18 @@ import (
 	"github.com/soda-cdm/kahu/controllers"
 	"github.com/soda-cdm/kahu/controllers/app/config"
 	"github.com/soda-cdm/kahu/controllers/backup"
+	"github.com/soda-cdm/kahu/controllers/backuplocation"
+	"github.com/soda-cdm/kahu/controllers/provider"
+	providerReg "github.com/soda-cdm/kahu/controllers/registration/provider"
 	"github.com/soda-cdm/kahu/controllers/restore"
+	"github.com/soda-cdm/kahu/controllers/snapshot"
+	"github.com/soda-cdm/kahu/controllers/snapshot/classsyncer"
+	"github.com/soda-cdm/kahu/controllers/snapshot/csi"
 	"github.com/soda-cdm/kahu/discovery"
+	"github.com/soda-cdm/kahu/framework"
+	frameworkmanager "github.com/soda-cdm/kahu/framework/manager"
 	"github.com/soda-cdm/kahu/hooks"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/soda-cdm/kahu/volume"
 )
 
 type ControllerManager struct {
@@ -58,9 +63,10 @@ type ControllerManager struct {
 	EventBroadcaster         record.EventBroadcaster
 	HookExecutor             hooks.Hooks
 	PodCommandExecutor       hooks.PodCommandExecutor
-	volumeHandler            volume.Interface
+	volumeFactory            volume.Interface
 	volSnapshotClassSyncer   classsyncer.Interface
 	csiSnapshoter            csi.Snapshoter
+	framework                framework.Interface
 }
 
 func NewControllerManager(ctx context.Context,
@@ -76,7 +82,7 @@ func NewControllerManager(ctx context.Context,
 		return nil, err
 	}
 
-	volumeHandle, err := volume.NewVolumeHandler(ctx, clientFactory)
+	volumeFactory, err := volume.NewVolumeHandler(ctx, clientFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +110,17 @@ func NewControllerManager(ctx context.Context,
 		return nil, err
 	}
 
+	frmwork, err := frameworkmanager.NewFramework(ctx,
+		completeConfig.FrameworkConfig,
+		completeConfig.KubeClient,
+		completeConfig.KahuClient.KahuV1beta1(),
+		completeConfig.DynamicClient,
+		completeConfig.DiscoveryHelper,
+		completeConfig.EventBroadcaster)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ControllerManager{
 		ctx:                      ctx,
 		runtimeClient:            ctrlRuntimeManager.GetClient(),
@@ -117,9 +134,10 @@ func NewControllerManager(ctx context.Context,
 		EventBroadcaster:         completeConfig.EventBroadcaster,
 		HookExecutor:             completeConfig.HookExecutor,
 		PodCommandExecutor:       completeConfig.PodCmdExecutor,
-		volumeHandler:            volumeHandle,
+		volumeFactory:            volumeFactory,
 		volSnapshotClassSyncer:   volSnapshotClassSyncer,
 		csiSnapshoter:            csiSnapshoter,
+		framework:                frmwork,
 	}, nil
 }
 
@@ -139,7 +157,8 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 		mgr.EventBroadcaster,
 		mgr.completeConfig.DiscoveryHelper,
 		mgr.HookExecutor,
-		mgr.volumeHandler)
+		mgr.volumeFactory,
+		mgr.framework)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backup controller. %s", err)
 	}
@@ -155,6 +174,7 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 		mgr.informerFactory,
 		mgr.PodCommandExecutor,
 		mgr.kubeClient.CoreV1().RESTClient(),
+		mgr.framework,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize restore controller. %s", err)
@@ -178,20 +198,46 @@ func (mgr *ControllerManager) InitControllers() (map[string]controllers.Controll
 	}
 	availableControllers[volumeSnapshotController.Name()] = volumeSnapshotController
 
-	// integrate volume backup controller
-	volumeBackupController, err := volumebackup.NewController(
+	// integrate provider registration controller
+	providerRegController, err := providerReg.NewController(
 		mgr.ctx,
 		mgr.completeConfig.KubeClient,
 		mgr.kahuClient,
-		mgr.completeConfig.DynamicClient,
 		mgr.informerFactory,
 		mgr.EventBroadcaster,
-		mgr.completeConfig.DiscoveryHelper,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize volume baclup controller. %s", err)
+		return nil, fmt.Errorf("failed to initialize provider registration controller. %s", err)
 	}
-	availableControllers[volumeBackupController.Name()] = volumeBackupController
+	availableControllers[providerRegController.Name()] = providerRegController
+
+	// integrate provider controller
+	providerController, err := provider.NewController(
+		mgr.ctx,
+		mgr.kahuClient,
+		mgr.informerFactory,
+		mgr.EventBroadcaster,
+		mgr.volumeFactory,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize backup location controller. %s", err)
+	}
+	availableControllers[providerController.Name()] = providerController
+
+	// integrate backup location controller
+	backupLocationController, err := backuplocation.NewController(
+		mgr.ctx,
+		mgr.completeConfig.KubeClient,
+		mgr.kahuClient,
+		mgr.informerFactory,
+		mgr.EventBroadcaster,
+		mgr.framework,
+		mgr.volumeFactory,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize backup location controller. %s", err)
+	}
+	availableControllers[backupLocationController.Name()] = backupLocationController
 
 	log.Infof("Available controllers %+v", availableControllers)
 

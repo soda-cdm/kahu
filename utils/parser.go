@@ -24,7 +24,7 @@ import (
 	pb "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 )
 
-func ResourceToFile(backupHandle string, resource *pb.Resource) string {
+func ResourceToFile(backupHandle string, resource *pb.K8SResource) string {
 	if resource.Group == "" {
 		return filepath.Join(backupHandle,
 			resource.Kind,
@@ -37,8 +37,8 @@ func ResourceToFile(backupHandle string, resource *pb.Resource) string {
 		resource.Name)
 }
 
-func FileToResource(filePath string) *pb.Resource {
-	resource := &pb.Resource{}
+func FileToResource(filePath string) *pb.K8SResource {
+	resource := &pb.K8SResource{}
 	dir, file := filepath.Split(filePath)
 	resource.Name = file
 	dir, file = filepath.Split(dir)
@@ -53,7 +53,7 @@ func FileToResource(filePath string) *pb.Resource {
 
 func GetBackupIdentifier(backup *kahuapi.Backup,
 	backupLocation *kahuapi.BackupLocation,
-	backupProvider *kahuapi.Provider) (*pb.BackupIdentifier, error) {
+	backupProvider *kahuapi.Provider) (*pb.Backup, error) {
 	if backup == nil || backupLocation == nil || backupProvider == nil {
 		return nil, fmt.Errorf("empty backup information for backup identifier")
 	}
@@ -71,8 +71,8 @@ func GetBackupIdentifier(backup *kahuapi.Backup,
 		mergedParameter[key] = val
 	}
 
-	return &pb.BackupIdentifier{
-		BackupHandle: backup.Name,
-		Parameters:   mergedParameter,
+	return &pb.Backup{
+		Handle:     backup.Name,
+		Parameters: mergedParameter,
 	}, nil
 }

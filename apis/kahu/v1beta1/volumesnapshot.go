@@ -50,6 +50,12 @@ type VolumeSnapshotSpec struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
+type VolumeSource struct {
+	List []ResourceReference `json:"list,omitempty" protobuf:"bytes,1,opt,name=list"`
+
+	Selector *ResourceSelector `json:"selector,omitempty" protobuf:"bytes,1,opt,name=selector"`
+}
+
 // +kubebuilder:validation:Enum=New;InProgress;Completed;Failed;Deleting
 type VolumeSnapshotPhase string
 
@@ -69,16 +75,16 @@ type VolumeSnapshotState struct {
 	Completed bool `json:"progress,omitempty"`
 }
 
-type VolumeSnapshotData struct {
-	Handle string `json:"handle,omitempty"`
+type VolumeSnapshotSource struct {
+	CSISnapshot *CSISnapshotData `json:"csiSnapshot,omitempty"`
 
-	Attributes map[string]string `json:"attributes,omitempty"`
+	Snapshot *SnapshotData `json:"snapshot,omitempty"`
 }
 
-type VolumeSnapshotSource struct {
-	CSISnapshotRef *ResourceReference `json:"csiSnapshotRef,omitempty"`
+type CSISnapshotData struct {
+	SnapshotRef ResourceReference `json:"snapshotRef,omitempty"`
 
-	SnapshotData *VolumeSnapshotData `json:"snapshotData,omitempty"`
+	SnapshotData `json:",inline"`
 }
 
 // SnapshotStatus defines the observed state of Snapshot

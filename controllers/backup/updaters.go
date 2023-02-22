@@ -13,21 +13,6 @@ import (
 	"github.com/soda-cdm/kahu/utils"
 )
 
-type Updater interface {
-	PatchBackup(oldBackup, newBackup *kahuapi.Backup) (*kahuapi.Backup, error)
-	updateBackupStatus(backup *kahuapi.Backup, status kahuapi.BackupStatus) (*kahuapi.Backup, error)
-	updateBackupStatusWithEvent(
-		backup *kahuapi.Backup,
-		status kahuapi.BackupStatus,
-		eventType, reason, message string) (*kahuapi.Backup, error)
-}
-
-var _ Updater = new(controller)
-
-func (ctrl *controller) PatchBackup(oldBackup, newBackup *kahuapi.Backup) (*kahuapi.Backup, error) {
-	return ctrl.patchBackup(oldBackup, newBackup)
-}
-
 func (ctrl *controller) patchBackup(oldBackup, newBackup *kahuapi.Backup) (*kahuapi.Backup, error) {
 	origBytes, err := json.Marshal(oldBackup)
 	if err != nil {
@@ -68,11 +53,6 @@ func (ctrl *controller) updateBackupStatus(
 
 	backupClone := backup.DeepCopy()
 	dirty := false
-	// update Phase
-	if status.Stage != "" && toOrdinal(backup.Status.Stage) < toOrdinal(status.Stage) {
-		backupClone.Status.Stage = status.Stage
-		dirty = true
-	}
 
 	if status.State != "" && backup.Status.State != status.State {
 		backupClone.Status.State = status.State
@@ -99,12 +79,6 @@ func (ctrl *controller) updateBackupStatus(
 		dirty = true
 	}
 
-	if backup.Status.LastBackup == nil &&
-		status.LastBackup != nil {
-		backupClone.Status.LastBackup = status.LastBackup
-		dirty = true
-	}
-
 	if len(status.Resources) > 0 {
 		mergeStatusResources(backupClone, status)
 		dirty = true
@@ -114,6 +88,7 @@ func (ctrl *controller) updateBackupStatus(
 		backupClone, err = ctrl.backupClient.UpdateStatus(context.TODO(), backupClone, metav1.UpdateOptions{})
 		if err != nil {
 			ctrl.logger.Errorf("Updating backup(%s) status: update status failed %s", backup.Name, err)
+			return backupClone, err
 		}
 		_, err = utils.StoreRevisionUpdate(ctrl.processedBackup, backupClone, "Backup")
 		if err != nil {
@@ -131,8 +106,7 @@ func mergeStatusResources(backup *kahuapi.Backup,
 	for _, resource := range status.Resources {
 		found := false
 		for _, backupResource := range backup.Status.Resources {
-			if backupResource.Namespace == resource.Namespace &&
-				backupResource.ResourceName == resource.ResourceName {
+			if backupResource.ResourceID() == resource.ResourceID() {
 				found = true
 				break
 			}
@@ -155,8 +129,13 @@ func (ctrl *controller) updateBackupStatusWithEvent(
 	}
 
 	if newBackup.ResourceVersion != backup.ResourceVersion {
-		ctrl.logger.Infof("Backup %s changed phase to %q: %s", backup.Name, status.Stage, message)
-		ctrl.eventRecorder.Event(newBackup, eventType, reason, message)
+		ctrl.broadcastEvent(newBackup, eventType, reason, message)
 	}
 	return newBackup, err
+}
+
+func (ctrl *controller) broadcastEvent(
+	backup *kahuapi.Backup,
+	eventType, reason, message string) {
+	ctrl.eventRecorder.Event(backup, eventType, reason, message)
 }

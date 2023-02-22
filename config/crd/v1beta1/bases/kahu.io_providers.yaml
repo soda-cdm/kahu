@@ -49,19 +49,17 @@ spec:
             description: ProviderSpec defines the specification of provider CRD
             properties:
               capabilities:
-                additionalProperties:
-                  type: boolean
                 description: Capabilities is the optional set of provider capabilities
-                type: object
+                items:
+                  type: string
+                type: array
               manifest:
                 additionalProperties:
                   type: string
                 description: Manifest is the optional set of provider specific configurations
                 type: object
-              supportedVolumeProvisioners:
-                items:
-                  type: string
-                type: array
+              supportedVolumeProvisioner:
+                type: string
               type:
                 description: Type is type of the provider getting registered
                 enum:
@@ -78,8 +76,13 @@ spec:
           status:
             description: ProviderStatus defines the observed state of Provider
             properties:
+              message:
+                type: string
               state:
-                description: ProviderState is the availability state of Provider.
+                default: Available
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file'
                 enum:
                 - Available
                 - Unavailable

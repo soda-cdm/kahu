@@ -29,18 +29,15 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	kahuscheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/client/informers/externalversions"
 	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/controllers"
+	volumeservice "github.com/soda-cdm/kahu/providerframework/volumeservice/lib/go"
 	providerSvc "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 	"github.com/soda-cdm/kahu/utils/operation"
@@ -63,16 +60,14 @@ const (
 	annVolumeResourceCleanup = "kahu.io/volume-resource-cleanup"
 )
 
-type controller struct {
+type volService struct {
 	logger              log.FieldLogger
 	providerName        string
-	genericController   controllers.Controller
-	volumeRestoreClient kahuclient.VolumeRestoreContentInterface
-	volumeRestoreLister kahulister.VolumeRestoreContentLister
-	eventRecorder       record.EventRecorder
 	driver              providerSvc.VolumeBackupClient
 	operationManager    operation.Manager
 	processedVRC        utils.Store
+	volumeRestoreLister kahulister.VolumeRestoreContentLister
+	volumeRestoreClient kahuclient.VolumeRestoreContentInterface
 	updater             volumeRestoreUpdater
 }
 
@@ -85,76 +80,54 @@ type volumeRestoreUpdater struct {
 func NewController(ctx context.Context,
 	providerName string,
 	kahuClient versioned.Interface,
-	informer externalversions.SharedInformerFactory,
-	eventBroadcaster record.EventBroadcaster,
-	driver providerSvc.VolumeBackupClient) (controllers.Controller, error) {
+	driver providerSvc.VolumeBackupClient) volumeservice.VolumeServiceServer {
 	logger := log.WithField("controller", controllerName)
 
 	processedVRCCache := utils.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
 	updater := volumeRestoreUpdater{
 		volumeRestoreClient: kahuClient.KahuV1beta1().VolumeRestoreContents(),
-		eventRecorder:       eventBroadcaster.NewRecorder(kahuscheme.Scheme, v1.EventSource{Component: controllerName}),
-		store:               processedVRCCache,
-	}
-	restoreController := &controller{
-		logger:              logger,
-		providerName:        providerName,
-		updater:             updater,
-		volumeRestoreClient: kahuClient.KahuV1beta1().VolumeRestoreContents(),
-		volumeRestoreLister: informer.Kahu().V1beta1().VolumeRestoreContents().Lister(),
-		driver:              driver,
-		operationManager:    operation.NewOperationManager(ctx, logger.WithField("context", "restore-operation")),
-		processedVRC:        processedVRCCache,
+		// eventRecorder:       eventBroadcaster.NewRecorder(kahuscheme.Scheme, v1.EventSource{Component: controllerName}),
+		store: processedVRCCache,
 	}
 
-	// construct controller interface to process worker queue
-	genericController, err := controllers.NewControllerBuilder(controllerName).
-		SetLogger(logger).
-		SetHandler(restoreController.processQueue).
-		SetReSyncHandler(restoreController.reSync).
-		SetReSyncPeriod(defaultSyncTime).
-		Build()
-	if err != nil {
-		return nil, err
+	service := &volService{
+		logger:       logger,
+		providerName: providerName,
+		updater:      updater,
+		driver:       driver,
+		//operationManager: operation.NewOperationManager(ctx, logger.WithField("context", "restore-operation")),
 	}
 
-	// register to informer to receive events and push events to worker queue
-	informer.Kahu().
-		V1beta1().
-		VolumeRestoreContents().
-		Informer().
-		AddEventHandler(
-			cache.ResourceEventHandlerFuncs{
-				AddFunc: genericController.Enqueue,
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					genericController.Enqueue(newObj)
-				},
-			},
-		)
-
-	// reference back
-	restoreController.genericController = genericController
-	return genericController, err
+	return service
 }
 
-func (ctrl *controller) reSync() {
-	volumeRestoreList, err := ctrl.volumeRestoreLister.List(labels.Everything())
-	if err != nil {
-		ctrl.logger.Errorf("Unable to get volume restore list. %s", err)
-		return
-	}
-
-	for _, volRestore := range volumeRestoreList {
-		if volRestore.Status.Phase == kahuapi.VolumeRestoreContentPhaseFailed ||
-			volRestore.Status.Phase == kahuapi.VolumeRestoreContentPhaseCompleted {
-			continue
-		}
-
-		ctrl.genericController.Enqueue(volRestore)
-	}
+func (*volService) Backup(*volumeservice.BackupRequest,
+	volumeservice.VolumeService_BackupServer) error {
+	return nil
 }
 
-func (ctrl *controller) processQueue(index string) error {
+func (*volService) DeleteBackup(context.Context,
+	*volumeservice.DeleteBackupRequest) (*volumeservice.Empty, error) {
+	return &volumeservice.Empty{}, nil
+}
+
+func (*volService) Restore(*volumeservice.RestoreRequest,
+	volumeservice.VolumeService_RestoreServer) error {
+	return nil
+}
+
+func (*volService) DeleteRestore(context.Context,
+	*volumeservice.DeleteRestoreRequest) (*volumeservice.Empty, error) {
+	return &volumeservice.Empty{}, nil
+}
+
+// Probe provider for availability check
+func (*volService) Probe(context.Context,
+	*volumeservice.ProbeRequest) (*volumeservice.ProbeResponse, error) {
+	return &volumeservice.ProbeResponse{}, nil
+}
+
+func (ctrl *volService) processQueue(index string) error {
 	ctrl.logger.Infof("Received volume restore request for %s", index)
 	_, name, err := cache.SplitMetaNamespaceKey(index)
 	if err != nil {
@@ -195,14 +168,14 @@ func (ctrl *controller) processQueue(index string) error {
 	return err
 }
 
-func (ctrl *controller) hasCleanupAnnotation(restore *kahuapi.VolumeRestoreContent) bool {
+func (ctrl *volService) hasCleanupAnnotation(restore *kahuapi.VolumeRestoreContent) bool {
 	if metav1.HasAnnotation(restore.ObjectMeta, annVolumeResourceCleanup) {
 		return true
 	}
 	return false
 }
 
-func (ctrl *controller) processDeleteVolumeRestore(restore *kahuapi.VolumeRestoreContent) error {
+func (ctrl *volService) processDeleteVolumeRestore(restore *kahuapi.VolumeRestoreContent) error {
 	ctrl.logger.Infof("Processing volume backup delete request for %v", restore)
 
 	// Delete resources if restore stage/state is not Finished/Completed
@@ -257,7 +230,7 @@ func resetPVC(pvc *v1.PersistentVolumeClaim) *v1.PersistentVolumeClaim {
 	return pvcClone
 }
 
-func (ctrl *controller) processVolumeRestore(restore *kahuapi.VolumeRestoreContent) error {
+func (ctrl *volService) processVolumeRestore(restore *kahuapi.VolumeRestoreContent) error {
 	logger := ctrl.logger.WithField("restore", restore.Name)
 
 	switch restore.Status.Phase {
@@ -283,14 +256,14 @@ func (ctrl *controller) processVolumeRestore(restore *kahuapi.VolumeRestoreConte
 
 		fallthrough
 	case kahuapi.VolumeRestoreContentPhaseInProgress:
-		ctx := ctrl.newVolumeRestoreProgressContext(ctrl.logger)
-		err := ctrl.operationManager.Run(restore.Name, operation.Handler{
-			Operation: ctx.processRestoreProgress,
-			OnFailure: ctx.handleRestoreProgressFailure,
-			OnSuccess: ctx.handleRestoreProgressSuccess})
-		if operation.IsAlreadyExists(err) {
-			return nil
-		}
+		//ctx := ctrl.newVolumeRestoreProgressContext(ctrl.logger)
+		//err := ctrl.operationManager.Run(restore.Name, operation.Handler{
+		//	Operation: ctx.processRestoreProgress,
+		//	OnFailure: ctx.handleRestoreProgressFailure,
+		//	OnSuccess: ctx.handleRestoreProgressSuccess})
+		//if operation.IsAlreadyExists(err) {
+		//	return nil
+		//}
 
 		ctrl.logger.Infof("Restore operation in progress for %s", restore.Name)
 		return nil
@@ -304,7 +277,7 @@ func (ctrl *controller) processVolumeRestore(restore *kahuapi.VolumeRestoreConte
 	return nil
 }
 
-func (ctrl *controller) handleVolumeRestore(
+func (ctrl *volService) handleVolumeRestore(
 	volRestore *kahuapi.VolumeRestoreContent) (*kahuapi.VolumeRestoreContent, error) {
 	identifiers := make([]*providerSvc.RestoreIdentifier, 0)
 	for _, volume := range volRestore.Spec.Volumes {
@@ -351,7 +324,7 @@ type restoreProgressContext struct {
 	logger           log.FieldLogger
 }
 
-func (ctrl *controller) newVolumeRestoreProgressContext(logger log.FieldLogger) *restoreProgressContext {
+func (ctrl *volService) newVolumeRestoreProgressContext(logger log.FieldLogger) *restoreProgressContext {
 	return &restoreProgressContext{
 		volRestoreLister: ctrl.volumeRestoreLister,
 		updater:          ctrl.updater,
@@ -540,7 +513,7 @@ func isInitNeeded(restore *kahuapi.VolumeRestoreContent) bool {
 	return false
 }
 
-func (ctrl *controller) restoreInitialize(
+func (ctrl *volService) restoreInitialize(
 	restore *kahuapi.VolumeRestoreContent) (*kahuapi.VolumeRestoreContent, error) {
 	restoreClone := restore.DeepCopy()
 
@@ -561,7 +534,7 @@ func (ctrl *controller) restoreInitialize(
 	return ctrl.updateStatus(restoreClone, status)
 }
 
-func (ctrl *controller) patchVolRestoreContent(
+func (ctrl *volService) patchVolRestoreContent(
 	oldRestore,
 	newRestore *kahuapi.VolumeRestoreContent) (*kahuapi.VolumeRestoreContent, error) {
 	origBytes, err := json.Marshal(oldRestore)
@@ -596,7 +569,7 @@ func (ctrl *controller) patchVolRestoreContent(
 	return updatedRestore, nil
 }
 
-func (ctrl *controller) updateStatus(
+func (ctrl *volService) updateStatus(
 	restore *kahuapi.VolumeRestoreContent,
 	status kahuapi.VolumeRestoreContentStatus) (*kahuapi.VolumeRestoreContent, error) {
 	ctrl.logger.Infof("Updating status: volume restore content %s", restore.Name)

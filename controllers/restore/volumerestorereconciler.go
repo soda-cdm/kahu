@@ -179,10 +179,10 @@ func (rc *reconciler) isReconcileRequired(restore *kahuapi.Restore) bool {
 	// skip reconcile if restore getting deleted
 	// skip reconcile if restore.Status.Phase is not volume restore
 	// skip reconcile if volume restore completed
-	if restore.Status.Stage != kahuapi.RestoreStageVolumes ||
-		metav1.HasAnnotation(restore.ObjectMeta, annVolumeRestoreCompleted) {
+	if metav1.HasAnnotation(restore.ObjectMeta, annVolumeRestoreCompleted) {
 		return false
 	}
+
 	return true
 }
 

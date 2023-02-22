@@ -18,8 +18,6 @@ package backup
 
 import (
 	"time"
-
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 )
 
 const (
@@ -45,32 +43,14 @@ const (
 	EventValidationSuccess     = "ValidationSuccessful"
 	EventPreHookFailed         = "PreHookFailed"
 	EventPostHookFailed        = "PostHookFailed"
+	EventVolumeSnapshotSuccess = "VolumeSnapshotSuccess"
+	EventVolumeSnapshotFailed  = "VolumeSnapshotFailed"
 	EventVolumeBackupSuccess   = "VolumeBackupSuccess"
 	EventVolumeBackupFailed    = "VolumeBackupFailed"
 	EventVolumeBackupScheduled = "VolumeBackupScheduled"
 	EventResourceBackupSuccess = "ResourceBackupSuccess"
 	EventResourceBackupFailed  = "ResourceBackupFailed"
 )
-
-type Phase int
-
-func toOrdinal(p kahuapi.BackupStage) Phase {
-	switch p {
-	case kahuapi.BackupStageInitial:
-		return 0
-	case kahuapi.BackupStagePreHook:
-		return 1
-	case kahuapi.BackupStageVolumes:
-		return 2
-	case kahuapi.BackupStagePostHook:
-		return 3
-	case kahuapi.BackupStageResources:
-		return 4
-	case kahuapi.BackupStageFinished:
-		return 5
-	}
-	return -1
-}
 
 const (
 	PVCKind   = "PersistentVolumeClaim"

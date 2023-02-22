@@ -18,6 +18,7 @@ package config
 
 import (
 	"time"
+
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -29,6 +30,7 @@ import (
 	kahuinformer "github.com/soda-cdm/kahu/client/informers/externalversions"
 	"github.com/soda-cdm/kahu/controllers/backup"
 	"github.com/soda-cdm/kahu/discovery"
+	"github.com/soda-cdm/kahu/framework"
 	"github.com/soda-cdm/kahu/hooks"
 )
 
@@ -43,6 +45,7 @@ type Config struct {
 	DisableControllers     []string
 	KahuClientConfig       client.Config
 	BackupControllerConfig backup.Config
+	FrameworkConfig        framework.Config
 	LeaderLockNamespace    string
 	LeaderLeaseDuration    time.Duration
 	LeaderRenewDeadline    time.Duration

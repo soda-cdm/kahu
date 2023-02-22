@@ -1,0 +1,30 @@
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: nfs-provider-reg
+spec:
+  version: v0.1.0
+  providerName: nfs-provider
+  parameters:
+    provider: nfs
+    nfs-version: v4.2
+  template:
+    metadata:
+      labels:
+        app: nfs-provider
+    spec:
+      containers:
+        - image: sodacdm/kahu-nfs-provider:v1.0.0
+          imagePullPolicy: IfNotPresent
+          name: nfs-driver
+          command: ["/usr/local/bin/nfs-provider"]
+          args:
+            - "-d"
+            - "/data"
+          volumeMounts:
+            - name: data
+              mountPath: "/data"
+      volumes:
+        - name: data
+          emptyDir: {}
+

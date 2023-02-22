@@ -46,11 +46,14 @@ metadata:
   name: kahu-backup-clusterrole
 rules:
   - apiGroups: ["kahu.io"]
-    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "providers", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status","volumesnapshots", "volumesnapshots/status", "volumegroups", "volumegroups/status"]
+    resources: ["backups", "backups/status", "restores", "restores/status", "backuplocations", "backuplocations/status", "providers", "providers/status", "providerregistrations", "providerregistrations/status", "volumebackupcontents", "volumebackupcontents/status", "volumerestorecontents", "volumerestorecontents/status","volumesnapshots", "volumesnapshots/status", "volumegroups", "volumegroups/status"]
     verbs: ["get", "list", "watch", "patch", "update", "delete"]
   - apiGroups: ["*"]
     resources: ["*"]
     verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["patch"]
   - apiGroups: ["coordination.k8s.io"]
     resourceNames: ["backup"]
     resources: ["leases"]

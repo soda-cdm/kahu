@@ -19,32 +19,21 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/pkg/errors"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/controllers"
-	providerIdentity "github.com/soda-cdm/kahu/providerframework/identityservice"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/config"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/options"
-	"github.com/soda-cdm/kahu/providerframework/volumeservice/backup"
-	"github.com/soda-cdm/kahu/providerframework/volumeservice/restore"
+	volumeservice "github.com/soda-cdm/kahu/providerframework/volumeservice/lib/go"
+	"github.com/soda-cdm/kahu/providerframework/volumeservice/server"
 	providerSvc "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 )
@@ -96,16 +85,9 @@ state towards the desired state`,
 				return
 			}
 
-			if !completeConfig.EnableLeaderElection {
-				// run the controller manager
-				if err := Run(ctx, completeConfig, grpcConn); err != nil {
-					log.Errorf("Controller manager exited. %s", err)
-					os.Exit(1)
-				}
-				return
+			if err := Run(ctx, completeConfig, grpcConn); err != nil {
+				log.Fatalf("Controller manager exited. %s", err)
 			}
-
-			runLeader(ctx, cancel, completeConfig, grpcConn)
 		},
 	}
 
@@ -159,15 +141,6 @@ func ensureDriver(ctx context.Context,
 	completeConfig.Version = providerInfo.GetVersion()
 	completeConfig.Manifest = providerInfo.GetManifest()
 
-	log.Infof("Registering volume backup provider for %s", providerName)
-	// Register the volume provider
-	// TODO (Amit Roushan): Ensure registration and de-registration of Volume provider
-	_, err = providerIdentity.RegisterVolumeProvider(ctx, &grpcConn)
-	if err != nil {
-		log.Error("Failed to get provider info: ", err)
-		return err
-	}
-
 	return nil
 }
 
@@ -220,152 +193,35 @@ func setCmdHelp(
 	return cmd
 }
 
-func runLeader(ctx context.Context,
-	cancel context.CancelFunc,
-	completeConfig *config.CompletedConfig,
-	grpcConn grpc.ClientConnInterface) {
-	providerName := completeConfig.Provider
-	id, err := os.Hostname()
-	if err != nil {
-		log.Fatalf("Error getting hostname: %v", err)
-	}
-
-	eventRecorder := completeConfig.EventBroadcaster.NewRecorder(scheme.Scheme,
-		v1.EventSource{Component: fmt.Sprintf("kahu-%s-volume-service-lease", providerName)})
-
-	lockConfig := resourcelock.ResourceLockConfig{
-		Identity:      id,
-		EventRecorder: eventRecorder,
-	}
-
-	if completeConfig.LeaderLockNamespace == "" {
-		completeConfig.LeaderLockNamespace = defaultLeaderLockNamespace
-	}
-
-	resourceLock, err := resourcelock.New(
-		resourcelock.ConfigMapsLeasesResourceLock,
-		completeConfig.LeaderLockNamespace,
-		leaderLockObjectName+providerName,
-		completeConfig.KubeClient.CoreV1(),
-		completeConfig.KubeClient.CoordinationV1(),
-		lockConfig)
-	if err != nil {
-		log.Fatalf("Error creating resource lock: %v", err)
-	}
-
-	leaderElectionConfig := leaderelection.LeaderElectionConfig{
-		Lock:          resourceLock,
-		LeaseDuration: completeConfig.LeaderLeaseDuration,
-		RenewDeadline: completeConfig.LeaderRenewDeadline,
-		RetryPeriod:   completeConfig.LeaderRetryPeriod,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(ctx context.Context) {
-				if err := Run(ctx, completeConfig, grpcConn); err != nil {
-					log.Fatalf("Controller manager exited. %s", err)
-				}
-			},
-			OnStoppedLeading: func() {
-				log.Fatalf("Volume service lost master")
-				cancel()
-			},
-			OnNewLeader: func(identity string) {
-				log.Infof("New leader elected. Current leader %s", identity)
-			},
-		},
-	}
-	leaderElector, err := leaderelection.NewLeaderElector(leaderElectionConfig)
-	if err != nil {
-		log.Fatalf("Error creating leader elector: %v", err)
-	}
-	leaderElector.Run(ctx)
-}
-
-func Run(ctx context.Context, config *config.CompletedConfig, grpcConn grpc.ClientConnInterface) error {
+func Run(ctx context.Context, config *config.CompletedConfig, grpcConn *grpc.ClientConn) error {
 	log.Info("Volume service started with configuration")
 	config.Print()
 
-	backupProviderClient := providerSvc.NewVolumeBackupClient(grpcConn)
-	scheme := runtime.NewScheme()
-	kahuapi.AddToScheme(scheme)
-
-	clientConfig, err := config.ClientFactory.ClientConfig()
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d",
+		config.Address, config.Port))
 	if err != nil {
-		return err
+		log.Fatalf("failed to listen: %v", err)
 	}
 
-	ctrlRuntimeManager, err := controllerruntime.NewManager(clientConfig, controllerruntime.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		return err
-	}
+	var opts []grpc.ServerOption
+	grpcServer := grpc.NewServer(opts...)
+	volumeservice.RegisterVolumeServiceServer(grpcServer, server.NewServer(config,
+		providerSvc.NewVolumeBackupClient(grpcConn),
+		providerSvc.NewIdentityClient(grpcConn)))
 
-	availableControllers, err := configureControllers(ctx, config, backupProviderClient)
-	if err != nil {
-		return err
-	}
+	go func(ctx context.Context, server *grpc.Server) {
+		server.Serve(lis)
+	}(ctx, grpcServer)
 
-	// start the informers & and wait for the caches to sync
-	config.InformerFactory.Start(ctx.Done())
-	log.Info("Waiting for informer to sync")
-	for informer, synced := range config.InformerFactory.WaitForCacheSync(ctx.Done()) {
-		if !synced {
-			return fmt.Errorf("cache was not synced for informer %s", informer.Name())
-		}
-		log.WithField("resource", informer).Info("Informer cache synced")
-	}
+	<-ctx.Done()
 
-	for _, ctrl := range availableControllers {
-		ctrlRuntimeManager.
-			Add(manager.RunnableFunc(func(c controllers.Controller, workers int) func(ctx context.Context) error {
-				return func(ctx context.Context) error {
-					return c.Run(ctx, config.ControllerWorkers)
-				}
-			}(ctrl, config.ControllerWorkers)))
-	}
-
-	log.Info("Birth cry ")
-	return ctrlRuntimeManager.Start(ctx)
+	return cleanup(grpcServer, grpcConn)
 }
 
-func configureControllers(ctx context.Context,
-	config *config.CompletedConfig,
-	backupProviderClient providerSvc.VolumeBackupClient) (map[string]controllers.Controller, error) {
-
-	clientset, err := config.ClientFactory.ClientConfig()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	csiSnapshotClient, err := snapshotclientset.NewForConfig(clientset)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	availableControllers := make(map[string]controllers.Controller, 0)
-	// add controllers here, integrate backup controller
-	backupController, err := backup.NewController(ctx, config.Provider, config.KahuClient, config.InformerFactory,
-		config.EventBroadcaster, backupProviderClient, config.KubeClient, csiSnapshotClient.SnapshotV1())
-	if err != nil {
-		return availableControllers, fmt.Errorf("failed to initialize volume backup controller. %s", err)
-	}
-	availableControllers[backupController.Name()] = backupController
-
-	restoreController, err := restore.NewController(ctx, config.Provider, config.KahuClient, config.InformerFactory,
-		config.EventBroadcaster, backupProviderClient)
-	if err != nil {
-		return availableControllers, fmt.Errorf("failed to initialize volume backup controller. %s", err)
-	}
-	availableControllers[restoreController.Name()] = restoreController
-
-	// remove disabled controllers
-	for _, controllerName := range config.DisableControllers {
-		if _, ok := availableControllers[controllerName]; ok {
-			log.Infof("Disabling controller: %s", controllerName)
-			delete(availableControllers, controllerName)
-		}
-	}
-
-	return availableControllers, nil
+func cleanup(server *grpc.Server, repoClient *grpc.ClientConn) error {
+	server.Stop()
+	repoClient.Close()
+	return nil
 }
 
 func setupSignalHandler(cancel context.CancelFunc) {

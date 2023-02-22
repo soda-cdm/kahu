@@ -25,7 +25,6 @@ import (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Stage",type=string,JSONPath=`.status.stage`
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="MetadataLocation",type=string,JSONPath=`.spec.metadataLocation`
 // +kubebuilder:printcolumn:name="VolumeBackupLocations",type=string,JSONPath=`.spec.volumeBackupLocations`
@@ -50,6 +49,7 @@ type BackupSpec struct {
 
 	// ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
 	// +optional
+	// +kubebuilder:default=Delete
 	ReclaimPolicy ReclaimPolicyType `json:"reclaimPolicy,omitempty"`
 
 	// Hook is pre or post operations which should be executed during backup
@@ -185,21 +185,25 @@ const (
 )
 
 // ReclaimPolicy tells about reclamation of the backup. It can be either delete or retain
-type ReclaimPolicyType struct {
+// +kubebuilder:validation:Enum=Delete;Retain
+type ReclaimPolicyType string
+
+const (
 	// +optional
-	ReclaimPolicyDelete string `json:"reclaimPolicyDelete,omitempty"`
+	ReclaimPolicyDelete ReclaimPolicyType = "Delete"
 
 	// +optional
-	ReclaimPolicyRetain string `json:"reclaimPolicyRetain,omitempty"`
-}
+	ReclaimPolicyRetain ReclaimPolicyType = "Retain"
+)
 
-// +kubebuilder:validation:Enum=Pending;Processing;Completed
+// +kubebuilder:validation:Enum=Pending;Processing;Failed;Completed
 // ResourceStatus is a state a resource during backup
 type ResourceStatus string
 
 const (
 	Pending    ResourceStatus = "Pending"
 	Processing ResourceStatus = "Processing"
+	Failed     ResourceStatus = "Failed"
 	Completed  ResourceStatus = "Completed"
 )
 
@@ -217,41 +221,17 @@ type BackupResource struct {
 
 	// Status is a state of the resource
 	// +optional
+	// +kubebuilder:default=Pending
 	Status ResourceStatus `json:"status,omitempty"`
 }
-
-// +kubebuilder:validation:Enum=Initial;PreHook;Resources;Volumes;PostHook;Finished
-// BackupStage is a stage of backup
-type BackupStage string
 
 // +kubebuilder:validation:Enum=New;Validating;Processing;Completed;Deleting;Failed
 // BackupState is a state in backup phase
 type BackupState string
 
 const (
-	// BackupStageInitial indicates that current backup object is New
-	BackupStageInitial BackupStage = "Initial"
-
-	// BackupStagePreHook indicates that current backup object is pre hook
-	BackupStagePreHook BackupStage = "PreHook"
-
-	// BackupStageResources indicates that metadata are getting backup
-	BackupStageResources BackupStage = "Resources"
-
-	// BackupStageVolumes indicates that volume are getting backup
-	BackupStageVolumes BackupStage = "Volumes"
-
-	// BackupStagePostHook indicates that current backup object is post hook
-	BackupStagePostHook BackupStage = "PostHook"
-
-	// BackupStageFinished indicates that backup is successfully completed
-	BackupStageFinished BackupStage = "Finished"
-
 	// BackupStateNew indicates that backup object in initial state
 	BackupStateNew BackupState = "New"
-
-	// BackupStateValidating indicates that backup object is under validation
-	BackupStateValidating BackupState = "Validating"
 
 	// BackupStateFailed indicates that backup object has validation issues
 	BackupStateFailed BackupState = "Failed"
@@ -267,17 +247,10 @@ const (
 )
 
 type BackupStatus struct {
-	// Stage is the current phase of the backup
-	// +optional
-	Stage BackupStage `json:"stage,omitempty"`
-
 	// State is the current state in backup
+	// +kubebuilder:default=New
 	// +optional
 	State BackupState `json:"state,omitempty"`
-
-	// LastBackup defines the last backup time
-	// +optional
-	LastBackup *metav1.Time `json:"lastBackup,omitempty"`
 
 	// ValidationErrors is a list of erros which are founded during validation of backup spec
 	// +optional
