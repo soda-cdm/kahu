@@ -19,6 +19,10 @@ package resourcebackup
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync"
+	"time"
+
 	log "github.com/sirupsen/logrus"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
@@ -27,9 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/clock"
-	"strconv"
-	"sync"
-	"time"
 )
 
 type Config struct {
@@ -43,7 +44,7 @@ type backupper struct {
 
 	cfg         Config
 	logger      log.FieldLogger
-	location    string
+	namespace   string
 	bl          *kahuapi.BackupLocation
 	provider    *kahuapi.Provider
 	providerReg *kahuapi.ProviderRegistration
@@ -55,7 +56,6 @@ type backupper struct {
 func NewResourceBackupService(ctx context.Context,
 	cfg Config,
 	namespace string,
-	location string,
 	backupLocation *kahuapi.BackupLocation,
 	provider *kahuapi.Provider,
 	providerReg *kahuapi.ProviderRegistration,
@@ -64,13 +64,13 @@ func NewResourceBackupService(ctx context.Context,
 	return &backupper{
 		cfg:         cfg,
 		logger:      log.WithField("module", "resource-backup"),
-		location:    location,
+		namespace:   namespace,
 		kubeClient:  kubeClient,
 		kahuClient:  kahuClient,
 		bl:          backupLocation,
 		provider:    provider,
 		providerReg: providerReg,
-		provisioner: provisioner.NewProvisionerFactory(ctx, namespace, kubeClient),
+		provisioner: provisioner.NewProvisionerFactory(ctx, kubeClient),
 	}
 }
 
@@ -120,14 +120,13 @@ func (s *backupper) Done() {
 	}
 
 	s.decCount()
-	return
 }
 
 func (s *backupper) Sync() {
 	if !s.counterZero() {
 		return
 	}
-	s.logger.Infof("Stopping resource backupper for %s ", s.location)
+	s.logger.Infof("Stopping resource backupper for %s ", s.bl.Name)
 	s.stop()
 }
 
@@ -137,12 +136,11 @@ func (s *backupper) delayedStop() {
 		select {
 		case <-realClock.After(60 * time.Second):
 			s.counterLock.Lock()
+			defer s.counterLock.Unlock()
 			if s.counter == 0 {
-				s.counterLock.Unlock()
 				s.stop()
 				return
 			}
-			s.counterLock.Lock()
 		}
 	}
 }
@@ -187,7 +185,7 @@ func (s *backupper) provisionDeploymentWorkload(_ context.Context) (Interface, e
 	s.logger.Infof("Starting backup location[%s] service with deployment workload", s.bl.Name)
 
 	// add service
-	k8sService, err := s.provisioner.Deployment().AddService(s.location, []corev1.ServicePort{{
+	k8sService, err := s.provisioner.Deployment().AddService(s.bl.Name, s.namespace, []corev1.ServicePort{{
 		Name:       defaultServicePortName,
 		Port:       int32(s.cfg.MetaServicePort),
 		TargetPort: intstr.FromInt(defaultMetaServiceContainerPort),
@@ -197,8 +195,13 @@ func (s *backupper) provisionDeploymentWorkload(_ context.Context) (Interface, e
 		return nil, err
 	}
 
+	podTemplate, err := s.podTemplateFunc()
+	if err != nil {
+		return nil, err
+	}
+
 	// start workload
-	err = s.provisioner.Deployment().Start(s.location, s.podTemplateFunc)
+	err = s.provisioner.Deployment().Start(s.bl.Name, s.namespace, podTemplate)
 	if err != nil {
 		s.logger.Errorf("Failed starting backup location[%s] service with deployment workload", s.bl.Name)
 		return nil, err
@@ -219,14 +222,14 @@ func (s *backupper) removeDeploymentWorkload() error {
 	s.logger.Infof("Removing backup location[%s] service with deployment workload", s.bl.Name)
 
 	// removing workload
-	return s.provisioner.Deployment().Remove(s.location)
+	return s.provisioner.Deployment().Remove(s.bl.Name, s.namespace)
 }
 
 func (s *backupper) stopDeploymentWorkload() error {
 	s.logger.Infof("Stopping backup location[%s] service with deployment workload", s.bl.Name)
 
 	// stopping workload
-	return s.provisioner.Deployment().Stop(s.location)
+	return s.provisioner.Deployment().Stop(s.bl.Name, s.namespace)
 }
 
 func (s *backupper) parameters() map[string]string {

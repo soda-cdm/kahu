@@ -50,6 +50,9 @@ func (m *manager) GetNameByProvisioner(provisioner string) (string, error) {
 	defer m.RUnlock()
 	provider, ok := m.supportedProvisioner[provisioner]
 	if !ok {
+		if provider, ok := m.supportedProvisioner[kahuapi.SupportAllProvisioner]; ok {
+			return provider, nil
+		}
 		return "", fmt.Errorf("volume data protection provider not available "+
 			"for volume provisioner[%s]", provisioner)
 	}
@@ -60,6 +63,9 @@ func (m *manager) DefaultProvider() (string, error) {
 	m.RLock()
 	defer m.RUnlock()
 	if m.defaultProvider == "" {
+		if provider, ok := m.supportedProvisioner[kahuapi.SupportAllProvisioner]; ok {
+			return provider, nil
+		}
 		return "", fmt.Errorf("volume data protection default provider not available")
 	}
 	return m.defaultProvider, nil
@@ -69,13 +75,13 @@ func (m *manager) SyncProvider(provider *kahuapi.Provider) error {
 	m.Lock()
 	defer m.Unlock()
 	if provider.Spec.Type != kahuapi.ProviderTypeVolume ||
-		provider.Spec.SupportedVolumeProvisioner == nil {
+		provider.Spec.SupportedProvisioner == nil {
 		return nil
 	}
 
-	provisioner := *provider.Spec.SupportedVolumeProvisioner
-	_, ok := m.supportedProvisioner[provisioner]
-	if ok {
+	provisioner := *provider.Spec.SupportedProvisioner
+	current, ok := m.supportedProvisioner[provisioner]
+	if ok && current != provider.Name {
 		return fmt.Errorf("volume service already available for volume provisioner[%s]", provisioner)
 	}
 

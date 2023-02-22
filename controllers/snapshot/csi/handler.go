@@ -105,6 +105,12 @@ func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
 		VolumeSnapshots().
 		Get(context.TODO(), snapshot.Name, metav1.GetOptions{})
 	if err != nil {
+		s.logger.Errorf("Failed to get kahu Volume Snapshot(%s), %s", snapshot.Name, err)
+		return err
+	}
+
+	kahuVolSnapshot, err = s.populateCSISnapshotHandle(kahuVolSnapshot)
+	if err != nil {
 		s.logger.Errorf("Failed to update Volume Snapshot(%s) status, %s", snapshot.Name, err)
 		return err
 	}
@@ -151,9 +157,11 @@ func (s *snapshoter) applySnapshot(kahuVolSnapshotName string,
 	for i, snapshotState := range kahuVolSnapshot.Status.SnapshotStates {
 		if snapshotState.PVC.Name == pvc.Name &&
 			snapshotState.PVC.Namespace == pvc.Namespace {
-			kahuVolSnapshot.Status.SnapshotStates[i].CSISnapshot.SnapshotRef = kahuapi.ResourceReference{
-				Namespace: csiSnapshot.Namespace,
-				Name:      csiSnapshot.Name,
+			kahuVolSnapshot.Status.SnapshotStates[i].CSISnapshot = &kahuapi.CSISnapshotData{
+				SnapshotRef: kahuapi.ResourceReference{
+					Namespace: csiSnapshot.Namespace,
+					Name:      csiSnapshot.Name,
+				},
 			}
 		}
 	}
@@ -246,7 +254,7 @@ func (s *snapshoter) checkCSISnapshotStatus(csiSnapshot kahuapi.ResourceReferenc
 		return false, err
 	}
 
-	if snapshot.Status.ReadyToUse == nil {
+	if snapshot.Status == nil || snapshot.Status.ReadyToUse == nil {
 		return false, fmt.Errorf("CSI snapshot (%s) status not updated", snapshot.Name)
 	}
 
@@ -294,4 +302,38 @@ func (s *snapshoter) waitForSnapshotStatus(snapshotID string,
 			return errors.New("timed out waiting for external-snapshotting")
 		}
 	}
+}
+
+func (s *snapshoter) populateCSISnapshotHandle(kahuSnapshot *kahuapi.VolumeSnapshot) (*kahuapi.VolumeSnapshot, error) {
+	for i, kahuSnapshotState := range kahuSnapshot.Status.SnapshotStates {
+		if kahuSnapshotState.CSISnapshot == nil {
+			continue
+		}
+
+		if kahuSnapshotState.CSISnapshot.Handle != "" ||
+			kahuSnapshotState.CSISnapshot.Attribute != nil {
+			continue
+		}
+
+		csiSnapshotRef := kahuSnapshotState.CSISnapshot.SnapshotRef
+		csiSnapshot, err := s.snapshotClient.
+			VolumeSnapshots(csiSnapshotRef.Namespace).
+			Get(context.TODO(), csiSnapshotRef.Name, metav1.GetOptions{})
+		if err != nil {
+			return kahuSnapshot, err
+		}
+
+		csiSnapshotContent, err := s.snapshotClient.
+			VolumeSnapshotContents().
+			Get(context.TODO(), *csiSnapshot.Status.BoundVolumeSnapshotContentName, metav1.GetOptions{})
+		if err != nil {
+			return kahuSnapshot, err
+		}
+
+		kahuSnapshot.Status.SnapshotStates[i].CSISnapshot.Handle = *csiSnapshotContent.Status.SnapshotHandle
+	}
+
+	return s.kahuClient.KahuV1beta1().
+		VolumeSnapshots().
+		UpdateStatus(context.TODO(), kahuSnapshot, metav1.UpdateOptions{})
 }

@@ -1,0 +1,25 @@
+apiVersion: kahu.io/v1beta1
+kind: ProviderRegistration
+metadata:
+  name: restic-provider-reg
+spec:
+  version: v0.1.0
+  providerName: restic.volume.backup.kahu.io
+  providerType: VolumeBackup
+  supportedProvisioner: all
+  flags:
+  - VOLUME_BACKUP_NEED_SNAPSHOT
+  - VOLUME_BACKUP_NEED_VOLUME
+  parameters:
+    provider: test
+    version: v4.2
+  template:
+    metadata:
+      labels:
+        app: nfs-provider
+    spec:
+      containers:
+        - image: sodacdm/kahu-restic-backup-driver:v1.0.0
+          imagePullPolicy: IfNotPresent
+          name: restic-driver
+          command: ["restic-backup-driver"]

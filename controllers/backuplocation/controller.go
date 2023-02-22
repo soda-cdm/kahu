@@ -150,6 +150,17 @@ func (ctrl *controller) processQueue(key string) error {
 	}
 
 	if backupLocation.DeletionTimestamp != nil {
+		// delete backup location if Registration not available
+		_, err := ctrl.kahuClient.KahuV1beta1().ProviderRegistrations().Get(context.TODO(),
+			backupLocation.Spec.ProviderName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			_, err = ctrl.removeFinalizer(backupLocation)
+			return err
+		} else if err != nil {
+			ctrl.logger.Errorf("Unable to retrieve backup location provider registration(%s)", backupLocation.Spec.ProviderName)
+			return errors.Wrapf(err, "Unable to retrieve backup location provider registration(%s)", backupLocation.Spec.ProviderName)
+		}
+
 		err = ctrl.framework.Executors().Uninstall(ctrl.ctx, backupLocation.Name)
 		if err != nil {
 			ctrl.logger.Errorf("Failed to uninstall backup location. %s", err)
@@ -159,18 +170,8 @@ func (ctrl *controller) processQueue(key string) error {
 		// remove traces of location from volume factory
 		ctrl.volFactory.Location().RemoveLocation(backupLocation)
 
-		if utils.ContainsFinalizer(backupLocation, finalizerBackupLocationProtection) {
-			utils.RemoveFinalizer(backupLocation, finalizerBackupLocationProtection)
-			backupLocation, err = ctrl.kahuClient.KahuV1beta1().BackupLocations().Update(context.TODO(),
-				backupLocation, metav1.UpdateOptions{})
-			if err != nil {
-				ctrl.logger.Errorf("Unable to update finalizer for backup location(%s)", name)
-				return errors.Wrap(err, "Unable to update finalizer")
-			}
-			return err
-		}
-
-		return nil
+		_, err = ctrl.removeFinalizer(backupLocation)
+		return err
 	}
 
 	newObj, err := utils.StoreRevisionUpdate(ctrl.processedLocation, backupLocation, "BackupLocation")
@@ -220,7 +221,7 @@ func (ctrl *controller) processQueue(key string) error {
 
 	if provider.Spec.Type == kahuapi.ProviderTypeVolume {
 		// add into volume factory of default annotation set
-		if utils.ContainsAnnotation(backupLocation, kahuapi.AnnDefaultBackupLocation) {
+		if utils.ContainsAnnotation(backupLocation, kahuapi.AnnDefaultVolumeBackupLocation) {
 			err = ctrl.volFactory.Location().SetDefaultLocation(backupLocation)
 			if err != nil {
 				ctrl.logger.Warningf("Unable to set default backup location. %s", err)
@@ -233,4 +234,19 @@ func (ctrl *controller) processQueue(key string) error {
 
 func getProviderName(bl *kahuapi.BackupLocation) string {
 	return bl.Spec.ProviderName
+}
+
+func (ctrl *controller) removeFinalizer(backupLocation *kahuapi.BackupLocation) (*kahuapi.BackupLocation, error) {
+	if utils.ContainsFinalizer(backupLocation, finalizerBackupLocationProtection) {
+		utils.RemoveFinalizer(backupLocation, finalizerBackupLocationProtection)
+		backupLocation, err := ctrl.kahuClient.KahuV1beta1().BackupLocations().Update(context.TODO(),
+			backupLocation, metav1.UpdateOptions{})
+		if err != nil {
+			ctrl.logger.Errorf("Unable to update finalizer for backup location(%s)", backupLocation.Name)
+			return backupLocation, errors.Wrap(err, "Unable to update finalizer")
+		}
+		return backupLocation, err
+	}
+
+	return backupLocation, nil
 }

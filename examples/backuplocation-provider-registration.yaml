@@ -4,7 +4,7 @@ metadata:
   name: nfs-provider-reg
 spec:
   version: v0.1.0
-  providerName: nfs-provider
+  providerName: nfs-provider.meta.backup.kahu.io
   parameters:
     provider: nfs
     nfs-version: v4.2

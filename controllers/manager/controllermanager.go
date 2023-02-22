@@ -82,7 +82,18 @@ func NewControllerManager(ctx context.Context,
 		return nil, err
 	}
 
-	volumeFactory, err := volume.NewVolumeHandler(ctx, clientFactory)
+	frmwork, err := frameworkmanager.NewFramework(ctx,
+		completeConfig.FrameworkConfig,
+		completeConfig.KubeClient,
+		completeConfig.KahuClient.KahuV1beta1(),
+		completeConfig.DynamicClient,
+		completeConfig.DiscoveryHelper,
+		completeConfig.EventBroadcaster)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeFactory, err := volume.NewVolumeHandler(ctx, clientFactory, frmwork)
 	if err != nil {
 		return nil, err
 	}
@@ -106,17 +117,6 @@ func NewControllerManager(ctx context.Context,
 	ctrlRuntimeManager, err := controllerruntime.NewManager(clientConfig, controllerruntime.Options{
 		Scheme: scheme,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	frmwork, err := frameworkmanager.NewFramework(ctx,
-		completeConfig.FrameworkConfig,
-		completeConfig.KubeClient,
-		completeConfig.KahuClient.KahuV1beta1(),
-		completeConfig.DynamicClient,
-		completeConfig.DiscoveryHelper,
-		completeConfig.EventBroadcaster)
 	if err != nil {
 		return nil, err
 	}

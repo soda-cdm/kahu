@@ -21,13 +21,22 @@ VOLUME_SERVICE_PROTO := proto/volumeservice.proto
 VOLUME_SERVICE_GO := volumeservice.pb.go
 VOLUME_SERVICE_GO_TMP := proto/$(VOLUME_SERVICE_GO)
 VOLUME_SERVICE_INTERFACE := $(shell pwd)/lib/go/$(VOLUME_SERVICE_GO)
+GOPATH :=$(shell pwd)/../..
 
 # This recipe generates the go language bindings to a temp area.
 $(VOLUME_SERVICE_INTERFACE): HERE := $(shell pwd)
 $(VOLUME_SERVICE_INTERFACE): GO_OUT := plugins=grpc
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mgoogle/protobuf/descriptor.proto=github.com/golang/protobuf/protoc-gen-go/descriptor
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/api/core/v1/generated.proto=k8s.io/api/core/v1
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/api/resource/generated.proto=k8s.io/apimachinery/pkg/api/resource
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/runtime/generated.proto=k8s.io/apimachinery/pkg/runtime
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/runtime/schema/generated.proto=k8s.io/apimachinery/pkg/runtime/schema
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/apis/meta/v1/generated.proto=k8s.io/apimachinery/pkg/apis/meta/v1
+$(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr
 $(VOLUME_SERVICE_INTERFACE): GO_OUT := $(GO_OUT):"$(HERE)"
+$(VOLUME_SERVICE_INTERFACE): INCLUDE := -I$(GOPATH)/vendor:$(shell pwd)
 $(VOLUME_SERVICE_INTERFACE): $(VOLUME_SERVICE_PROTO)
-	($(PROTOC) --go_out=$(GO_OUT) --plugin=protoc-gen-go=$(PROTOC_GEN_GO) $(VOLUME_SERVICE_PROTO))
+	($(PROTOC) $(INCLUDE) --go_out=$(GO_OUT) --plugin=protoc-gen-go=$(PROTOC_GEN_GO) $(VOLUME_SERVICE_PROTO))
 
 $(VOLUME_SERVICE_GO): $(VOLUME_SERVICE_INTERFACE)
 

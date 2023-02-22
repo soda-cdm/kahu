@@ -1,0 +1,11 @@
+apiVersion: kahu.io/v1beta1
+kind: BackupLocation
+metadata:
+   name: restic
+spec:
+   providerName: restic.volume.backup.kahu.io
+   location:
+     path: "/data"
+     sourceRef:
+       kind: PersistentVolumeClaim
+       name: nfs

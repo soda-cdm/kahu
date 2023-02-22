@@ -21,13 +21,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-type podTemplateFunc func() (*corev1.PodTemplateSpec, error)
-
 type Interface interface {
-	Start(index string, templateFunc podTemplateFunc) error
-	Stop(index string) error
-	AddService(index string, servicePorts []corev1.ServicePort) (k8sresource.ResourceReference, error)
-	Remove(index string) error
+	Start(workloadIndex string, namespace string, podTemplate *corev1.PodTemplateSpec) error
+	Stop(workloadIndex string, namespace string) error
+	AddService(workloadIndex string, namespace string, servicePorts []corev1.ServicePort) (k8sresource.ResourceReference, error)
+	Remove(workloadIndex string, namespace string) error
 }
 
 type Factory interface {

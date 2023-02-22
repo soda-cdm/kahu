@@ -19,10 +19,11 @@ package executor
 import (
 	"context"
 	"fmt"
+	"time"
+
 	kahuscheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -152,9 +153,9 @@ func (exec *executor) Install(ctx context.Context, location string) error {
 
 	switch provider.Spec.Type {
 	case kahuapi.ProviderTypeMetadata:
-		return exec.installResourceBackupper(ctx, location, bl, provider, registration)
+		return exec.installResourceBackupper(ctx, bl, provider, registration)
 	case kahuapi.ProviderTypeVolume:
-		return exec.installVolumeBackupper(ctx, location, bl, provider, registration)
+		return exec.installVolumeBackupper(ctx, bl, provider, registration)
 	default:
 		return fmt.Errorf("invalid provider %s", provider.Spec.Type)
 	}
@@ -181,7 +182,7 @@ func (exec *executor) Uninstall(ctx context.Context, location string) error {
 	case kahuapi.ProviderTypeMetadata:
 		return exec.uninstallResourceBackupper(location)
 	case kahuapi.ProviderTypeVolume:
-		return exec.uninstallVolumeBackupper(location)
+		return exec.uninstallVolumeBackupper(ctx, location)
 	default:
 		return fmt.Errorf("invalid provider %s", provider.Spec.Type)
 	}
@@ -191,6 +192,10 @@ func (exec *executor) Uninstall(ctx context.Context, location string) error {
 func (exec *executor) sync(_ context.Context) {
 	exec.logger.Info("Started soft reconciliation of executors")
 	for _, service := range exec.rsCollection.List() {
+		go service.Sync()
+	}
+
+	for _, service := range exec.volCollection.List() {
 		go service.Sync()
 	}
 }
@@ -208,19 +213,19 @@ func (exec *executor) exist(location *kahuapi.BackupLocation, provider *kahuapi.
 }
 
 func (exec *executor) installResourceBackupper(ctx context.Context,
-	location string,
 	bl *kahuapi.BackupLocation,
 	provider *kahuapi.Provider,
 	registration *kahuapi.ProviderRegistration) error {
 	service := resourcebackup.NewResourceBackupService(ctx,
 		exec.cfg.ResourceBackup,
 		exec.cfg.Namespace,
-		location,
 		bl,
 		provider,
 		registration,
 		exec.kubeClient,
 		exec.kahuClient)
+
+	location := bl.Name
 
 	exec.logger.Infof("Starting resource store [%s]", location)
 	backupStore, err := service.Start(exec.ctx)
@@ -269,54 +274,45 @@ func (exec *executor) uninstallResourceBackupper(location string) error {
 }
 
 func (exec *executor) installVolumeBackupper(ctx context.Context,
-	location string,
 	bl *kahuapi.BackupLocation,
 	provider *kahuapi.Provider,
 	registration *kahuapi.ProviderRegistration) error {
-	service := volumebackup.NewVolumeBackupService(ctx,
+	service := volumebackup.NewService(
+		ctx,
 		exec.cfg.VolumeBackup,
 		exec.cfg.Namespace,
-		location,
 		bl,
 		provider,
 		registration,
-		exec.kubeClient,
 		exec.kahuClient,
+		exec.kubeClient,
 		exec.eventRecorder,
 	)
 
-	exec.logger.Infof("Starting volume service [%s]", location)
-	backupStore, err := service.Start(exec.ctx)
-	if err != nil {
-		return err
-	}
-	defer service.Done()
-	exec.logger.Infof("Starting volume service [%s] success", location)
-
 	ctx, cancel := context.WithTimeout(exec.ctx, 30*time.Second)
 	defer cancel()
-	exec.logger.Infof("Starting resource store [%s] probe", location)
-	err = backupStore.Probe(ctx)
+	exec.logger.Infof("Starting resource store [%s] probe", bl.Name)
+	err := service.Probe(ctx)
 	if err != nil {
 		exec.logger.Errorf("Failed to probe service. %s", err)
 		return err
 	}
-	exec.logger.Infof("Resource store [%s] probe success", location)
+	exec.logger.Infof("Resource store [%s] probe success", bl.Name)
 
-	err = exec.volCollection.Add(location, service)
+	err = exec.volCollection.Add(bl.Name, service)
 	if err != nil {
 		exec.logger.Errorf("Failed to add service in service store. %s", err)
 	}
 	return err
 }
 
-func (exec *executor) uninstallVolumeBackupper(location string) error {
+func (exec *executor) uninstallVolumeBackupper(ctx context.Context, location string) error {
 	service, ok := exec.volCollection.Get(location)
 	if !ok {
 		return nil
 	}
 
-	err := service.Remove()
+	err := service.Cleanup(ctx)
 	if err != nil {
 		exec.logger.Errorf("Unable to remove meta service for backup location[%s]. %s", location, err)
 		return err

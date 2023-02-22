@@ -19,18 +19,24 @@ package volumebackup
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
+	"sync"
+	"time"
+
 	log "github.com/sirupsen/logrus"
-	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/framework/executor/provisioner"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/clock"
-	"strconv"
-	"sync"
-	"time"
+
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuv1client "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
+	"github.com/soda-cdm/kahu/framework/executor/provisioner"
+	volumeservice "github.com/soda-cdm/kahu/providerframework/volumeservice/lib/go"
+	"github.com/soda-cdm/kahu/utils/k8sresource"
 )
 
 type Config struct {
@@ -44,7 +50,6 @@ type backupper struct {
 
 	cfg           Config
 	logger        log.FieldLogger
-	location      string
 	bl            *kahuapi.BackupLocation
 	provider      *kahuapi.Provider
 	providerReg   *kahuapi.ProviderRegistration
@@ -54,30 +59,53 @@ type backupper struct {
 	eventRecorder record.EventRecorder
 }
 
-func NewVolumeBackupService(ctx context.Context,
+type volumeServiceClient struct {
+	volumeservice.VolumeServiceClient
+	grpcConn *grpc.ClientConn
+}
+
+func newVolumeServiceProvisioner(
+	ctx context.Context,
 	cfg Config,
-	namespace string,
-	location string,
 	backupLocation *kahuapi.BackupLocation,
 	provider *kahuapi.Provider,
 	providerReg *kahuapi.ProviderRegistration,
 	kubeClient kubernetes.Interface,
 	kahuClient kahuv1client.KahuV1beta1Interface,
-	eventRecorder record.EventRecorder) Service {
+	eventRecorder record.EventRecorder) volumeServiceProvisioner {
 	// initialize event recorder
 
 	return &backupper{
 		cfg:           cfg,
 		logger:        log.WithField("module", "volume-backup"),
-		location:      location,
 		kubeClient:    kubeClient,
 		kahuClient:    kahuClient,
 		bl:            backupLocation,
 		provider:      provider,
 		providerReg:   providerReg,
-		provisioner:   provisioner.NewProvisionerFactory(ctx, namespace, kubeClient),
+		provisioner:   provisioner.NewProvisionerFactory(ctx, kubeClient),
 		eventRecorder: eventRecorder,
 	}
+}
+
+func newVolumeService(grpcConn *grpc.ClientConn) volumeService {
+	return &volumeServiceClient{
+		VolumeServiceClient: volumeservice.NewVolumeServiceClient(grpcConn),
+		grpcConn:            grpcConn,
+	}
+}
+
+func newGrpcConnection(target string) (*grpc.ClientConn, error) {
+	return newLoadBalanceDial(target, grpc.WithInsecure())
+}
+
+func newLoadBalanceDial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	opts = append(opts, grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
+	return grpc.Dial(target, opts...)
+}
+
+func (cli *volumeServiceClient) close() error {
+	return cli.grpcConn.Close()
 }
 
 func (s *backupper) incCount() {
@@ -98,7 +126,7 @@ func (s *backupper) counterZero() bool {
 	return s.counter == 0
 }
 
-func (s *backupper) Start(ctx context.Context) (Interface, error) {
+func (s *backupper) Start(ctx context.Context, callback podTemplateCallback) (volumeService, error) {
 	s.logger.Infof("Starting service for backup location[%s]", s.bl.Name)
 	if s.legacy() {
 		return s.legacyService()
@@ -107,7 +135,7 @@ func (s *backupper) Start(ctx context.Context) (Interface, error) {
 	workloadType := getWorkloadType(s.providerReg)
 	switch workloadType {
 	case kahuapi.DeploymentWorkloadKind:
-		service, err := s.provisionDeploymentWorkload(ctx)
+		service, err := s.provisionDeploymentWorkload(ctx, callback)
 		if err != nil {
 			return service, err
 		}
@@ -126,14 +154,13 @@ func (s *backupper) Done() {
 	}
 
 	s.decCount()
-	return
 }
 
 func (s *backupper) Sync() {
 	if !s.counterZero() {
 		return
 	}
-	s.logger.Infof("Stopping resource backupper for %s ", s.location)
+	s.logger.Infof("Stopping resource backupper for %s ", s.bl.Name)
 	s.stop()
 }
 
@@ -185,15 +212,34 @@ func getWorkloadType(providerReg *kahuapi.ProviderRegistration) kahuapi.Workload
 	return providerReg.Spec.Lifecycle.Kind
 }
 
+func serviceTarget(svcResource k8sresource.ResourceReference, port string) string {
+	target := svcResource.Name + "." + svcResource.Namespace
+	if net.ParseIP(target) == nil {
+		// if not IP, try dns
+		target = "dns:///" + target
+	}
+
+	return target + ":" + port
+}
+
 func (s *backupper) legacy() bool {
 	return s.providerReg == nil
 }
 
-func (s *backupper) provisionDeploymentWorkload(_ context.Context) (Interface, error) {
+func (s *backupper) provisionDeploymentWorkload(_ context.Context, callback podTemplateCallback) (volumeService, error) {
 	s.logger.Infof("Starting backup location[%s] service with deployment workload", s.bl.Name)
+	podTemplate, err := s.podTemplateFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	// callback
+	callback(podTemplate)
+
+	s.logger.Infof("Starting workload with pod template[%+v]", *podTemplate)
 
 	// add service
-	k8sService, err := s.provisioner.Deployment().AddService(s.location, []corev1.ServicePort{{
+	k8sService, err := s.provisioner.Deployment().AddService(podTemplate.Name, podTemplate.Namespace, []corev1.ServicePort{{
 		Name:       defaultServicePortName,
 		Port:       int32(s.cfg.VolumeServicePort),
 		TargetPort: intstr.FromInt(defaultContainerPort),
@@ -204,7 +250,7 @@ func (s *backupper) provisionDeploymentWorkload(_ context.Context) (Interface, e
 	}
 
 	// start workload
-	err = s.provisioner.Deployment().Start(s.location, s.podTemplateFunc)
+	err = s.provisioner.Deployment().Start(podTemplate.Name, podTemplate.Namespace, podTemplate)
 	if err != nil {
 		s.logger.Errorf("Failed starting backup location[%s] service with deployment workload", s.bl.Name)
 		return nil, err
@@ -218,39 +264,39 @@ func (s *backupper) provisionDeploymentWorkload(_ context.Context) (Interface, e
 		return nil, err
 	}
 
-	return newService(s.parameters(), grpcConn, s.kahuClient, s.eventRecorder), nil
+	return newVolumeService(grpcConn), nil
 }
 
 func (s *backupper) removeDeploymentWorkload() error {
 	s.logger.Infof("Removing backup location[%s] service with deployment workload", s.bl.Name)
 
 	// removing workload
-	return s.provisioner.Deployment().Remove(s.location)
+	return s.provisioner.Deployment().Remove(s.bl.Name, s.bl.Namespace)
 }
 
 func (s *backupper) stopDeploymentWorkload() error {
 	s.logger.Infof("Stopping backup location[%s] service with deployment workload", s.bl.Name)
 
 	// stopping workload
-	return s.provisioner.Deployment().Stop(s.location)
+	return s.provisioner.Deployment().Stop(s.bl.Name, s.bl.Namespace)
 }
 
-func (s *backupper) parameters() map[string]string {
-	param := make(map[string]string)
+// func (s *backupper) parameters() map[string]string {
+// 	param := make(map[string]string)
 
-	for key, value := range s.bl.Spec.Config {
-		param[key] = value
-	}
+// 	for key, value := range s.bl.Spec.Config {
+// 		param[key] = value
+// 	}
 
-	for key, value := range s.provider.Spec.Manifest {
-		param[key] = value
-	}
+// 	for key, value := range s.provider.Spec.Manifest {
+// 		param[key] = value
+// 	}
 
-	return param
-}
+// 	return param
+// }
 
-func (s *backupper) legacyService() (Interface, error) {
-	return NewEmptyVolumeBackupService(), nil
+func (s *backupper) legacyService() (volumeService, error) {
+	return nil, nil
 }
 
 func (s *backupper) podTemplateFunc() (*corev1.PodTemplateSpec, error) {
@@ -268,7 +314,7 @@ func (s *backupper) podTemplateFunc() (*corev1.PodTemplateSpec, error) {
 }
 
 func (s *backupper) podTemplate() *corev1.PodTemplateSpec {
-	return s.providerReg.Spec.Template
+	return s.providerReg.Spec.Template.DeepCopy()
 }
 
 func (s *backupper) injectSidecar(template *corev1.PodTemplateSpec) {
@@ -325,6 +371,15 @@ func (s *backupper) injectBackupLocationVolume(bl *kahuapi.BackupLocation,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: *bl.Spec.Location.SourceRef.Name,
+				},
+			},
+		})
+	case kahuapi.SecretLocationSupport:
+		template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
+			Name: *bl.Spec.Location.SourceRef.Name,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: *bl.Spec.Location.SourceRef.Name,
 				},
 			},
 		})

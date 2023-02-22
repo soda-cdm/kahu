@@ -1,6 +1,6 @@
 module github.com/soda-cdm/kahu
 
-go 1.17
+go 1.19
 
 require (
 	github.com/evanphx/json-patch v4.12.0+incompatible

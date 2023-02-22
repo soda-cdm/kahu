@@ -79,7 +79,13 @@ build_provider_service_grpc: $(PROTOC) $(PROTOC_GEN_GO)
 
 grpc_interfaces: build_meta_service_grpc build_volume_service_grpc build_provider_service_grpc
 
-generated_files: grpc_interfaces
+import_dependencies:
+	go mod vendor
+
+remove_dependencies:
+	rm -rf $(HERE)/vendor
+
+generated_files: import_dependencies grpc_interfaces remove_dependencies
 
 .PHONY: clean
 clean:

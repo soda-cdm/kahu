@@ -17,7 +17,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -30,7 +29,7 @@ type VolumeBackupContentSpec struct {
 	// Volume represents kubernetes volume to be backed up
 	// +optional
 	// +nullable
-	Volumes []v1.PersistentVolume `json:"volumes,omitempty"`
+	// Volumes []v1.PersistentVolume `json:"volumes,omitempty"`
 
 	// Volume provider for set of volumes
 	VolumeProvider *string `json:"volumeProvider,omitempty"`
@@ -43,8 +42,9 @@ type VolumeBackupContentSpec struct {
 }
 
 type BackupVolumeReference struct {
-	Volume   ResourceReference `json:"volume,omitempty"`
-	Snapshot *SnapshotData     `json:"snapshot,omitempty"`
+	Volume      ResourceReference `json:"volume,omitempty"`
+	CSISnapshot *CSISnapshotData  `json:"csiSnapshot,omitempty"`
+	Snapshot    *SnapshotData     `json:"snapshot,omitempty"`
 }
 
 type SnapshotData struct {
@@ -53,8 +53,7 @@ type SnapshotData struct {
 }
 
 type BackupSource struct {
-	VolumeRef   []BackupVolumeReference `json:"volumeRef,omitempty"`
-	VolumeMount []Mount                 `json:"volumeMount,omitempty"`
+	VolumeRef []BackupVolumeReference `json:"volumeRef,omitempty"`
 }
 
 type Mount struct {

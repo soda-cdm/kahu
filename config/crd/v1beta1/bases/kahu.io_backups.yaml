@@ -22,9 +22,6 @@ spec:
     - jsonPath: .spec.metadataLocation
       name: MetadataLocation
       type: string
-    - jsonPath: .spec.volumeBackupLocations
-      name: VolumeBackupLocations
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

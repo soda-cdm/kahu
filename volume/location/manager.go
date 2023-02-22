@@ -47,7 +47,7 @@ func (m *manager) GetDefaultLocation(provider string) (string, error) {
 	defer m.RUnlock()
 	location, ok := m.defaultLocation[provider]
 	if !ok {
-		return "", fmt.Errorf("default backup locatio not available for provider[%s]", provider)
+		return "", fmt.Errorf("default backup location not available for provider[%s]", provider)
 	}
 	return location, nil
 }

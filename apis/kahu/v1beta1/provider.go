@@ -31,10 +31,12 @@ const (
 
 	// ProviderStateUnavailable means the provider is unavailable for use
 	ProviderStateUnavailable ProviderState = "Unavailable"
+
+	SupportAllProvisioner = "all"
 )
 
 const (
-	AnnDefaultVolumeProvider = "kahu.io/defaultVolumeProvider"
+	AnnDefaultVolumeProvider = "kahu.io/is-default-volume-backup-provider"
 )
 
 // ProviderType is the type of Provider.
@@ -69,10 +71,10 @@ type ProviderSpec struct {
 
 	// Capabilities is the optional set of provider capabilities
 	// +optional
-	Capabilities []string `json:"capabilities,omitempty"`
+	Flags []Support `json:"flags,omitempty"`
 
 	// +optional
-	SupportedVolumeProvisioner *string `json:"supportedVolumeProvisioner,omitempty"`
+	SupportedProvisioner *string `json:"supportedProvisioner,omitempty"`
 }
 
 // ProviderStatus defines the observed state of Provider

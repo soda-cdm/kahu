@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/soda-cdm/kahu/client"
+	"github.com/soda-cdm/kahu/framework"
 	"github.com/soda-cdm/kahu/volume/group"
 )
 
@@ -33,7 +34,7 @@ type factory struct {
 	dynamicClient dynamic.Interface
 }
 
-func NewFactory(clientFactory client.Factory) (Factory, error) {
+func NewFactory(clientFactory client.Factory, _ framework.Interface) (Factory, error) {
 	kubeClient, err := clientFactory.KubeClient()
 	if err != nil {
 		return nil, err

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
@@ -32,7 +33,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	jsonpatch "github.com/evanphx/json-patch"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
 	kahuscheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
@@ -161,16 +161,16 @@ func (ctrl *controller) processQueue(key string) error {
 	}
 
 	if provider.Spec.Type == kahuapi.ProviderTypeVolume {
-		if provider.Spec.SupportedVolumeProvisioner == nil &&
-			provider.Status.State == kahuapi.ProviderStateAvailable {
+		if provider.Spec.SupportedProvisioner == nil {
 			provider.Status.State = kahuapi.ProviderStateUnavailable
 			provider.Status.Message = "Supported volume provisioner is not available"
+			ctrl.logger.Errorf("Provider regitration[%s] has empty volume provisioner support", provider.Name)
 			_, err = ctrl.providerClient.UpdateStatus(context.TODO(), provider, metav1.UpdateOptions{})
 			if err != nil {
 				ctrl.logger.Errorf("Unable to mark provider[%s] unavailable", name)
 				return err
 			}
-			return fmt.Errorf("supported volume provisioner is not available for provider[%s]", name)
+			return nil
 		}
 
 		clone, err := ctrl.handleVolumeServiceProvider(provider)
@@ -180,12 +180,13 @@ func (ctrl *controller) processQueue(key string) error {
 			}
 			provider.Status.State = kahuapi.ProviderStateUnavailable
 			provider.Status.Message = err.Error()
+			ctrl.logger.Errorf("Provider regitration[%s] failed. %s", provider.Name, err)
 			_, err := ctrl.providerClient.UpdateStatus(context.TODO(), provider, metav1.UpdateOptions{})
 			if err != nil {
 				ctrl.logger.Errorf("Unable to mark provider[%s] unavailable", name)
 				return err
 			}
-			return fmt.Errorf(provider.Status.Message)
+			return nil
 		}
 		provider = clone
 	}

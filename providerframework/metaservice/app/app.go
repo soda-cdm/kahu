@@ -25,14 +25,15 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
+
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	"github.com/soda-cdm/kahu/providerframework/metaservice/server"
 	"github.com/soda-cdm/kahu/utils"
 	logOptions "github.com/soda-cdm/kahu/utils/logoptions"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -144,7 +145,7 @@ func Run(ctx context.Context, serviceOptions options.MetaServiceOptions) error {
 	}
 
 	// initialize backup repository
-	grpcConn, err := backupRepoConnection(serviceOptions.BackupDriverAddress)
+	grpcConn, err := backupRepoConnection(serviceOptions.DriverSocketDir)
 	if err != nil {
 		return err
 	}
@@ -175,19 +176,30 @@ func cleanup(server *grpc.Server, repoClient *grpc.ClientConn) error {
 	return nil
 }
 
-func backupRepoConnection(backupRepositoryAddress string) (*grpc.ClientConn, error) {
+func backupRepoConnection(driverSockerDir string) (*grpc.ClientConn, error) {
+	socketFile, err := utils.FindUnixSocket(driverSockerDir)
+	if err != nil {
+		return nil, err
+	}
+	if socketFile == "" {
+		return nil, fmt.Errorf("driver unix socker not available")
+	}
+
+	// socketPath := filepath.Join(driverSockerDir, socketFile)
+
 	unixPrefix := "unix://"
-	if strings.HasPrefix(backupRepositoryAddress, "/") {
+	if strings.HasPrefix(socketFile, "/") {
 		// It looks like filesystem path.
-		backupRepositoryAddress = unixPrefix + backupRepositoryAddress
+		socketFile = unixPrefix + socketFile
 	}
 
-	if !strings.HasPrefix(backupRepositoryAddress, unixPrefix) {
-		return nil, fmt.Errorf("invalid unix domain path [%s]",
-			backupRepositoryAddress)
+	if !strings.HasPrefix(socketFile, unixPrefix) {
+		return nil, fmt.Errorf("invalid unix domain path [%s]", socketFile)
 	}
 
-	grpcConnection, err := grpc.Dial(backupRepositoryAddress, grpc.WithInsecure(),
+	log.Printf("Driver socket [%s]", socketFile)
+
+	grpcConnection, err := grpc.Dial(socketFile, grpc.WithInsecure(),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig": [{"round_robin":{}}]}`))
 	if err != nil {
 		return nil, err

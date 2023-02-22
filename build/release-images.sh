@@ -20,6 +20,15 @@ set -o pipefail
 
 # The root of the build/dist directory
 KAHU_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+# copy and add restic binary in bin dir
+RESTIC_BIN_DIR=${KAHU_ROOT}/_output/bin
+if [ ! -f ${RESTIC_BIN_DIR}/restic ];then
+    curl -L https://github.com/restic/restic/releases/download/v0.15.2/restic_0.15.2_linux_amd64.bz2 -o ${RESTIC_BIN_DIR}/restic.bz2
+    bzip2 -df ${RESTIC_BIN_DIR}/restic.bz2
+    chmod u+x ${RESTIC_BIN_DIR}/restic
+fi
+
 source "${KAHU_ROOT}/build/lib/golang.sh"
 source "${KAHU_ROOT}/build/lib/release.sh"
 

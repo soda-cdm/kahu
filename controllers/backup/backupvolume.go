@@ -18,6 +18,7 @@ package backup
 
 import (
 	"fmt"
+
 	"github.com/pkg/errors"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/framework/executor/resourcebackup"
@@ -25,17 +26,17 @@ import (
 	"github.com/soda-cdm/kahu/volume/group"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup,
-	pvResources []k8sresource.Resource,
+	pvcResources []k8sresource.Resource,
 	bl resourcebackup.Interface) (*kahuapi.Backup, error) {
 	ctrl.logger.Infof("Processing Volume backup(%s)", backup.Name)
-	if len(pvResources) == 0 {
+	if len(pvcResources) == 0 {
 		// set annotation for
 		return backup, nil
 	}
+
 	//get all snapshot under the backup
 	snapshots, err := ctrl.volumeHandler.Snapshot().GetSnapshotsByBackup(backup.Name)
 	if err != nil {
@@ -44,43 +45,94 @@ func (ctrl *controller) processVolumeBackup(backup *kahuapi.Backup,
 
 	backup, snapshotVolumes, err := ctrl.backupSnapshotVolumes(backup, snapshots, bl)
 	if err != nil {
-		return backup, nil
+		return backup, err
 	}
 
 	// filter snapshot volumes and backup rest of volumes
 	if len(snapshotVolumes) > 0 {
 		filteredPV := make([]k8sresource.Resource, 0)
-		for _, pvResource := range pvResources {
-			if snapshotVolumes.Has(pvResource.GetName()) {
+		for _, pvcResource := range pvcResources {
+			if has(snapshotVolumes, pvcResource) {
 				continue
 			}
-			filteredPV = append(filteredPV, pvResource)
+			filteredPV = append(filteredPV, pvcResource)
 		}
-		pvResources = filteredPV
+		pvcResources = filteredPV
 	}
 
-	return ctrl.backupVolumes(backup, pvResources, bl)
+	pvcs, err := ctrl.getVolumes(backup, pvcResources)
+	if err != nil {
+		return backup, err
+	}
+
+	return ctrl.backupVolumes(backup, pvcs, bl)
+}
+
+func has(snapshotVols []kahuapi.ResourceReference, resource k8sresource.Resource) bool {
+	for _, vol := range snapshotVols {
+		if vol.Name == resource.GetName() && vol.Namespace == resource.GetNamespace() {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (ctrl *controller) backupSnapshotVolumes(backup *kahuapi.Backup,
-	snapshots []*kahuapi.VolumeSnapshot,
-	bl resourcebackup.Interface) (*kahuapi.Backup, sets.String, error) {
+	snapshots []kahuapi.VolumeSnapshot,
+	bl resourcebackup.Interface) (*kahuapi.Backup, []kahuapi.ResourceReference, error) {
 	ctrl.logger.Infof("Backup snapshot volume for backup[%s]", backup.Name)
 	if len(snapshots) == 0 {
 		return backup, nil, nil
 	}
 
 	// create groups based on snapshot and non snapshot volumes
-	_, err := ctrl.volumeHandler.Group().BySnapshot(snapshots, group.WithProvider())
+	snapshotGroups, err := ctrl.volumeHandler.Group().BySnapshot(snapshots, group.WithProvisioner())
 	if err != nil {
 		return backup, nil, err
 	}
 
-	return backup, nil, nil
+	var blName string
+	volumes := make([]kahuapi.ResourceReference, 0)
+	for _, snapshotGroup := range snapshotGroups {
+		backup, blName, err = ctrl.decideVolumeBackupLocation(backup, snapshotGroup.GetProvisionerName())
+		if err != nil {
+			return backup, volumes, err
+		}
+
+		vbc, err := ctrl.volumeHandler.Backup().BySnapshots(backup.Name, snapshotGroup, blName)
+		if err != nil {
+			return backup, volumes, err
+		}
+
+		// backup PVC meta
+		err = bl.UploadK8SResource(ctrl.ctx, backup.Name, snapshotGroup.GetResources())
+		if err != nil {
+			return nil, volumes, err
+		}
+
+		// backup vbc
+		vbcResource, err := k8sresource.ToResource(vbc)
+		if err != nil {
+			return backup, volumes, err
+		}
+		err = bl.UploadK8SResource(ctrl.ctx, backup.Name, []k8sresource.Resource{
+			vbcResource,
+		})
+		if err != nil {
+			return nil, volumes, err
+		}
+	}
+
+	for _, snapshot := range snapshots {
+		volumes = append(volumes, snapshot.Spec.List...)
+	}
+
+	return backup, volumes, nil
 }
 
 func (ctrl *controller) backupVolumes(backup *kahuapi.Backup,
-	volumes []k8sresource.Resource,
+	volumes []*corev1.PersistentVolumeClaim,
 	bl resourcebackup.Interface) (*kahuapi.Backup, error) {
 	ctrl.logger.Infof("Volume backup (%s) started", backup.Name)
 	if len(volumes) == 0 {
@@ -88,7 +140,7 @@ func (ctrl *controller) backupVolumes(backup *kahuapi.Backup,
 	}
 
 	// create groups based on snapshot and non snapshot volumes
-	volumeGroups, err := ctrl.volumeHandler.Group().ByPV(volumes, group.WithProvider())
+	volumeGroups, err := ctrl.volumeHandler.Group().ByPVC(volumes, group.WithProvisioner())
 	if err != nil {
 		return backup, err
 	}
@@ -100,7 +152,7 @@ func (ctrl *controller) backupVolumes(backup *kahuapi.Backup,
 			return backup, err
 		}
 
-		vbc, err := ctrl.volFactory.Backup().ByVolumes(backup.Name, volumeGroup, blName)
+		vbc, err := ctrl.volumeHandler.Backup().ByPVC(backup.Name, volumeGroup, blName)
 		if err != nil {
 			return backup, err
 		}
@@ -242,7 +294,7 @@ func (ctrl *controller) getVolumes(
 	backup *kahuapi.Backup,
 	resources []k8sresource.Resource) ([]*corev1.PersistentVolumeClaim, error) {
 	// retrieve all persistent volumes for backup
-	ctrl.logger.Infof("Getting PersistentVolume for backup(%s)", backup.Name)
+	ctrl.logger.Infof("Getting PersistentVolumeClaim for backup(%s)", backup.Name)
 	pvcs := make([]*corev1.PersistentVolumeClaim, 0)
 	for _, resource := range resources {
 		pvc := new(corev1.PersistentVolumeClaim)
@@ -254,7 +306,6 @@ func (ctrl *controller) getVolumes(
 		}
 
 		pvcs = append(pvcs, pvc)
-
 	}
 
 	return pvcs, nil
