@@ -19,9 +19,10 @@ package backup
 import (
 	"context"
 	"fmt"
-	"github.com/soda-cdm/kahu/volume"
 	"regexp"
 	"strings"
+
+	"github.com/soda-cdm/kahu/volume"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -243,8 +244,9 @@ func (ctrl *controller) ensureSupportedResourceList(backup *kahuapi.Backup) (*ka
 
 func (ctrl *controller) deleteBackup(backup *kahuapi.Backup) error {
 	ctrl.logger.Infof("Initiating backup(%s) delete", backup.Name)
-
-	err := ctrl.removeVolumeBackup(backup)
+	backupResources := NewBackupResources(ctrl.logger,
+		ctrl.dynamicClient, ctrl.kubeClient, ctrl.discoveryHelper, ctrl)
+	err := ctrl.removeVolumeBackup(backup, backupResources)
 	if err != nil {
 		ctrl.logger.Errorf("Unable to delete volume backup. %s", err)
 		return err

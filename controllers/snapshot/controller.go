@@ -18,15 +18,18 @@ package snapshot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -46,9 +49,10 @@ import (
 )
 
 const (
-	controllerName        = "snapshot-controller"
-	defaultReSyncTimeLoop = 30 * time.Minute
-	annSnapshotVolumeSync = "kahu.io/snapshot-volume-sync"
+	controllerName          = "snapshot-controller"
+	defaultReSyncTimeLoop   = 30 * time.Minute
+	annSnapshotVolumeSync   = "kahu.io/snapshot-volume-sync"
+	volumeSnapshotFinalizer = "kahu.io/volume-snapshot-done"
 )
 
 type controller struct {
@@ -146,6 +150,39 @@ func (ctrl *controller) reSync() {
 	}
 }
 
+func (ctrl *controller) patchSnapshot(oldSnapshot, updatedSnapshot *kahuapi.VolumeSnapshot) (*kahuapi.VolumeSnapshot, error) {
+	origBytes, err := json.Marshal(oldSnapshot)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling original backup")
+	}
+
+	updatedBytes, err := json.Marshal(updatedSnapshot)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling updated backup")
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating json merge patch for backup")
+	}
+
+	newSnapshot, err := ctrl.kahuClient.KahuV1beta1().VolumeSnapshots().Patch(context.TODO(),
+		oldSnapshot.Name,
+		types.MergePatchType,
+		patchBytes,
+		metav1.PatchOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "error patching backup")
+	}
+
+	_, err = utils.StoreRevisionUpdate(ctrl.processedSnapshot, newSnapshot, "Restore")
+	if err != nil {
+		return newSnapshot, errors.Wrap(err, "Failed to updated processed restore cache")
+	}
+
+	return newSnapshot, nil
+}
+
 func (ctrl *controller) processQueue(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -164,15 +201,7 @@ func (ctrl *controller) processQueue(key string) error {
 		return errors.Wrap(err, fmt.Sprintf("error getting snapshot %s from lister", name))
 	}
 
-	if snapshot.DeletionTimestamp != nil {
-		return nil
-	}
-
-	if snapshotHandled(snapshot) {
-		ctrl.logger.Infof("Volume Snapshot %s already handled", snapshot.Name)
-		return nil
-	}
-
+	newSnapshot := snapshot.DeepCopy()
 	newObj, err := utils.StoreRevisionUpdate(ctrl.processedSnapshot, snapshot, "Snapshot")
 	if err != nil {
 		ctrl.logger.Errorf("%s", err)
@@ -181,23 +210,41 @@ func (ctrl *controller) processQueue(key string) error {
 		return nil
 	}
 
+	if newSnapshot.DeletionTimestamp != nil {
+		err := ctrl.deleteCSISnapshot(snapshot)
+		if err != nil {
+			return err
+		}
+		snapshotClone := snapshot.DeepCopy()
+		utils.RemoveFinalizer(snapshotClone, volumeSnapshotFinalizer)
+		snapshot, err = ctrl.patchSnapshot(snapshot, snapshotClone)
+		if err != nil {
+			ctrl.logger.Errorf("removing finalizer failed for %s", snapshotClone.Name)
+		}
+	}
+
+	if snapshotHandled(newSnapshot) {
+		ctrl.logger.Infof("Volume Snapshot %s already handled", newSnapshot.Name)
+		return nil
+	}
+
 	// Identify volumes for snapshot
-	snapshot, err = ctrl.syncSnapshotVolumes(snapshot)
+	newSnapshot, err = ctrl.syncSnapshotVolumes(newSnapshot)
 	if err != nil {
 		return err
 	}
 
 	// check volume snapshot support for CSI
-	support, err := ctrl.supportCSISnapshot(snapshot)
+	support, err := ctrl.supportCSISnapshot(newSnapshot)
 	if err != nil {
 		return err
 	}
 
 	if support {
-		return ctrl.handleCSISnapshot(snapshot)
+		return ctrl.handleCSISnapshot(newSnapshot)
 	}
 
-	return ctrl.handleSnapshot(snapshot)
+	return ctrl.handleSnapshot(newSnapshot)
 }
 
 func (ctrl *controller) syncSnapshotVolumes(snapshot *kahuapi.VolumeSnapshot) (*kahuapi.VolumeSnapshot, error) {
@@ -268,6 +315,14 @@ func (ctrl *controller) handleCSISnapshot(snapshot *kahuapi.VolumeSnapshot) erro
 		return nil
 	}
 
+	return err
+}
+
+func (ctrl *controller) deleteCSISnapshot(snapshot *kahuapi.VolumeSnapshot) error {
+	err := ctrl.csiSnapshotHandler.Run(snapshot.Name, func() error {
+		ctrl.logger.Infof("Volume Snapshot %s came till before delete func *****", snapshot.Name)
+		return ctrl.csiSnapshotter.Delete(snapshot)
+	})
 	return err
 }
 
