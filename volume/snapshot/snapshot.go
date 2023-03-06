@@ -185,7 +185,7 @@ func (s *snapshoter) volGroupToSnapshot(backup string,
 }
 
 func (s *snapshoter) Delete(snapName string) error {
-	s.logger.Infof("***Deleting snapshots(%v)***:", snapName)
+	s.logger.Infof("Deleting kahu snapshots(%v):", snapName)
 	err := s.kahuClient.KahuV1beta1().VolumeSnapshots().Delete(context.TODO(), snapName, metav1.DeleteOptions{})
 	return err
 }

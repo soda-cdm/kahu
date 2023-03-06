@@ -183,6 +183,20 @@ func (ctrl *controller) patchSnapshot(oldSnapshot, updatedSnapshot *kahuapi.Volu
 	return newSnapshot, nil
 }
 
+func (ctrl *controller) HandleSnapshotDelete(snapshot *kahuapi.VolumeSnapshot) error {
+	err := ctrl.deleteCSISnapshot(snapshot)
+	if err != nil {
+		return err
+	}
+	snapshotClone := snapshot.DeepCopy()
+	utils.RemoveFinalizer(snapshotClone, volumeSnapshotFinalizer)
+	snapshot, err = ctrl.patchSnapshot(snapshot, snapshotClone)
+	if err != nil {
+		ctrl.logger.Errorf("removing finalizer failed for %s", snapshotClone.Name)
+	}
+	return nil
+}
+
 func (ctrl *controller) processQueue(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -211,16 +225,7 @@ func (ctrl *controller) processQueue(key string) error {
 	}
 
 	if newSnapshot.DeletionTimestamp != nil {
-		err := ctrl.deleteCSISnapshot(snapshot)
-		if err != nil {
-			return err
-		}
-		snapshotClone := snapshot.DeepCopy()
-		utils.RemoveFinalizer(snapshotClone, volumeSnapshotFinalizer)
-		snapshot, err = ctrl.patchSnapshot(snapshot, snapshotClone)
-		if err != nil {
-			ctrl.logger.Errorf("removing finalizer failed for %s", snapshotClone.Name)
-		}
+		return ctrl.HandleSnapshotDelete(snapshot)
 	}
 
 	if snapshotHandled(newSnapshot) {

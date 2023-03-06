@@ -42,7 +42,6 @@ import (
 const (
 	csiSnapshotTimeout        = 5 * time.Minute
 	defaultSnapshotNamePrefix = "snapshot"
-	volumeSnapshotFinalizer   = "kahu.io/volume-snapshot-done"
 )
 
 type Snapshoter interface {
@@ -80,8 +79,6 @@ func NewSnapshotter(ctx context.Context,
 
 func (s *snapshoter) Delete(snapshot *kahuapi.VolumeSnapshot) error {
 	//delete snapshot for each volumes
-	// create CSI object
-	s.logger.Infof(" delete volume snapshot")
 	csiSnapshotClass, err := s.volSnapshotClassSyncer.SnapshotClassByProvider(*snapshot.Spec.SnapshotProvider)
 	if err != nil {
 		return err
@@ -104,7 +101,6 @@ func (s *snapshoter) Delete(snapshot *kahuapi.VolumeSnapshot) error {
 
 func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
 	// create snapshot for each snapshot volumes
-	s.logger.Infof(" applying volume snapshot in handle ")
 	csiSnapshotClass, err := s.volSnapshotClassSyncer.SnapshotClassByProvider(*snapshot.Spec.SnapshotProvider)
 	if err != nil {
 		return err
@@ -151,7 +147,7 @@ func (s *snapshoter) deleteSnapshot(kahuVolSnapshot *kahuapi.VolumeSnapshot,
 	snapshotClassName string,
 	pvc kahuapi.ResourceReference) error {
 	for _, states := range kahuVolSnapshot.Status.SnapshotStates {
-		s.logger.Infof("***deleting Volume Snapshot(%s) status***", states.CSISnapshotRef.Name)
+		s.logger.Infof("Deleting CSI Volume Snapshot(%s)", states.CSISnapshotRef.Name)
 		err := s.snapshotClient.VolumeSnapshots(pvc.Namespace).Delete(context.TODO(), states.CSISnapshotRef.Name, metav1.DeleteOptions{})
 		if err != nil {
 			return err
