@@ -46,7 +46,7 @@ var _ = BeforeSuite(func() {
 	if err != nil {
 		log.Errorf("not able to create namespace %v bez %v\n", kahu.RestoreNameSpace, err)
 	}
-	log.Info("********Created namespaces************\n")
+	log.Info("Created backup and restore namespaces \n")
 })
 
 var _ = AfterSuite(func() {
@@ -62,5 +62,5 @@ var _ = AfterSuite(func() {
 	if err != nil {
 		log.Errorf("not able to delete namespace %v bez %v\n", restoreNs, err)
 	}
-	log.Info("********Deleted namespaces************\n")
+	log.Info("Deleted backup and restore namespaces\n")
 })

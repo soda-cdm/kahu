@@ -29,7 +29,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("storageClassBackup", Label("storageClass"), func() {
 	Context("Create backup of storageClass and restore", func() {
-		It("storageClass", func() {
+		It("storageClass", Label("testcase26"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create storageClass to test
 			UUIDgen, err := uuid.NewRandom()

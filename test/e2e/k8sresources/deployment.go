@@ -29,7 +29,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 	Context("Create backup of deployment and restore", func() {
-		It("deployment with replicas and pods", Label("replicas"), func() {
+		It("deployment with replicas and pods", Label("replicas", "testcase07"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
@@ -89,7 +89,7 @@ var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 
 		})
 
-		It("deployment with configmap EnvFrom replicas and pods", Label("configmap", "envfrom"), func() {
+		It("deployment with configmap EnvFrom replicas and pods", Label("configmap", "envfrom", "testcase07"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
@@ -164,7 +164,7 @@ var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 
 		})
 
-		It("deployment with secret EnvFrom replicas and pods", Label("secret", "envfrom"), func() {
+		It("deployment with secret EnvFrom replicas and pods", Label("secret", "envfrom", "testcase08"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
@@ -239,7 +239,7 @@ var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 
 		})
 
-		It("deployment with configmap EnvVal replicas and pods", Label("configmap", "environment-variable"), func() {
+		It("deployment with configmap EnvVal replicas and pods", Label("configmap", "environment-variable", "testcase09"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
@@ -314,7 +314,7 @@ var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 
 		})
 
-		It("deployment with secret EnvVal replicas and pods", Label("secret", "environment-variable"), func() {
+		It("deployment with secret EnvVal replicas and pods", Label("secret", "environment-variable", "testcase10"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
