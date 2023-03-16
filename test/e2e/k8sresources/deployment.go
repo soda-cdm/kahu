@@ -29,7 +29,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("DeploymentBackup", Label("deployment"), func() {
 	Context("Create backup of deployment and restore", func() {
-		It("deployment with replicas and pods", Label("replicas", "testcase07"), func() {
+		It("deployment with replicas and pods", Label("replicas", "testcase27"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create deployment to test
