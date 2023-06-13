@@ -20,7 +20,6 @@ spec:
           name: backup
           command: ["/usr/local/bin/controller-manager"]
           args:   
-          #example of adding custom resourceList for backup. resources should be separated by comma
           - --metaServiceImage=sodacdm/kahu-meta-service:v1.0.1
 ---
 apiVersion: rbac.authorization.k8s.io/v1
