@@ -4,5 +4,8 @@ metadata:
    name: nfs
 spec:
    providerName: nfs-provider
-   config: {key: "key", password: "password"}
-
+   location:
+     path: "/data"
+     sourceRef:
+       kind: PersistentVolumeClaim
+       name: nfs
