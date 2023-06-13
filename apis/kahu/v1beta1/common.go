@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"fmt"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -45,4 +46,18 @@ type ResourceSelector struct {
 	Namespace *string `json:"namespace,omitempty" protobuf:"bytes,3,opt,name=namespace"`
 
 	Selector *metav1.LabelSelector `json:"selector,omitempty" protobuf:"bytes,4,opt,name=selector"`
+}
+
+func (in *BackupResource) ResourceID() string {
+	if in.Namespace == "" {
+		return fmt.Sprintf("%s.%s/%s", in.Kind, in.APIVersion, in.ResourceName)
+	}
+	return fmt.Sprintf("%s.%s/%s/%s", in.Kind, in.APIVersion, in.Namespace, in.ResourceName)
+}
+
+func (in *RestoreResource) ResourceID() string {
+	if in.Namespace == "" {
+		return fmt.Sprintf("%s.%s/%s", in.Kind, in.APIVersion, in.ResourceName)
+	}
+	return fmt.Sprintf("%s.%s/%s/%s", in.Kind, in.APIVersion, in.Namespace, in.ResourceName)
 }

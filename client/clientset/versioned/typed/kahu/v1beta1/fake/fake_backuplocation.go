@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 )
@@ -85,6 +86,27 @@ func (c *FakeBackupLocations) Create(ctx context.Context, backupLocation *v1beta
 	return obj.(*v1beta1.BackupLocation), err
 }
 
+// Update takes the representation of a backupLocation and updates it. Returns the server's representation of the backupLocation, and an error, if there is any.
+func (c *FakeBackupLocations) Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (result *v1beta1.BackupLocation, err error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootUpdateAction(backuplocationsResource, backupLocation), &v1beta1.BackupLocation{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.BackupLocation), err
+}
+
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+func (c *FakeBackupLocations) UpdateStatus(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (*v1beta1.BackupLocation, error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootUpdateSubresourceAction(backuplocationsResource, "status", backupLocation), &v1beta1.BackupLocation{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.BackupLocation), err
+}
+
 // Delete takes name of the backupLocation and deletes it. Returns an error if one occurs.
 func (c *FakeBackupLocations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
@@ -98,4 +120,14 @@ func (c *FakeBackupLocations) DeleteCollection(ctx context.Context, opts v1.Dele
 
 	_, err := c.Fake.Invokes(action, &v1beta1.BackupLocationList{})
 	return err
+}
+
+// Patch applies the patch and returns the patched backupLocation.
+func (c *FakeBackupLocations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(backuplocationsResource, name, pt, data, subresources...), &v1beta1.BackupLocation{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.BackupLocation), err
 }

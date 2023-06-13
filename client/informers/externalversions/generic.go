@@ -59,12 +59,12 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().BackupLocations().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("providers"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().Providers().Informer()}, nil
+	case v1beta1.SchemeGroupVersion.WithResource("providerregistrations"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().ProviderRegistrations().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("restores"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().Restores().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("volumebackupcontents"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().VolumeBackupContents().Informer()}, nil
-	case v1beta1.SchemeGroupVersion.WithResource("volumegroups"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().VolumeGroups().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("volumerestorecontents"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Kahu().V1beta1().VolumeRestoreContents().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("volumesnapshots"):

@@ -135,8 +135,6 @@ func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []strin
 
 // Run start and run NFS Provider service
 func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
-	log.Info("Starting Server ...")
-
 	serverAddr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
@@ -148,6 +146,8 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 			return err
 		}
 	}
+
+	log.Info("Starting GRPC Server ...")
 	lis, err := net.ListenUnix("unix", serverAddr)
 	if err != nil {
 		log.Fatal("failed to listen: ", err)
@@ -162,8 +162,9 @@ func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
 
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
-	nfsprovider.RegisterMetaBackupServer(grpcServer, NewMetaBackupServer(ctx, serviceOptions))
-	nfsprovider.RegisterIdentityServer(grpcServer, NewIdentityServer(ctx, serviceOptions))
+	server := NewNFSServer(ctx, serviceOptions)
+	nfsprovider.RegisterMetaBackupServer(grpcServer, server)
+	nfsprovider.RegisterIdentityServer(grpcServer, server)
 	go func(ctx context.Context, server *grpc.Server) {
 		<-ctx.Done()
 		server.Stop()

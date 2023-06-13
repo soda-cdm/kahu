@@ -23,6 +23,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +39,19 @@ func CreateSecret(c clientset.Interface, ns, name string, labels map[string]stri
 			Labels:    labels,
 			Namespace: ns,
 		},
+	}
+	return c.CoreV1().Secrets(ns).Create(context.TODO(), secret, metav1.CreateOptions{})
+}
+
+//CreateSecretWithData
+func CreateSecretWithData(c clientset.Interface, ns, name string, labels map[string]string, data map[string][]byte) (*v1.Secret, error) {
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Labels:    labels,
+			Namespace: ns,
+		},
+		Data: data,
 	}
 	return c.CoreV1().Secrets(ns).Create(context.TODO(), secret, metav1.CreateOptions{})
 }
@@ -61,7 +75,7 @@ func WaitForSecretDelete(c clientset.Interface, ns, name string) error {
 
 // WaitForSecretsComplete uses c to wait for completions to complete for the Job jobName in namespace ns.
 func WaitForSecretsComplete(c clientset.Interface, ns, secretName string) error {
-	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
+	return wait.Poll(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
 		_, err := c.CoreV1().Secrets(ns).Get(context.TODO(), secretName, metav1.GetOptions{})
 		if err != nil {
 			return false, err

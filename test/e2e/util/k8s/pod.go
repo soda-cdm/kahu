@@ -23,6 +23,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +31,11 @@ import (
 	waitutil "k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 )
+
+func NewPod() *corev1.Pod {
+	p := &corev1.Pod{}
+	return p
+}
 
 func CreatePod(c clientset.Interface, ns, name string) (*corev1.Pod, error) {
 	p := &corev1.Pod{
@@ -100,12 +106,19 @@ func DeletePod(ctx context.Context, c clientset.Interface, namespace, podName st
 
 // WaitForReadyPod waits for number of ready replicas to equal number of replicas.
 func WaitForPodComplete(c clientset.Interface, ns, name string) error {
-	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
-		_, err := c.CoreV1().Pods(ns).Get(context.TODO(), name, metav1.GetOptions{})
+	return wait.Poll(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
+		pod, err := c.CoreV1().Pods(ns).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
+
 			return false, err
 		}
-		logrus.Infof("pod %q in namespace %q is still being created...", name, ns)
+
+		if pod.Status.Phase != corev1.PodRunning {
+			logrus.Infof("pod %q in namespace %q is still being created...", name, ns)
+			return false, nil
+		}
+
+		logrus.Infof("pod %q in namespace %q is created", name, ns)
 		return true, nil
 	})
 }
@@ -125,4 +138,143 @@ func WaitForPodDelete(c clientset.Interface, ns, name string) error {
 			logrus.Debugf("pod %q in namespace %q is still being deleted...", name, ns)
 			return false, nil
 		})
+}
+
+func CreatePodWithEnvFromConfigmap(c clientset.Interface, ns, name, configName string) (*corev1.Pod, error) {
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    name,
+					Image:   "nginx",
+					Command: []string{"sleep", "3600"},
+					EnvFrom: []corev1.EnvFromSource{{
+						ConfigMapRef: &corev1.ConfigMapEnvSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: configName,
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+	return c.CoreV1().Pods(ns).Create(context.TODO(), p, metav1.CreateOptions{})
+}
+
+func CreatePodWithEnvFromSecret(c clientset.Interface, ns, name, secretName string) (*corev1.Pod, error) {
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    name,
+					Image:   "nginx",
+					Command: []string{"sleep", "3600"},
+					EnvFrom: []corev1.EnvFromSource{{
+						SecretRef: &corev1.SecretEnvSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: secretName,
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+	return c.CoreV1().Pods(ns).Create(context.TODO(), p, metav1.CreateOptions{})
+}
+
+func CreatePodWithEnvValueConfigmap(c clientset.Interface, ns, name, configName string) (*corev1.Pod, error) {
+
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    name,
+					Image:   "nginx",
+					Command: []string{"sleep", "3600"},
+					Env: []corev1.EnvVar{{
+						Name: "SPECIAL_LEVEL_KEY",
+						ValueFrom: &corev1.EnvVarSource{
+							ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: configName,
+								},
+								Key: "SPECIAL_LEVEL",
+							},
+						},
+					},
+						{
+							Name: "SPECIAL_TYPE_KEY",
+							ValueFrom: &corev1.EnvVarSource{
+								ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: configName,
+									},
+									Key: "SPECIAL_TYPE",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return c.CoreV1().Pods(ns).Create(context.TODO(), p, metav1.CreateOptions{})
+}
+
+//CreatePodWithEnvValueSecret
+func CreatePodWithEnvValueSecret(c clientset.Interface, ns, name, secretName string) (*corev1.Pod, error) {
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    name,
+					Image:   "nginx",
+					Command: []string{"sleep", "3600"},
+					Env: []corev1.EnvVar{{
+						Name: "SPECIAL_LEVEL_KEY",
+						ValueFrom: &corev1.EnvVarSource{
+							SecretKeyRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: secretName,
+								},
+								Key: "SPECIAL_LEVEL",
+							},
+						},
+					},
+						{
+							Name: "SPECIAL_TYPE_KEY",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: secretName,
+									},
+									Key: "SPECIAL_TYPE",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return c.CoreV1().Pods(ns).Create(context.TODO(), p, metav1.CreateOptions{})
 }

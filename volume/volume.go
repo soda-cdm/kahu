@@ -20,9 +20,11 @@ import (
 	"context"
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/volume/backup"
+	"github.com/soda-cdm/kahu/volume/group"
+	"github.com/soda-cdm/kahu/volume/location"
+	"github.com/soda-cdm/kahu/volume/provider"
 	"github.com/soda-cdm/kahu/volume/restore"
 	"github.com/soda-cdm/kahu/volume/snapshot"
-	"github.com/soda-cdm/kahu/volume/volumegroup"
 )
 
 type Interface interface {
@@ -30,14 +32,16 @@ type Interface interface {
 	SnapshotGetter
 	BackupGetter
 	RestoreGetter
+	ProviderGetter
+	LocationGetter
 }
 
 type GroupGetter interface {
-	Group() volumegroup.Factory
+	Group() group.Factory
 }
 
 type SnapshotGetter interface {
-	Snapshot() snapshot.Factory
+	Snapshot() snapshot.Snapshotter
 }
 
 type BackupGetter interface {
@@ -45,23 +49,33 @@ type BackupGetter interface {
 }
 
 type RestoreGetter interface {
-	Restore(volumegroup.Interface) restore.Factory
+	Restore(group.Interface) restore.Factory
+}
+
+type ProviderGetter interface {
+	Provider() provider.Interface
+}
+
+type LocationGetter interface {
+	Location() location.Interface
 }
 
 type volume struct {
 	client   client.Factory
-	snapshot snapshot.Factory
+	snapshot snapshot.Snapshotter
 	backup   backup.Factory
 	restore  restore.Factory
-	group    volumegroup.Factory
+	group    group.Factory
+	provider provider.Interface
+	location location.Interface
 }
 
 func NewVolumeHandler(ctx context.Context, clientFactory client.Factory) (Interface, error) {
-	groupFactory, err := volumegroup.NewFactory(clientFactory)
+	groupFactory, err := group.NewFactory(clientFactory)
 	if err != nil {
 		return nil, err
 	}
-	snapshotFactory, err := snapshot.NewFactory(ctx, clientFactory)
+	snapshotFactory, err := snapshot.NewSnapshotter(ctx, clientFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +87,8 @@ func NewVolumeHandler(ctx context.Context, clientFactory client.Factory) (Interf
 	if err != nil {
 		return nil, err
 	}
+	providerFactory := provider.NewFactory()
+	locationFactory := location.NewFactory()
 
 	return &volume{
 		client:   clientFactory,
@@ -80,14 +96,16 @@ func NewVolumeHandler(ctx context.Context, clientFactory client.Factory) (Interf
 		snapshot: snapshotFactory,
 		backup:   backupFactory,
 		restore:  restoreFactory,
+		provider: providerFactory,
+		location: locationFactory,
 	}, nil
 }
 
-func (vol *volume) Group() volumegroup.Factory {
+func (vol *volume) Group() group.Factory {
 	return vol.group
 }
 
-func (vol *volume) Snapshot() snapshot.Factory {
+func (vol *volume) Snapshot() snapshot.Snapshotter {
 	return vol.snapshot
 }
 
@@ -95,6 +113,14 @@ func (vol *volume) Backup() backup.Factory {
 	return vol.backup
 }
 
-func (vol *volume) Restore(volumegroup.Interface) restore.Factory {
+func (vol *volume) Restore(group.Interface) restore.Factory {
 	return vol.restore
+}
+
+func (vol *volume) Provider() provider.Interface {
+	return vol.provider
+}
+
+func (vol *volume) Location() location.Interface {
+	return vol.location
 }

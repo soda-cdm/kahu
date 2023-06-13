@@ -50,7 +50,9 @@ const (
 	ServiceAccount     = "ServiceAccount"
 	EndpointSlice      = "EndpointSlice"
 
-	AnnBackupLocationParam = "kahu.io/backup-location-parameter"
+	AnnBackupLocationParam     = "kahu.io/backup-location-parameter"
+	AnnProviderRegistrationUID = "uid.provider.registration.kahu.io"
+	AnnLegacyService           = "kahu.io/provider-service"
 )
 
 var SupportedResourceList = []string{Pod, Service, Deployment, Replicaset, StatefulSet,

@@ -19,6 +19,7 @@ package util
 import (
 	"context"
 
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	v1 "k8s.io/api/storage/v1"
 	clientset "k8s.io/client-go/kubernetes"
 
@@ -45,7 +46,7 @@ func DeleteStorageClass(c clientset.Interface, name string) error {
 }
 
 func WaitUntilStorageClassCreated(c clientset.Interface, name string) error {
-	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
+	return wait.Poll(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
 		_, err := c.StorageV1().StorageClasses().Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return false, err

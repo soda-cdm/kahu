@@ -158,27 +158,37 @@ spec:
                       type: boolean
                     snapshotSource:
                       properties:
-                        csiSnapshotRef:
-                          description: ResourceReference contains enough information
-                            to let you inspect or modify the referred kubernetes object.
+                        csiSnapshot:
                           properties:
-                            apiVersion:
-                              description: API version of the referent.
+                            attribute:
+                              additionalProperties:
+                                type: string
+                              type: object
+                            handle:
                               type: string
-                            kind:
-                              description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                              type: string
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
-                              type: string
-                            namespace:
-                              description: 'Namespace of the referent. More info:
-                                https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
-                              type: string
+                            snapshotRef:
+                              description: ResourceReference contains enough information
+                                to let you inspect or modify the referred kubernetes
+                                object.
+                              properties:
+                                apiVersion:
+                                  description: API version of the referent.
+                                  type: string
+                                kind:
+                                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                  type: string
+                                name:
+                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                  type: string
+                                namespace:
+                                  description: 'Namespace of the referent. More info:
+                                    https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                  type: string
+                              type: object
                           type: object
-                        snapshotData:
+                        snapshot:
                           properties:
-                            attributes:
+                            attribute:
                               additionalProperties:
                                 type: string
                               type: object

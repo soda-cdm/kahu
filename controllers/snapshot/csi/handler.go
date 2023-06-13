@@ -85,7 +85,7 @@ func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
 
 	for _, snapshotState := range snapshot.Status.SnapshotStates {
 		// ignore if already CSI object created
-		if snapshotState.CSISnapshotRef != nil {
+		if snapshotState.CSISnapshot != nil {
 			continue
 		}
 		// create CSI object
@@ -151,7 +151,7 @@ func (s *snapshoter) applySnapshot(kahuVolSnapshotName string,
 	for i, snapshotState := range kahuVolSnapshot.Status.SnapshotStates {
 		if snapshotState.PVC.Name == pvc.Name &&
 			snapshotState.PVC.Namespace == pvc.Namespace {
-			kahuVolSnapshot.Status.SnapshotStates[i].CSISnapshotRef = &kahuapi.ResourceReference{
+			kahuVolSnapshot.Status.SnapshotStates[i].CSISnapshot.SnapshotRef = kahuapi.ResourceReference{
 				Namespace: csiSnapshot.Namespace,
 				Name:      csiSnapshot.Name,
 			}
@@ -222,11 +222,11 @@ func (s *snapshoter) verifySnapshotStatus(snapshot *kahuapi.VolumeSnapshot) (boo
 
 	// check CSI snapshot, if all CSI Snapshot Ready to use return success
 	for _, snapshotState := range snapshot.Status.SnapshotStates {
-		if snapshotState.CSISnapshotRef == nil {
+		if snapshotState.CSISnapshot == nil {
 			return false, fmt.Errorf("waiting to populate csi info")
 		}
 
-		readyToUse, err := s.checkCSISnapshotStatus(snapshotState.CSISnapshotRef)
+		readyToUse, err := s.checkCSISnapshotStatus(snapshotState.CSISnapshot.SnapshotRef)
 		if err != nil {
 			return false, err
 		}
@@ -239,7 +239,7 @@ func (s *snapshoter) verifySnapshotStatus(snapshot *kahuapi.VolumeSnapshot) (boo
 	return true, nil
 }
 
-func (s *snapshoter) checkCSISnapshotStatus(csiSnapshot *kahuapi.ResourceReference) (bool, error) {
+func (s *snapshoter) checkCSISnapshotStatus(csiSnapshot kahuapi.ResourceReference) (bool, error) {
 	snapshot, err := s.snapshotClient.VolumeSnapshots(csiSnapshot.Namespace).Get(context.TODO(),
 		csiSnapshot.Name, metav1.GetOptions{})
 	if err != nil {

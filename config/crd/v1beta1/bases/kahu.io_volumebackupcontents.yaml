@@ -51,31 +51,54 @@ spec:
               backupName:
                 description: BackupName is backup CR name specified during backup
                 type: string
-              backupSourceRef:
-                description: ResourceReference contains enough information to let
-                  you inspect or modify the referred kubernetes object.
-                properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  kind:
-                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                    type: string
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
-                    type: string
-                  namespace:
-                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
-                    type: string
-                type: object
               parameters:
                 additionalProperties:
                   type: string
                 description: Supported volume backup provider information
                 type: object
+              volumeMount:
+                items:
+                  properties:
+                    Path:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                type: array
               volumeProvider:
                 description: Volume provider for set of volumes
                 type: string
+              volumeRef:
+                items:
+                  properties:
+                    snapshot:
+                      properties:
+                        attribute:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        handle:
+                          type: string
+                      type: object
+                    volume:
+                      description: ResourceReference contains enough information to
+                        let you inspect or modify the referred kubernetes object.
+                      properties:
+                        apiVersion:
+                          description: API version of the referent.
+                          type: string
+                        kind:
+                          description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                          type: string
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                          type: string
+                        namespace:
+                          description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                          type: string
+                      type: object
+                  type: object
+                type: array
               volumes:
                 description: Volume represents kubernetes volume to be backed up
                 items:
@@ -1215,7 +1238,7 @@ spec:
                       format: int64
                       type: integer
                     progress:
-                      format: int64
+                      format: int32
                       type: integer
                     volumeName:
                       type: string

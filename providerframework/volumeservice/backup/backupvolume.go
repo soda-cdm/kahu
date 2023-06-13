@@ -18,43 +18,38 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	jsonpatch "github.com/evanphx/json-patch"
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned/typed/volumesnapshot/v1"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client/clientset/versioned"
-	kahuscheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
-	kahuclient "github.com/soda-cdm/kahu/client/clientset/versioned/typed/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/client/informers/externalversions"
-	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
-	"github.com/soda-cdm/kahu/controllers"
+	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/config"
+	volumeservice "github.com/soda-cdm/kahu/providerframework/volumeservice/lib/go"
 	providerSvc "github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/utils"
+	"github.com/soda-cdm/kahu/utils/k8sresource"
 	"github.com/soda-cdm/kahu/utils/operation"
 )
 
 const (
-	controllerName               = "volume-content-backup"
-	defaultContextTimeout        = 30 * time.Minute
-	defaultSyncTime              = 5 * time.Minute
-	defaultBackupProgressTimeout = 30 * time.Minute
-	volumeBackupFinalizer        = "kahu.io/volume-backup-protection"
+	controllerName        = "volume-content-backup"
+	volumeBackupFinalizer = "kahu.io/volume-backup-protection"
+	defaultContextTimeout = 30 * time.Second
+	defaultPollTime       = 5 * time.Second
 
 	EventVolumeBackupFailed       = "VolumeBackupFailed"
 	EventVolumeBackupStarted      = "VolumeBackupStarted"
@@ -63,221 +58,162 @@ const (
 	EventVolumeBackupCancelFailed = "VolumeBackupCancelFailed"
 )
 
-type controller struct {
-	logger               log.FieldLogger
-	providerName         string
-	genericController    controllers.Controller
-	volumeBackupLister   kahulister.VolumeBackupContentLister
-	updater              volumeBackupUpdater
-	driver               providerSvc.VolumeBackupClient
-	backupLocationLister kahulister.BackupLocationLister
-	backupProviderLister kahulister.ProviderLister
-	backupLister         kahulister.BackupLister
-	operationManager     operation.Manager
-	processedVBC         utils.Store
-	kubeClient           kubernetes.Interface
-	kahuClient           versioned.Interface
-	csiSnapshot          snapshotv1.SnapshotV1Interface
+type VolumeBackupService struct {
+	logger           log.FieldLogger
+	providerName     string
+	driver           providerSvc.VolumeBackupClient
+	operationManager operation.Manager
+	kubeClient       kubernetes.Interface
+	kahuClient       versioned.Interface
+	manager          operation.Manager
+	// csiSnapshot      snapshotv1.SnapshotV1Interface
 }
 
-type volumeBackupUpdater struct {
-	volumeBackupClient kahuclient.VolumeBackupContentInterface
-	eventRecorder      record.EventRecorder
-	store              utils.Store
+func NewVolumeBackupService(
+	config *config.CompletedConfig,
+	driverClient providerSvc.VolumeBackupClient,
+) *VolumeBackupService {
+	logger := log.WithField("module", controllerName)
+	service := &VolumeBackupService{
+		logger:       logger,
+		providerName: config.Provider,
+		driver:       driverClient,
+		kubeClient:   config.KubeClient,
+		kahuClient:   config.KahuClient,
+		manager:      operation.NewOperationManager(),
+	}
+
+	return service
 }
 
-func NewController(ctx context.Context,
-	providerName string,
-	kahuClient versioned.Interface,
-	informer externalversions.SharedInformerFactory,
-	eventBroadcaster record.EventBroadcaster,
-	backupProviderClient providerSvc.VolumeBackupClient,
-	kubeClient kubernetes.Interface,
-	csiSnapshot snapshotv1.SnapshotV1Interface) (controllers.Controller, error) {
-
-	logger := log.WithField("controller", controllerName)
-
-	processedVBCCache := utils.NewStore(utils.DeletionHandlingMetaNamespaceKeyFunc)
-	updater := volumeBackupUpdater{
-		volumeBackupClient: kahuClient.KahuV1beta1().VolumeBackupContents(),
-		// initialize event recorder
-		eventRecorder: eventBroadcaster.NewRecorder(kahuscheme.Scheme, v1.EventSource{Component: controllerName}),
-		store:         processedVBCCache,
-	}
-	backupController := &controller{
-		logger:               logger,
-		providerName:         providerName,
-		updater:              updater,
-		volumeBackupLister:   informer.Kahu().V1beta1().VolumeBackupContents().Lister(),
-		driver:               backupProviderClient,
-		backupLocationLister: informer.Kahu().V1beta1().BackupLocations().Lister(),
-		backupProviderLister: informer.Kahu().V1beta1().Providers().Lister(),
-		backupLister:         informer.Kahu().V1beta1().Backups().Lister(),
-		operationManager:     operation.NewOperationManager(ctx, logger.WithField("context", "backup-operation")),
-		processedVBC:         processedVBCCache,
-		kubeClient:           kubeClient,
-		kahuClient:           kahuClient,
-		csiSnapshot:          csiSnapshot,
-	}
-
-	// construct controller interface to process worker queue
-	genericController, err := controllers.NewControllerBuilder(controllerName).
-		SetLogger(logger).
-		SetHandler(backupController.processQueue).
-		SetReSyncHandler(backupController.reSync).
-		SetReSyncPeriod(defaultSyncTime).
-		Build()
-	if err != nil {
-		return nil, err
-	}
-
-	// register to informer to receive events and push events to worker queue
-	informer.Kahu().
-		V1beta1().
-		VolumeBackupContents().
-		Informer().
-		AddEventHandler(
-			cache.ResourceEventHandlerFuncs{
-				AddFunc: genericController.Enqueue,
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					genericController.Enqueue(newObj)
-				},
-			},
-		)
-
-	// reference back
-	backupController.genericController = genericController
-	return genericController, err
-}
-
-func (ctrl *controller) reSync() {
-	volumeBackupList, err := ctrl.volumeBackupLister.List(labels.Everything())
-	if err != nil {
-		ctrl.logger.Errorf("Unable to get volume backup list. %s", err)
-		return
-	}
-
-	for _, volBackup := range volumeBackupList {
-		if volBackup.Status.Phase == kahuapi.VolumeBackupContentPhaseFailed ||
-			volBackup.Status.Phase == kahuapi.VolumeBackupContentPhaseCompleted {
-			continue
-		}
-
-		ctrl.genericController.Enqueue(volBackup)
-	}
-}
-
-func getVolumeBackup(index string,
-	volBackupLister kahulister.VolumeBackupContentLister) (*kahuapi.VolumeBackupContent, error) {
+func (ctrl *VolumeBackupService) getVolumeBackup(ctx context.Context,
+	index string) (*kahuapi.VolumeBackupContent, error) {
 	_, name, err := cache.SplitMetaNamespaceKey(index)
 	if err != nil {
 		return nil, err
 	}
 
-	return volBackupLister.Get(name)
+	return ctrl.kahuClient.KahuV1beta1().VolumeBackupContents().Get(ctx, name, metav1.GetOptions{})
 }
 
-func (ctrl *controller) processQueue(index string) error {
-	ctrl.logger.Infof("Received volume backup request for %s", index)
-	volBackup, err := getVolumeBackup(index, ctrl.volumeBackupLister)
-	if err == nil {
-		newObj, err := utils.StoreRevisionUpdate(ctrl.processedVBC, volBackup, "VolumeBackupContent")
-		if err != nil {
-			ctrl.logger.Errorf("%s", err)
-		}
-		if !newObj {
-			ctrl.logger.Infof("Ignoring outdated volume backup request for %s", index)
-			return nil
-		}
+func (ctrl *VolumeBackupService) Backup(ctx context.Context,
+	backup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer) error {
+	logger := ctrl.logger.WithField("backup", backup.Name)
 
-		ctrl.logger.Infof("Processing volume backup request for %s", index)
-
-		newVolBackup := volBackup.DeepCopy()
-		if newVolBackup.DeletionTimestamp != nil {
-			return ctrl.processDeleteVolumeBackup(newVolBackup)
-		}
-
-		newVolBackup, err = ctrl.ensureVolBackupInit(newVolBackup)
-		if err != nil {
-			return err
-		}
-
-		newVolBackup, err = ctrl.ensureFinalizer(newVolBackup)
-		if err != nil {
-			return err
-		}
-
-		volBackupDriver, ok := checkVolumeBackupDriver(newVolBackup)
-		if !ok {
-			ctrl.logger.Info("Volume backup driver not assigned. Skipping volume backup processing ")
-			return nil
-		}
-
-		if volBackupDriver != ctrl.providerName {
-			ctrl.logger.Infof("Skipping volume backup processing for %s driver", volBackupDriver)
-			return nil
-		}
-
-		// process create and sync
-		return ctrl.processVolumeBackup(newVolBackup)
+	// check and lock backup handling
+	if ctrl.manager.Exist(backup.Name) {
+		return status.Errorf(codes.OutOfRange, "Volume backup[%s] already in progress", backup.Name)
 	}
-	if apierrors.IsNotFound(err) {
+	ctrl.manager.Add(backup.Name)
+	defer ctrl.manager.Delete(backup.Name)
+
+	switch backup.Status.Phase {
+	case "", kahuapi.VolumeBackupContentPhaseInit:
+		err := ctrl.handleBackupStart(ctx, backup, stream)
+		if err != nil {
+			if utils.CheckServerUnavailable(err) {
+				ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backup.Name)
+				return status.Errorf(codes.FailedPrecondition,
+					"Driver unavailable: Continue to retry for volume backup for %s", backup.Name)
+			}
+			return err
+		}
+
+		ctrl.sendBackupEvent(backup, stream,
+			v1.EventTypeNormal,
+			EventVolumeBackupStarted,
+			"Started volume backup")
+		fallthrough
+	case kahuapi.VolumeBackupContentPhaseInProgress:
+		ctrl.logger.Infof("Backup operation in progress for %s", backup.Name)
+		return ctrl.handleBackupProgress(backup, stream)
+	case kahuapi.VolumeBackupContentPhaseFailed:
+		logger.Infof("Volume backup[%s] failed", backup.Name)
+		return status.Errorf(codes.OutOfRange, "Volume backup[%s] failed", backup.Name)
+	case kahuapi.VolumeBackupContentPhaseCompleted:
+		logger.Infof("Volume backup successful")
 		return nil
+	case kahuapi.VolumeBackupContentPhaseDeleting:
+		return status.Errorf(codes.OutOfRange, "Volume backup[%s] getting deleted already", backup.Name)
+	default:
+		logger.Infof("Ignoring volume backup state (%s).", backup.Status.Phase)
+		return status.Errorf(codes.OutOfRange, "Volume backup[%s] is in invalid phase[%s]", backup.Name,
+			backup.Status.Phase)
 	}
-
-	return fmt.Errorf("error getting volume backup content %s from informer", index)
 }
 
-func checkVolumeBackupDriver(volBackup *kahuapi.VolumeBackupContent) (string, bool) {
-	if volBackup.Status.VolumeBackupProvider == nil {
-		return "", false
-	}
-
-	return *volBackup.Status.VolumeBackupProvider, true
-}
-
-func (ctrl *controller) isValidDeleteWithBackup(ownerReference metav1.OwnerReference,
-	volBackup *kahuapi.VolumeBackupContent) (bool, error) {
-	backup, err := ctrl.backupLister.Get(ownerReference.Name)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return false, err
-	} else if apierrors.IsNotFound(err) {
-		return true, nil
-	}
-
-	if backup.UID != ownerReference.UID { // if owner with same name but different UID exist
-		return true, nil
-	}
-	if backup.DeletionTimestamp == nil {
-		ctrl.updater.Event(volBackup, v1.EventTypeWarning, utils.EventOwnerNotDeleted,
-			"Owner backup not deleted")
-		ctrl.logger.Errorf("Backup %s not deleted. Ignoring VolumeBackupContent(%s) delete",
-			ownerReference.Name, volBackup.Name)
-		return false, nil
-	}
-
-	return true, nil
-}
-
-func (ctrl *controller) isValidDelete(volBackup *kahuapi.VolumeBackupContent) (bool, error) {
-	// process VolumeBackupContent delete if respective restore object is getting deleted
-	for _, ownerReference := range volBackup.OwnerReferences {
-		switch ownerReference.Kind {
-		case utils.GVKBackup.Kind:
-			valid, err := ctrl.isValidDeleteWithBackup(ownerReference, volBackup)
-			if err != nil {
-				return false, err
-			}
-			if !valid {
-				return false, nil
-			}
+func (ctrl *VolumeBackupService) handleBackupProgress(backup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer) error {
+	var t clock.Timer
+	backoff := wait.NewJitteredBackoffManager(defaultPollTime, 0.0, &clock.RealClock{})
+	for {
+		select {
+		case <-stream.Context().Done():
+			ctrl.logger.Info("Context completed")
+			return nil
 		default:
-			continue
+		}
+
+		// check backup progress
+		err := ctrl.processBackupProgress(backup.Name, stream)
+		if err != nil {
+			return err
+		}
+
+		//reset timer
+		t = backoff.Backoff()
+		select {
+		case <-stream.Context().Done():
+			ctrl.logger.Info("Context completed")
+			return nil
+		case <-t.C():
 		}
 	}
-
-	return true, nil
 }
+
+//func (ctrl *VolumeBackupService) isValidDeleteWithBackup(ownerReference metav1.OwnerReference,
+//	volBackup *kahuapi.VolumeBackupContent) (bool, error) {
+//	backup, err := ctrl.kahuClient.KahuV1beta1().Backups().Get(context.TODO(), ownerReference.Name, metav1.GetOptions{})
+//	if err != nil && !apierrors.IsNotFound(err) {
+//		return false, err
+//	} else if apierrors.IsNotFound(err) {
+//		return true, nil
+//	}
+//
+//	if backup.UID != ownerReference.UID { // if owner with same name but different UID exist
+//		return true, nil
+//	}
+//	if backup.DeletionTimestamp == nil {
+//		//ctrl.updater.Event(volBackup, v1.EventTypeWarning, utils.EventOwnerNotDeleted,
+//		//	"Owner backup not deleted")
+//		ctrl.logger.Errorf("Backup %s not deleted. Ignoring VolumeBackupContent(%s) delete",
+//			ownerReference.Name, volBackup.Name)
+//		return false, nil
+//	}
+//
+//	return true, nil
+//}
+//
+//func (ctrl *VolumeBackupService) isValidDelete(volBackup *kahuapi.VolumeBackupContent) (bool, error) {
+//	// process VolumeBackupContent delete if respective restore object is getting deleted
+//	for _, ownerReference := range volBackup.OwnerReferences {
+//		switch ownerReference.Kind {
+//		case utils.GVKBackup.Kind:
+//			valid, err := ctrl.isValidDeleteWithBackup(ownerReference, volBackup)
+//			if err != nil {
+//				return false, err
+//			}
+//			if !valid {
+//				return false, nil
+//			}
+//		default:
+//			continue
+//		}
+//	}
+//
+//	return true, nil
+//}
 
 func getVolIdentifiers(volBackupStatus *kahuapi.VolumeBackupContentStatus) []*providerSvc.BackupIdentity {
 	backupIdentifiers := make([]*providerSvc.BackupIdentity, 0)
@@ -290,12 +226,12 @@ func getVolIdentifiers(volBackupStatus *kahuapi.VolumeBackupContentStatus) []*pr
 	return backupIdentifiers
 }
 
-func (ctrl *controller) cancelVolBackup(
+func (ctrl *VolumeBackupService) cancelVolBackup(ctx context.Context,
 	volBackup *kahuapi.VolumeBackupContent,
 	backupIdentifiers []*providerSvc.BackupIdentity,
 	backupParams map[string]string) error {
 	logger := ctrl.logger.WithField("volume-backup", volBackup.Name)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultContextTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
 	defer cancel()
 	_, err := ctrl.driver.CancelBackup(ctx, &providerSvc.CancelBackupRequest{
 		BackupInfo: backupIdentifiers, Parameters: backupParams,
@@ -304,81 +240,79 @@ func (ctrl *controller) cancelVolBackup(
 		if utils.CheckServerUnavailable(err) {
 			ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup cancel for %s",
 				volBackup.Name)
-			return err
+			return status.Errorf(codes.FailedPrecondition,
+				"Driver unavailable: Continue to retry for volume backup for %s", volBackup.Name)
 		}
-		ctrl.updater.Event(volBackup, v1.EventTypeWarning, EventVolumeBackupCancelFailed,
-			fmt.Sprintf("Unable to Cancel backup. %s", err.Error()))
+		//ctrl.updater.Event(volBackup, v1.EventTypeWarning, EventVolumeBackupCancelFailed,
+		//	fmt.Sprintf("Unable to Cancel backup. %s", err.Error()))
 		logger.Errorf("Unable to Cancel backup. %s", err)
-		return err
+		return status.Errorf(codes.Aborted, "Unable to Cancel backup. %s", err)
 	}
 
 	return nil
 }
 
-func (ctrl *controller) processDeleteVolumeBackup(volBackup *kahuapi.VolumeBackupContent) error {
+func (ctrl *VolumeBackupService) DeleteBackup(ctx context.Context, volBackup *kahuapi.VolumeBackupContent) error {
 	logger := ctrl.logger.WithField("volume-backup", volBackup.Name)
 	logger.Infof("Initializing deletion for volume backup content(%s)", volBackup.Name)
-	valid, err := ctrl.isValidDelete(volBackup)
-	if err != nil {
-		return err
-	} else if !valid {
-		return nil
-	}
+	//valid, err := ctrl.isValidDelete(volBackup)
+	//if err != nil {
+	//	return err
+	//} else if !valid {
+	//	return nil
+	//}
 
-	volBackup, err = ctrl.updater.updatePhase(volBackup, kahuapi.VolumeBackupContentPhaseDeleting)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		logger.Errorf("Unable to update deletion status with err %s", err)
-		return err
-	}
+	//volBackup, err = ctrl.updater.updatePhase(volBackup, kahuapi.VolumeBackupContentPhaseDeleting)
+	//if err != nil {
+	//	if apierrors.IsNotFound(err) {
+	//		return nil
+	//	}
+	//	logger.Errorf("Unable to update deletion status with err %s", err)
+	//	return err
+	//}
 
 	backupParams := volBackup.Spec.Parameters
 	backupIdentifiers := getVolIdentifiers(&volBackup.Status)
 	if volBackup.Status.Phase == kahuapi.VolumeBackupContentPhaseInProgress {
-		if err = ctrl.cancelVolBackup(volBackup, backupIdentifiers, backupParams); err != nil {
+		if err := ctrl.cancelVolBackup(ctx, volBackup, backupIdentifiers, backupParams); err != nil {
 			return err
 		}
 	}
 
 	logger.Infof("Initiating volume delete driver call for %s ", volBackup.Name)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultContextTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
 	defer cancel()
-	_, err = ctrl.driver.DeleteBackup(ctx, &providerSvc.DeleteBackupRequest{BackupContentName: volBackup.Name,
+	_, err := ctrl.driver.DeleteBackup(ctx, &providerSvc.DeleteBackupRequest{BackupContentName: volBackup.Name,
 		BackupInfo: backupIdentifiers, Parameters: backupParams,
 	})
 	if err != nil {
 		if utils.CheckServerUnavailable(err) {
 			ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup delete for %s",
 				volBackup.Name)
-			return nil
+			return status.Errorf(codes.FailedPrecondition,
+				"Driver unavailable: Continue to retry for volume backup for %s", volBackup.Name)
 		}
-		ctrl.updater.Event(volBackup, v1.EventTypeWarning, EventVolumeBackupDeleteFailed,
-			fmt.Sprintf("Unable to delete backup. %s", err.Error()))
+		//ctrl.updater.Event(volBackup, v1.EventTypeWarning, EventVolumeBackupDeleteFailed,
+		//	fmt.Sprintf("Unable to delete backup. %s", err.Error()))
 		logger.Errorf("Unable to delete backup. %s", err)
-		return err
+		return status.Errorf(codes.Aborted, "Unable to delete backup. %s", err)
 	}
 
-	if err := ctrl.ensureFinalizerRemove(volBackup); err != nil {
-		return err
-	}
+	//if err := ctrl.ensureFinalizerRemove(volBackup); err != nil {
+	//	return err
+	//}
 
-	err = utils.StoreClean(ctrl.processedVBC, volBackup, "VolumeBackupContent")
-	if err != nil {
-		ctrl.logger.Warningf("Failed to clean processed cache. %s", err)
-	}
 	return nil
 }
 
-func (ctrl *controller) ensureFinalizerRemove(volBackup *kahuapi.VolumeBackupContent) error {
+func (ctrl *VolumeBackupService) ensureFinalizerRemove(volBackup *kahuapi.VolumeBackupContent) error {
 	if utils.ContainsFinalizer(volBackup, volumeBackupFinalizer) {
 		backupClone := volBackup.DeepCopy()
 		utils.RemoveFinalizer(backupClone, volumeBackupFinalizer)
-		if _, err := ctrl.updater.patchBackup(volBackup, backupClone); err != nil {
-			ctrl.logger.Errorf("removing finalizer failed for %s", volBackup.Name)
-			return err
-		}
+		//if _, err := ctrl.updater.patchBackup(volBackup, backupClone); err != nil {
+		//	ctrl.logger.Errorf("removing finalizer failed for %s", volBackup.Name)
+		//	return err
+		//}
 	}
 	return nil
 }
@@ -403,147 +337,222 @@ func validateBackupResponse(volNames sets.String,
 	return nil
 }
 
-func (ctrl *controller) constructBackupRequest(
+func (ctrl *VolumeBackupService) constructBackupRequest(
 	volBackup *kahuapi.VolumeBackupContent) (*providerSvc.StartBackupRequest, sets.String, error) {
-	if volBackup.Spec.BackupSourceRef != nil {
-		return ctrl.getVolBackupReqByRef(volBackup)
+	if len(volBackup.Spec.VolumeMount) != 0 {
+		// handle backup volume mount here
+		return nil, sets.NewString(), status.Error(codes.Unauthenticated,
+			"Volume mount handling not implemented")
 	}
 
-	volumes, volNames, err := ctrl.getPersistentVols(volBackup.Spec.Volumes)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &providerSvc.StartBackupRequest{
-			BackupContentName: volBackup.Name, Pv: volumes, Parameters: volBackup.Spec.Parameters},
-		volNames, nil
+	return ctrl.getVolBackupReqByRef(volBackup)
 }
 
-func (ctrl *controller) getVolBackupReqByRef(
+func (ctrl *VolumeBackupService) getVolBackupReqByRef(
 	volBackup *kahuapi.VolumeBackupContent) (*providerSvc.StartBackupRequest, sets.String, error) {
-
-	volBackupRef := volBackup.Spec.BackupSourceRef
-	// only snapshot objects
-	kahuVolSnapshot, err := ctrl.kahuClient.
-		KahuV1beta1().
-		VolumeSnapshots().
-		Get(context.TODO(), volBackupRef.Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	volBackupInfo := make([]*providerSvc.VolBackup, 0)
+	volBackupInfos := make([]*providerSvc.VolBackup, 0)
 	volNames := sets.NewString()
-	for _, state := range kahuVolSnapshot.Status.SnapshotStates {
-		snapshot, err := ctrl.getSnapshotBySnapshotState(state)
+	for _, ref := range volBackup.Spec.VolumeRef {
+		volBackupInfo := new(providerSvc.VolBackup)
+		pv, err := ctrl.getVolume(ref.Volume)
 		if err != nil {
-			return nil, nil, err
+			return nil, sets.NewString(), err
 		}
-		pv, err := ctrl.getPVBySnapshotState(state)
-		if err != nil {
-			return nil, nil, err
-		}
+		volBackupInfo.Pv = pv
 		volNames.Insert(pv.Name)
-		volBackupInfo = append(volBackupInfo, &providerSvc.VolBackup{
-			Snapshot: snapshot,
-			Pv:       pv,
-		})
+		if ref.Snapshot != nil {
+			snapshot := &providerSvc.Snapshot{
+				SnapshotAttributes: ref.Snapshot.Attribute,
+				SnapshotHandle:     ref.Snapshot.Handle,
+			}
+			volBackupInfo.Snapshot = snapshot
+		}
+		volBackupInfos = append(volBackupInfos, volBackupInfo)
 	}
 
 	return &providerSvc.StartBackupRequest{
 		BackupContentName: volBackup.Name,
-		BackupInfo:        volBackupInfo,
+		BackupInfo:        volBackupInfos,
 		Parameters:        volBackup.Spec.Parameters}, volNames, nil
 }
 
-func (ctrl *controller) getSnapshotBySnapshotState(
-	state kahuapi.VolumeSnapshotState) (*providerSvc.Snapshot, error) {
-	csiSnapshotRef := state.CSISnapshotRef
+//func (ctrl *VolumeBackupService) getVolBackupReqBySnapshot(backupName string,
+//	backupParameter map[string]string,
+//	volBackupRef *kahuapi.ResourceReference) (*providerSvc.StartBackupRequest, sets.String, error) {
+//	// only snapshot objects
+//	kahuVolSnapshot, err := ctrl.kahuClient.
+//		KahuV1beta1().
+//		VolumeSnapshots().
+//		Get(context.TODO(), volBackupRef.Name, metav1.GetOptions{})
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	volBackupInfo := make([]*providerSvc.VolBackup, 0)
+//	volNames := sets.NewString()
+//	for _, state := range kahuVolSnapshot.Status.SnapshotStates {
+//		snapshot, err := ctrl.getSnapshotBySnapshotState(state)
+//		if err != nil {
+//			return nil, nil, err
+//		}
+//		pv, err := ctrl.getPVBySnapshotState(state)
+//		if err != nil {
+//			return nil, nil, err
+//		}
+//		volNames.Insert(pv.Name)
+//		volBackupInfo = append(volBackupInfo, &providerSvc.VolBackup{
+//			Snapshot: snapshot,
+//			Pv:       pv,
+//		})
+//	}
+//
+//	return &providerSvc.StartBackupRequest{
+//		BackupContentName: backupName,
+//		BackupInfo:        volBackupInfo,
+//		Parameters:        backupParameter}, volNames, nil
+//}
+//
+//func (ctrl *VolumeBackupService) getVolBackupReqByVolumeGroup(backupName string,
+//	backupParameter map[string]string,
+//	volBackupRef *kahuapi.ResourceReference) (*providerSvc.StartBackupRequest, sets.String, error) {
+//	// only PVC objects
+//	kahuVolGroup, err := ctrl.kahuClient.
+//		KahuV1beta1().
+//		VolumeGroups().
+//		Get(context.TODO(), volBackupRef.Name, metav1.GetOptions{})
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	volBackupInfo := make([]*providerSvc.VolBackup, 0)
+//	volNames := sets.NewString()
+//	for _, vol := range kahuVolGroup.Status.Volumes {
+//		pv, err := ctrl.getVolume(vol)
+//		if err != nil {
+//			return nil, nil, err
+//		}
+//		volNames.Insert(pv.Name)
+//		volBackupInfo = append(volBackupInfo, &providerSvc.VolBackup{
+//			Pv: pv,
+//		})
+//	}
+//
+//	return &providerSvc.StartBackupRequest{
+//		BackupContentName: backupName,
+//		BackupInfo:        volBackupInfo,
+//		Parameters:        backupParameter}, volNames, nil
+//}
 
-	if csiSnapshotRef == nil {
-		return nil, fmt.Errorf("csi Snapshot info not populated")
-	}
+//func (ctrl *VolumeBackupService) getSnapshotBySnapshotState(
+//	state kahuapi.VolumeSnapshotState) (*providerSvc.Snapshot, error) {
+//	//csiSnapshotRef := state.CSISnapshotRef
+//	//
+//	//if csiSnapshotRef == nil {
+//	//	return nil, fmt.Errorf("csi Snapshot info not populated")
+//	//}
+//	//
+//	//csiVolSnapshot, err := ctrl.csiSnapshot.VolumeSnapshots(csiSnapshotRef.Namespace).
+//	//	Get(context.TODO(), csiSnapshotRef.Name, metav1.GetOptions{})
+//	//if err != nil {
+//	//	return nil, err
+//	//}
+//	//
+//	//csiVolSnapshotContent, err := ctrl.csiSnapshot.VolumeSnapshotContents().
+//	//	Get(context.TODO(), *csiVolSnapshot.Status.BoundVolumeSnapshotContentName, metav1.GetOptions{})
+//	//if err != nil {
+//	//	return nil, err
+//	//}
+//	//
+//	//return &providerSvc.Snapshot{
+//	//	SnapshotHandle: *csiVolSnapshotContent.Status.SnapshotHandle,
+//	//}, nil
+//
+//	return &providerSvc.Snapshot{
+//		SnapshotHandle: nil,
+//	}, nil
+//}
 
-	csiVolSnapshot, err := ctrl.csiSnapshot.VolumeSnapshots(csiSnapshotRef.Namespace).
-		Get(context.TODO(), csiSnapshotRef.Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	csiVolSnapshotContent, err := ctrl.csiSnapshot.VolumeSnapshotContents().
-		Get(context.TODO(), *csiVolSnapshot.Status.BoundVolumeSnapshotContentName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return &providerSvc.Snapshot{
-		SnapshotHandle: *csiVolSnapshotContent.Status.SnapshotHandle,
-	}, nil
-}
-
-func (ctrl *controller) getPVBySnapshotState(
-	state kahuapi.VolumeSnapshotState) (*v1.PersistentVolume, error) {
-	pvc, err := ctrl.kubeClient.CoreV1().PersistentVolumeClaims(state.PVC.Namespace).
-		Get(context.TODO(), state.PVC.Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
+func (ctrl *VolumeBackupService) getVolume(
+	volume kahuapi.ResourceReference) (*v1.PersistentVolume, error) {
+	volName := volume.Name
+	if volume.Kind == k8sresource.PersistentVolumeClaimGVK.Kind {
+		pvc, err := ctrl.kubeClient.CoreV1().PersistentVolumeClaims(volume.Namespace).
+			Get(context.TODO(), volume.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		volName = pvc.Spec.VolumeName
 	}
 
 	return ctrl.kubeClient.CoreV1().PersistentVolumes().
-		Get(context.TODO(), pvc.Spec.VolumeName, metav1.GetOptions{})
+		Get(context.TODO(), volName, metav1.GetOptions{})
 }
 
-func (ctrl *controller) getPersistentVols(
-	vbcVols []v1.PersistentVolume) ([]*v1.PersistentVolume, sets.String, error) {
-	volNames := sets.NewString()
-	volumes := make([]*v1.PersistentVolume, 0)
-	for _, vbcVol := range vbcVols {
-		ctrl.logger.Infof("Getting volume details for pv  (%s) ", vbcVol.Name)
-		pv, err := ctrl.kubeClient.CoreV1().PersistentVolumes().Get(context.TODO(), vbcVol.Name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			ctrl.logger.Errorf("request PV (%s) backup not found", vbcVol.Name)
-			return volumes, volNames, fmt.Errorf("request PV (%s) backup not found", vbcVol.Name)
-		}
-		if err != nil {
-			ctrl.logger.Errorf("Failed to fetch volume details for the pv (%s) err (%s) ", vbcVol.Name, err)
-			return volumes, volNames, err
-		}
+//func (ctrl *VolumeBackupService) getPVBySnapshotState(
+//	state kahuapi.VolumeSnapshotState) (*v1.PersistentVolume, error) {
+//	pvc, err := ctrl.kubeClient.CoreV1().PersistentVolumeClaims(state.PVC.Namespace).
+//		Get(context.TODO(), state.PVC.Name, metav1.GetOptions{})
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return ctrl.kubeClient.CoreV1().PersistentVolumes().
+//		Get(context.TODO(), pvc.Spec.VolumeName, metav1.GetOptions{})
+//}
 
-		volNames.Insert(pv.Name)
-		// ensure APIVersion and Kind for PV
-		pv.APIVersion = vbcVol.APIVersion
-		pv.Kind = vbcVol.Kind
-		volumes = append(volumes, pv)
-	}
+//func (ctrl *VolumeBackupService) getPersistentVols(
+//	vbcVols []v1.PersistentVolume) ([]*v1.PersistentVolume, sets.String, error) {
+//	volNames := sets.NewString()
+//	volumes := make([]*v1.PersistentVolume, 0)
+//	for _, vbcVol := range vbcVols {
+//		ctrl.logger.Infof("Getting volume details for pv  (%s) ", vbcVol.Name)
+//		pv, err := ctrl.kubeClient.CoreV1().PersistentVolumes().Get(context.TODO(), vbcVol.Name, metav1.GetOptions{})
+//		if apierrors.IsNotFound(err) {
+//			ctrl.logger.Errorf("request PV (%s) backup not found", vbcVol.Name)
+//			return volumes, volNames, fmt.Errorf("request PV (%s) backup not found", vbcVol.Name)
+//		}
+//		if err != nil {
+//			ctrl.logger.Errorf("Failed to fetch volume details for the pv (%s) err (%s) ", vbcVol.Name, err)
+//			return volumes, volNames, err
+//		}
+//
+//		volNames.Insert(pv.Name)
+//		// ensure APIVersion and Kind for PV
+//		pv.APIVersion = vbcVol.APIVersion
+//		pv.Kind = vbcVol.Kind
+//		volumes = append(volumes, pv)
+//	}
+//
+//	return volumes, volNames, nil
+//}
 
-	return volumes, volNames, nil
-}
-
-func (ctrl *controller) handleVolumeBackup(
-	volBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
+func (ctrl *VolumeBackupService) handleBackupStart(ctx context.Context,
+	volBackup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer) error {
 	volNames := sets.NewString()
 
 	backupReq, volNames, err := ctrl.constructBackupRequest(volBackup)
 	if err != nil {
-		return volBackup, err
+		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultContextTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
 	defer cancel()
 	response, err := ctrl.driver.StartBackup(ctx, backupReq)
 	if err != nil {
 		ctrl.logger.Errorf("Unable to start backup. %s", err)
-		return volBackup, err
+		return err
 	}
 
 	if response != nil && len(response.Errors) > 0 {
 		msg := fmt.Sprintf("Unable to start backup. err: (%s)", strings.Join(response.Errors, " ,"))
 		ctrl.logger.Error(msg)
-		return volBackup, fmt.Errorf("%s", msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	if err = validateBackupResponse(volNames, response.GetBackupInfo()); err != nil {
-		ctrl.logger.Errorf("Invalid backup response from driver. %s", err)
-		return volBackup, err
+		ctrl.logger.Warningf("Invalid backup response from driver. %s", err)
+		return err
 	}
 
 	backupState := make([]kahuapi.VolumeBackupState, 0)
@@ -556,79 +565,69 @@ func (ctrl *controller) handleVolumeBackup(
 		})
 	}
 
-	// update backup status
-	newBackup := volBackup.DeepCopy()
-	newBackup.Status.Phase = kahuapi.VolumeBackupContentPhaseInProgress
-	newBackup.Status.BackupState = backupState
-	return newBackup, err
+	return ctrl.sendBackupState(volBackup, stream, backupState)
 }
 
-func (ctrl *controller) processVolumeBackup(backup *kahuapi.VolumeBackupContent) error {
-	logger := ctrl.logger.WithField("backup", backup.Name)
-	switch backup.Status.Phase {
-	case "", kahuapi.VolumeBackupContentPhaseInit:
-		newBackup, err := ctrl.handleVolumeBackup(backup)
-		if err != nil {
-			if utils.CheckServerUnavailable(err) {
-				ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backup.Name)
-				return nil
-			}
-			if _, err = ctrl.updater.updateStatusWithFailure(newBackup, err.Error()); err != nil {
-				ctrl.logger.Errorf("Unable to start backup. %s", err)
-			}
-			return err
-		}
-		// update status with in progress
-		if newBackup, err = ctrl.updater.updateStatusWithEvent(backup, newBackup,
-			v1.EventTypeNormal, EventVolumeBackupStarted, "Started volume backup"); err != nil {
-			ctrl.logger.Errorf("Unable to update volume backup start. %s", err)
-			return err
-		}
-
-		fallthrough
-	case kahuapi.VolumeBackupContentPhaseInProgress:
-		ctx := ctrl.newVolumeBackupProgressContext(ctrl.logger)
-		err := ctrl.operationManager.Run(backup.Name, operation.Handler{
-			Operation: ctx.processBackupProgress,
-			OnFailure: ctx.handleBackupProgressFailure,
-			OnSuccess: ctx.handleBackupProgressSuccess})
-		if operation.IsAlreadyExists(err) {
-			return nil
-		}
-		ctrl.logger.Infof("Backup operation in progress for %s", backup.Name)
-		return nil
-	case kahuapi.VolumeBackupContentPhaseFailed:
-		logger.Infof("Volume backup failed already")
-		return nil
-	default:
-		logger.Infof("Ignoring volume backup state (%s).", backup.Status.Phase)
-		return nil
+func toBackupProgress(state kahuapi.VolumeBackupState) *volumeservice.BackupProgress {
+	return &volumeservice.BackupProgress{
+		Volume:          state.VolumeName,
+		BackupHandle:    state.BackupHandle,
+		BackupAttribute: state.BackupAttributes,
+		Progress:        state.Progress,
 	}
 }
 
-type backupProgressContext struct {
-	updater         volumeBackupUpdater
-	volBackupLister kahulister.VolumeBackupContentLister
-	driver          providerSvc.VolumeBackupClient
-	logger          log.FieldLogger
+func (ctrl *VolumeBackupService) sendBackupState(backup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer,
+	states []kahuapi.VolumeBackupState) error {
+	backupProgress := make([]*volumeservice.BackupProgress, 0)
+	for _, state := range states {
+		backupProgress = append(backupProgress, toBackupProgress(state))
+	}
+
+	err := stream.Send(&volumeservice.BackupResponse{
+		Name: backup.Name,
+		Data: &volumeservice.BackupResponse_State{
+			State: &volumeservice.BackupState{
+				Progress: backupProgress,
+			},
+		},
+	})
+	if err != nil {
+		ctrl.logger.Warningf("Unable to send backup state. %s", err)
+	}
+	return nil
 }
 
-func (ctrl *controller) newVolumeBackupProgressContext(logger log.FieldLogger) *backupProgressContext {
-	return &backupProgressContext{
-		volBackupLister: ctrl.volumeBackupLister,
-		updater:         ctrl.updater,
-		driver:          ctrl.driver,
-		logger:          logger.WithField("context", "volume-backup-progress"),
+func toBackupEvent(etype, event, msg string) *volumeservice.BackupResponse_Event {
+	return &volumeservice.BackupResponse_Event{
+		Event: &volumeservice.Event{
+			Type:    etype,
+			Name:    event,
+			Message: msg,
+		},
 	}
 }
 
-func (ctx *backupProgressContext) skipBackupProgressProcessing(volBackup *kahuapi.VolumeBackupContent) bool {
+func (ctrl *VolumeBackupService) sendBackupEvent(backup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer,
+	etype, event, msg string) {
+	err := stream.Send(&volumeservice.BackupResponse{
+		Name: backup.Name,
+		Data: toBackupEvent(etype, event, msg),
+	})
+	if err != nil {
+		ctrl.logger.Warningf("Unable to send backup event. %s", err)
+	}
+}
+
+func (ctrl *VolumeBackupService) skipBackupProgressProcessing(volBackup *kahuapi.VolumeBackupContent) bool {
 	if volBackup.DeletionTimestamp != nil {
-		ctx.logger.Warningf("Volume backup % is getting deleted. Exiting volume backup progress",
+		ctrl.logger.Warningf("Volume backup[%] is getting deleted. Exiting volume backup progress",
 			volBackup.Name)
 		return true
 	} else if volBackup.Status.Phase != kahuapi.VolumeBackupContentPhaseInProgress {
-		ctx.logger.Infof("Volume backup is not in-progress. Skipping %s "+
+		ctrl.logger.Infof("Volume backup is not in-progress. Skipping %s "+
 			"backup progress check", volBackup.Name)
 		return true
 	}
@@ -636,56 +635,39 @@ func (ctx *backupProgressContext) skipBackupProgressProcessing(volBackup *kahuap
 	return false
 }
 
-func (ctx *backupProgressContext) processBackupProgress(index string) (bool, error) {
-	ctx.logger.Infof("Checking backup progress for %s", index)
-	volBackup, err := getVolumeBackup(index, ctx.volBackupLister)
+func (ctrl *VolumeBackupService) processBackupProgress(index string,
+	stream volumeservice.VolumeService_BackupServer) error {
+	ctrl.logger.Infof("Checking backup progress for %s", index)
+	volBackup, err := ctrl.getVolumeBackup(stream.Context(), index)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			ctx.logger.Errorf("volume backup (%s) already deleted", index)
-			return true, nil
+			ctrl.logger.Errorf("volume backup (%s) already deleted", index)
+			return status.Errorf(codes.NotFound, "volume backup[%s] already deleted", index)
 		}
-		ctx.logger.Errorf("Unable to get volume backup. %s", err)
-		return false, nil
+		ctrl.logger.Errorf("Unable to get volume backup. %s", err)
+		return nil
 	}
 
-	if ctx.skipBackupProgressProcessing(volBackup) {
-		return true, nil
+	if ctrl.skipBackupProgressProcessing(volBackup) {
+		return status.Errorf(codes.OutOfRange, "volume backup[%s] not in progress", index)
 	}
 
-	newVolBackup := volBackup.DeepCopy()
-	completed, err := ctx.syncBackupStat(newVolBackup)
+	err = ctrl.syncBackupStat(volBackup, stream)
 	if err != nil {
 		if utils.CheckServerUnavailable(err) {
-			ctx.logger.Errorf("Driver unavailable: Continue to retry for volume backup stat for %s",
+			ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup stat for %s",
 				volBackup.Name)
-			return false, nil
+			return nil
 		}
-		ctx.logger.Errorf("Failed to sync volume backup stat. %s", err)
-		return false, err
+		ctrl.logger.Errorf("Failed to sync volume backup stat. %s", err)
+		return nil
 	}
 
-	if completed {
-		newVolBackup.Status.Phase = kahuapi.VolumeBackupContentPhaseCompleted
-	}
-
-	ctx.logger.Infof("Updating backup progress for %s", index)
-	_, err = ctx.updater.updateStatus(volBackup, newVolBackup)
-	if err != nil {
-		ctx.logger.Errorf("Unable to update volume backup states for %s. %s", volBackup.Name, err)
-		return false, nil
-	}
-
-	if completed {
-		ctx.logger.Infof("Volume backup completed for %s", index)
-		ctx.updater.Event(volBackup, v1.EventTypeNormal, EventVolumeBackupCompleted, "Completed volume backup")
-		return true, nil
-	}
-
-	return false, nil
+	return nil
 }
 
-func (ctx *backupProgressContext) syncBackupStat(
-	volBackup *kahuapi.VolumeBackupContent) (bool, error) {
+func (ctrl *VolumeBackupService) syncBackupStat(volBackup *kahuapi.VolumeBackupContent,
+	stream volumeservice.VolumeService_BackupServer) error {
 	backupInfo := make([]*providerSvc.BackupIdentity, 0)
 	for _, state := range volBackup.Status.BackupState {
 		backupInfo = append(backupInfo, &providerSvc.BackupIdentity{
@@ -696,13 +678,13 @@ func (ctx *backupProgressContext) syncBackupStat(
 
 	driverCtx, cancel := context.WithTimeout(context.TODO(), defaultContextTimeout)
 	defer cancel()
-	stats, err := ctx.driver.GetBackupStat(driverCtx, &providerSvc.GetBackupStatRequest{
+	stats, err := ctrl.driver.GetBackupStat(driverCtx, &providerSvc.GetBackupStatRequest{
 		BackupInfo: backupInfo,
 		Parameters: volBackup.Spec.Parameters,
 	})
 	if err != nil {
-		ctx.logger.Errorf("Unable to get volume backup state for %s. %s", volBackup.Name, err)
-		return false, err
+		ctrl.logger.Errorf("Unable to get volume backup state for %s. %s", volBackup.Name, err)
+		return err
 	}
 
 	// update backup status
@@ -716,225 +698,5 @@ func (ctx *backupProgressContext) syncBackupStat(
 		}
 	}
 
-	progressCompleted := true
-	for _, state := range volBackup.Status.BackupState {
-		if state.Progress < 100 {
-			progressCompleted = false
-			break
-		}
-	}
-
-	progressTimeout := true
-	for _, volStat := range volBackup.Status.BackupState {
-		if time.Since(time.Unix(volStat.LastProgressUpdate, 0)) < defaultBackupProgressTimeout {
-			progressTimeout = false
-		}
-	}
-
-	if progressTimeout {
-		volBackup.Status.FailureReason = fmt.Sprintf("Volume backup timout. No progress update for "+
-			"max wait duration %s", defaultBackupProgressTimeout.String())
-		volBackup.Status.Phase = kahuapi.VolumeBackupContentPhaseFailed
-	}
-
-	return progressCompleted, nil
-}
-
-func (ctx *backupProgressContext) handleBackupProgressFailure(index string, progressErr error) {
-	volBackup, err := getVolumeBackup(index, ctx.volBackupLister)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			ctx.logger.Errorf("volume backup (%s) already deleted", index)
-			return
-		}
-		ctx.logger.Errorf("Unable to get volume backup. %s", err)
-		return
-	}
-
-	if ctx.skipBackupProgressProcessing(volBackup) {
-		return
-	}
-
-	_, err = ctx.updater.updateStatusWithFailure(volBackup, progressErr.Error())
-	if err != nil {
-		ctx.logger.Errorf("Failed to update backup progress failure(%s). %s", progressErr, err)
-	}
-	return
-}
-
-func (ctx *backupProgressContext) handleBackupProgressSuccess(index string) {
-	volBackup, err := getVolumeBackup(index, ctx.volBackupLister)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			ctx.logger.Errorf("volume backup (%s) already deleted", index)
-			return
-		}
-		ctx.logger.Errorf("Unable to get volume backup. %s", err)
-		return
-	}
-
-	if ctx.skipBackupProgressProcessing(volBackup) {
-		return
-	}
-
-	_, err = ctx.updater.updatePhase(volBackup, kahuapi.VolumeBackupContentPhaseCompleted)
-	if err != nil {
-		ctx.logger.Errorf("Failed to update backup progress success. %s", err)
-	}
-	return
-}
-
-func (ctrl *controller) ensureFinalizer(
-	volBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
-	if !utils.ContainsFinalizer(volBackup, volumeBackupFinalizer) {
-		volBackupClone := volBackup.DeepCopy()
-		utils.SetFinalizer(volBackupClone, volumeBackupFinalizer)
-		return ctrl.updater.patchBackup(volBackup, volBackupClone)
-	}
-	return volBackup, nil
-}
-
-func (ctrl *controller) ensureVolBackupInit(
-	volBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
-	volBackupClone := volBackup.DeepCopy()
-	dirty := false
-	if volBackup.Status.Phase == "" {
-		dirty = true
-		volBackupClone.Status.Phase = kahuapi.VolumeBackupContentPhaseInit
-	}
-	if volBackup.Status.StartTimestamp == nil {
-		dirty = true
-		metaTime := metav1.Now()
-		volBackupClone.Status.StartTimestamp = &metaTime
-	}
-
-	if dirty {
-		return ctrl.updater.patchBackupStatus(volBackup, volBackupClone)
-	}
-	return volBackup, nil
-}
-
-func (updater *volumeBackupUpdater) Event(backup *kahuapi.VolumeBackupContent,
-	eventType, reason, message string) {
-	updater.eventRecorder.Event(backup, eventType, reason, message)
-}
-
-func (updater *volumeBackupUpdater) updateStatusWithEvent(backup, newBackup *kahuapi.VolumeBackupContent,
-	eventType, reason, message string) (*kahuapi.VolumeBackupContent, error) {
-	newBackup, err := updater.updateStatus(backup, newBackup)
-	if err != nil {
-		return newBackup, err
-	}
-
-	updater.Event(newBackup, eventType, reason, message)
-	return newBackup, err
-}
-
-func (updater *volumeBackupUpdater) updateStatusWithFailure(backup *kahuapi.VolumeBackupContent,
-	msg string) (*kahuapi.VolumeBackupContent, error) {
-	newBackup := backup.DeepCopy()
-	newBackup.Status.Phase = kahuapi.VolumeBackupContentPhaseFailed
-	newBackup.Status.FailureReason = msg
-	backup, err := updater.patchBackupStatus(backup, newBackup)
-	if err != nil {
-		return backup, err
-	}
-
-	updater.Event(backup, v1.EventTypeWarning, EventVolumeBackupFailed, msg)
-	return backup, err
-}
-
-func (updater *volumeBackupUpdater) updateStatus(backup,
-	newBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
-	return updater.patchBackupStatus(backup, newBackup)
-}
-
-func (updater *volumeBackupUpdater) updatePhaseWithEvent(backup *kahuapi.VolumeBackupContent,
-	phase kahuapi.VolumeBackupContentPhase,
-	eventType, reason, message string) (*kahuapi.VolumeBackupContent, error) {
-	newBackup, err := updater.updatePhase(backup, phase)
-	if err != nil {
-		return newBackup, err
-	}
-
-	updater.Event(newBackup, eventType, reason, message)
-	return newBackup, err
-}
-
-func (updater *volumeBackupUpdater) updatePhase(backup *kahuapi.VolumeBackupContent,
-	phase kahuapi.VolumeBackupContentPhase) (*kahuapi.VolumeBackupContent, error) {
-	backupClone := backup.DeepCopy()
-	backupClone.Status.Phase = phase
-	return updater.patchBackupStatus(backup, backupClone)
-}
-
-func (updater *volumeBackupUpdater) patchBackup(
-	oldBackup,
-	newBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
-	origBytes, err := json.Marshal(oldBackup)
-	if err != nil {
-		return nil, errors.Wrap(err, "error marshalling original backup")
-	}
-
-	updatedBytes, err := json.Marshal(newBackup)
-	if err != nil {
-		return nil, errors.Wrap(err, "error marshalling updated backup")
-	}
-
-	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
-	if err != nil {
-		return nil, errors.Wrap(err, "error creating json merge patch for backup")
-	}
-
-	updatedBackup, err := updater.volumeBackupClient.Patch(context.TODO(),
-		oldBackup.Name,
-		types.MergePatchType,
-		patchBytes,
-		metav1.PatchOptions{})
-	if err != nil {
-		return nil, errors.Wrap(err, "error patching backup")
-	}
-
-	_, err = utils.StoreRevisionUpdate(updater.store, updatedBackup, "VolumeBackupContent")
-	if err != nil {
-		return updatedBackup, errors.Wrap(err, "Failed to updated processed VBC cache")
-	}
-
-	return updatedBackup, nil
-}
-
-func (updater *volumeBackupUpdater) patchBackupStatus(
-	oldBackup,
-	newBackup *kahuapi.VolumeBackupContent) (*kahuapi.VolumeBackupContent, error) {
-	origBytes, err := json.Marshal(oldBackup)
-	if err != nil {
-		return nil, errors.Wrap(err, "error marshalling original backup")
-	}
-
-	updatedBytes, err := json.Marshal(newBackup)
-	if err != nil {
-		return nil, errors.Wrap(err, "error marshalling updated backup")
-	}
-
-	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
-	if err != nil {
-		return nil, errors.Wrap(err, "error creating json merge patch for backup")
-	}
-
-	updatedBackup, err := updater.volumeBackupClient.Patch(context.TODO(),
-		oldBackup.Name,
-		types.MergePatchType,
-		patchBytes,
-		metav1.PatchOptions{},
-		"status")
-	if err != nil {
-		return nil, errors.Wrap(err, "error patching backup")
-	}
-
-	_, err = utils.StoreRevisionUpdate(updater.store, updatedBackup, "VolumeBackupContent")
-	if err != nil {
-		return updatedBackup, errors.Wrap(err, "Failed to updated processed VBC cache")
-	}
-
-	return updatedBackup, nil
+	return ctrl.sendBackupState(volBackup, stream, volBackup.Status.BackupState)
 }

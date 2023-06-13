@@ -18,23 +18,38 @@ package snapshot
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/client"
 	clientset "github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/volume/volumegroup"
-	"k8s.io/client-go/kubernetes"
+	"github.com/soda-cdm/kahu/utils/k8sresource"
+	"github.com/soda-cdm/kahu/volume/group"
 )
 
-type Factory interface {
-	ByVolumeGroup(volGroup volumegroup.Interface) (Interface, error)
+const (
+	labelBackupName      = "kahu.io/backup-name"
+	labelProvisionerName = "kahu.io/provisioner-name"
+)
+
+type Snapshotter interface {
+	ByVolumeGroup(backupName string, volGroup group.Interface) (Wait, error)
+	GetSnapshotsByBackup(backupName string) ([]*kahuapi.VolumeSnapshot, error)
+	Delete(volSnapshot string) error
+	GetSnapshotsByProvisioner() ([]*kahuapi.VolumeSnapshot, error, error)
 }
 
-type factory struct {
+type snapshotter struct {
 	ctx        context.Context
 	kubeClient kubernetes.Interface
 	kahuClient clientset.Interface
 }
 
-func NewFactory(ctx context.Context, clientFactory client.Factory) (Factory, error) {
+func NewSnapshotter(ctx context.Context, clientFactory client.Factory) (Snapshotter, error) {
 	kubeClient, err := clientFactory.KubeClient()
 	if err != nil {
 		return nil, err
@@ -45,13 +60,83 @@ func NewFactory(ctx context.Context, clientFactory client.Factory) (Factory, err
 		return nil, err
 	}
 
-	return &factory{
+	return &snapshotter{
 		ctx:        ctx,
 		kubeClient: kubeClient,
 		kahuClient: kahuClient,
 	}, nil
 }
 
-func (f *factory) ByVolumeGroup(volGroup volumegroup.Interface) (Interface, error) {
-	return newSnapshot(f.ctx, f.kubeClient, f.kahuClient, volGroup)
+func (s *snapshotter) ByVolumeGroup(backupName string, volGroup group.Interface) (Wait, error) {
+	volumes := volGroup.GetResources()
+	provisioner := volGroup.GetProvisionerName()
+	if provisioner == "" {
+		return nil, fmt.Errorf("empty volume provisioner")
+	}
+
+	volRef := make([]kahuapi.ResourceReference, 0)
+	for _, volume := range volumes {
+		apiVersion, kind := k8sresource.PersistentVolumeGVK.ToAPIVersionAndKind()
+		volRef = append(volRef, kahuapi.ResourceReference{
+			Kind:       kind,
+			APIVersion: apiVersion,
+			Name:       volume.GetName(),
+			Namespace:  volume.GetNamespace(),
+		})
+	}
+
+	snapshot, err := s.snapshot(backupName, provisioner, volRef)
+	if err != nil {
+		// delete older kahu snapshot objects
+		return nil, err
+	}
+
+	return newSnapshotWait(s.ctx, s.kahuClient, snapshot.Name), nil
+}
+
+func (s *snapshotter) GetSnapshotsByBackup(backupName string) ([]*kahuapi.VolumeSnapshot, error) {
+	return nil, nil
+}
+func (s *snapshotter) Delete(volSnapshot string) error {
+	return nil
+}
+func (s *snapshotter) GetSnapshotsByProvisioner() ([]*kahuapi.VolumeSnapshot, error, error) {
+	return nil, nil, nil
+}
+
+func (s *snapshotter) snapshot(backup string,
+	provisioner string, volumes []kahuapi.ResourceReference) (*kahuapi.VolumeSnapshot, error) {
+	kahuSnapshot := s.volGroupToSnapshot(backup, provisioner, volumes)
+
+	return s.kahuClient.
+		KahuV1beta1().
+		VolumeSnapshots().
+		Create(context.TODO(), kahuSnapshot, metav1.CreateOptions{})
+}
+
+func (s *snapshotter) volGroupToSnapshot(backup string,
+	provisioner string,
+	vols []kahuapi.ResourceReference) *kahuapi.VolumeSnapshot {
+	return &kahuapi.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "snapshot-" + uuid.New().String(),
+			Labels: s.snapshotLabel(backup, provisioner).MatchLabels,
+		},
+		Spec: kahuapi.VolumeSnapshotSpec{
+			BackupName:       &backup,
+			SnapshotProvider: &provisioner,
+			VolumeSource: kahuapi.VolumeSource{
+				List: vols,
+			},
+		},
+	}
+}
+
+func (s *snapshotter) snapshotLabel(backup, provisioner string) *metav1.LabelSelector {
+	return &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			labelBackupName:      backup,
+			labelProvisionerName: provisioner,
+		},
+	}
 }

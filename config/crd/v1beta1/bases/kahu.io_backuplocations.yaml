@@ -50,6 +50,21 @@ spec:
                 description: Config is a dictonary which may contains specific details,
                   like secret key, password etc
                 type: object
+              location:
+                properties:
+                  path:
+                    type: string
+                  sourceRef:
+                    properties:
+                      kind:
+                        enum:
+                        - PersistentVolumeClaim
+                        - Secret
+                        type: string
+                      name:
+                        type: string
+                    type: object
+                type: object
               providerName:
                 description: ProviderName is a 3rd party driver which inernally connect
                   to respective storage
@@ -57,10 +72,18 @@ spec:
             required:
             - providerName
             type: object
+          status:
+            properties:
+              active:
+                default: false
+                description: Active status indicate state of the backup location.
+                type: boolean
+            type: object
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""

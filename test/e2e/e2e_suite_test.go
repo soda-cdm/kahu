@@ -36,16 +36,15 @@ func TestE2e(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx := context.TODO()
-	backupNs := kahu.BackupNameSpace
-	restoreNs := kahu.RestoreNameSpace
+
 	kubeClient, _ := kahu.Clients()
-	err := k8s.CreateNamespace(ctx, kubeClient, backupNs)
+	err := k8s.CreateNamespace(ctx, kubeClient, kahu.BackupNameSpace)
 	if err != nil {
-		log.Errorf("not able to create namespace %v bez %v\n", backupNs, err)
+		log.Errorf("not able to create namespace %v bez %v\n", kahu.BackupNameSpace, err)
 	}
-	err = k8s.CreateNamespace(ctx, kubeClient, restoreNs)
+	err = k8s.CreateNamespace(ctx, kubeClient, kahu.RestoreNameSpace)
 	if err != nil {
-		log.Errorf("not able to create namespace %v bez %v\n", restoreNs, err)
+		log.Errorf("not able to create namespace %v bez %v\n", kahu.RestoreNameSpace, err)
 	}
 	log.Info("********Created namespaces************\n")
 })

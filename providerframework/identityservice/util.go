@@ -53,7 +53,7 @@ func registerProvider(ctx context.Context, conn *grpc.ClientConnInterface, provi
 func createProviderCR(
 	providerInfo ProviderInfo,
 	providerType apiv1.ProviderType,
-	providerCapabilities map[string]bool) (*apiv1.Provider, error) {
+	providerCapabilities []string) (*apiv1.Provider, error) {
 	cfg := kahuClient.NewFactoryConfig()
 	clientFactory := kahuClient.NewFactory(agentBaseName, cfg)
 	client, err := clientFactory.KahuClient()

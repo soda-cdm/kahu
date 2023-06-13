@@ -17,10 +17,12 @@ limitations under the License.
 syntax = "proto3";
 package kahu.metaservice;
 
+import "google/protobuf/wrappers.proto";
+
 option go_package = "lib/go;metaservice";
 
 // Resource specifies the name of a resource and whether it is namespaced.
-message Resource {
+message K8SResource {
   // name is the plural name of the resource.
   string name = 1;
 
@@ -34,51 +36,83 @@ message Resource {
   // For subresources, this may have a different value, for example: Scale".
   string group = 4;
 
+  string namespace = 5;
+
   // version is the version of the resource.
   // For subresources, this may have a different value, for example: v1 (while inside a v1beta1 version of the core resource's group)".
   string version = 9;
 }
 
-message BackupResource {
-  Resource resource = 1;
+message Resource {
+  oneof Identity {
+    K8SResource k8s_resource = 1;
+    string key = 3;
+  }
   bytes data = 2;
 }
 
-message BackupIdentifier {
-  string backup_handle = 1;
+message Backup {
+  string handle = 1;
   map <string, string> parameters = 9;
 }
 
-message BackupRequest {
-  oneof Backup {
-    BackupIdentifier identifier = 1;
-    BackupResource backup_resource = 2;
+message UploadRequest {
+  oneof Request{
+    Backup backup = 1;
+    Resource resource = 2;
   }
 }
 
-message RestoreRequest {
-    BackupIdentifier id = 1;
+message DownloadRequest {
+    Backup backup = 1;
+    Resource resource = 2;
 }
 
 message DeleteRequest {
-    BackupIdentifier id = 1;
+  Backup backup = 1;
 }
 
-message GetResponse {
-  oneof Restore {
-    BackupIdentifier identifier = 1;
-    BackupResource backup_resource = 2;
-  }
+message DownloadResponse {
+  repeated Resource resources = 1;
 }
 
 message Empty {}
 
+message ObjectExistsRequest {
+  oneof Identity {
+    K8SResource k8s_resource = 1;
+    string key = 2;
+  }
+
+  // Backup Identifier
+  Backup backup = 3;
+}
+
+message ObjectExistsResponse{
+  // Indicates if file exists
+  bool exists = 1;
+}
+
+// Probe request to check health/availability
+message ProbeRequest{}
+
+// Response to indicate health/availability status
+message ProbeResponse {
+  // Indicates if healthy/available or not
+  google.protobuf.BoolValue ready = 1;
+}
+
 service MetaService {
-  rpc Backup(stream BackupRequest)
+  rpc Upload(stream UploadRequest)
       returns (Empty) {}
-  rpc Restore(RestoreRequest)
-      returns (stream GetResponse) {}
+  rpc Download(DownloadRequest)
+      returns (stream DownloadResponse) {}
   rpc Delete(DeleteRequest)
       returns (Empty) {}
+  rpc ObjectExists(ObjectExistsRequest)
+      returns (ObjectExistsResponse) {}
+  // Probe provider for availability check
+  rpc Probe(ProbeRequest)
+      returns (ProbeResponse) {}
 }
 

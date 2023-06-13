@@ -91,28 +91,27 @@ message ProbeResponse {
 
 message Empty {}
 
+message Bucket {
+  string handle = 1;
+  map <string, string> parameters = 9;
+}
+
+
+message Object {
+  string identifier = 1;
+  bytes data = 2;
+}
+
 message UploadRequest {
-  // File information and attributes
-  message FileInfo {
-    string file_identifier = 1;
-    map <string, string> attributes = 2;
-  }
-
-  oneof Data {
-    // File information and attributes
-    FileInfo info = 1;
-
-    // File content
-    bytes chunk_data = 2;
+  oneof Request {
+    Bucket bucket = 1;
+    Object object = 2;
   }
 }
 
 message ObjectExistsRequest {
-  // File identifier
-  string file_identifier = 1;
-
-  // Provider specific parameters passed in as opaque key-value pairs
-  map <string, string> attributes = 2;
+  Bucket bucket = 1;
+  string object_identifier = 2;
 }
 
 message ObjectExistsResponse{
@@ -121,36 +120,17 @@ message ObjectExistsResponse{
 }
 
 message DownloadRequest {
-  // File identifier
-  string file_identifier = 1;
+  Bucket bucket = 1;
 
-  // Provider specific parameters passed in as opaque key-value pairs
-  map <string, string> attributes = 2;
+  string object_identifier = 2;
 }
 
 message DownloadResponse {
-  message FileInfo {
-    // File identifier
-    string file_identifier = 1;
-
-    // Provider specific parameters passed in as opaque key-value pairs
-    map <string, string> attributes = 2;
-  }
-
-  oneof Data {
-    FileInfo info = 1;
-
-    // File content being downloaded
-    bytes chunk_data = 2;
-  }
+  Object object = 1;
 }
 
 message DeleteRequest {
-  // File identifier
-  string file_identifier = 1;
-
-  // Provider specific parameters passed in as opaque key-value pairs
-  map <string, string> attributes = 2;
+  Bucket bucket = 1;
 }
 
 service Identity {
@@ -285,7 +265,7 @@ message BackupStat {
   string backup_handle = 1;
 
   // optional
-  int64 progress = 9;
+  int32 progress = 9;
 }
 
 message GetBackupStatResponse {

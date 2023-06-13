@@ -23,6 +23,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/soda-cdm/kahu/test/e2e/util/kahu"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +32,13 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 )
 
+func NewConfigMap() *v1.ConfigMap {
+	cm := &v1.ConfigMap{}
+	return cm
+}
+
 func CreateConfigMap(c clientset.Interface, ns, name string, data map[string]string) (*v1.ConfigMap, error) {
+
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -40,12 +47,13 @@ func CreateConfigMap(c clientset.Interface, ns, name string, data map[string]str
 		},
 		Data: data,
 	}
+
 	return c.CoreV1().ConfigMaps(ns).Create(context.TODO(), cm, metav1.CreateOptions{})
 }
 
 // WaitForConfigMapComplete uses c to wait for completions to complete for the Job jobName in namespace ns.
 func WaitForConfigMapComplete(c clientset.Interface, ns, configmapName string) error {
-	return wait.Poll(PollInterval, PollTimeout, func() (bool, error) {
+	return wait.Poll(kahu.PollInterval, kahu.PollTimeout, func() (bool, error) {
 		_, err := c.CoreV1().ConfigMaps(ns).Get(context.TODO(), configmapName, metav1.GetOptions{})
 		if err != nil {
 			return false, err

@@ -30,12 +30,12 @@ type Interface interface {
 	BackupLocations() BackupLocationInformer
 	// Providers returns a ProviderInformer.
 	Providers() ProviderInformer
+	// ProviderRegistrations returns a ProviderRegistrationInformer.
+	ProviderRegistrations() ProviderRegistrationInformer
 	// Restores returns a RestoreInformer.
 	Restores() RestoreInformer
 	// VolumeBackupContents returns a VolumeBackupContentInformer.
 	VolumeBackupContents() VolumeBackupContentInformer
-	// VolumeGroups returns a VolumeGroupInformer.
-	VolumeGroups() VolumeGroupInformer
 	// VolumeRestoreContents returns a VolumeRestoreContentInformer.
 	VolumeRestoreContents() VolumeRestoreContentInformer
 	// VolumeSnapshots returns a VolumeSnapshotInformer.
@@ -68,6 +68,11 @@ func (v *version) Providers() ProviderInformer {
 	return &providerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
+// ProviderRegistrations returns a ProviderRegistrationInformer.
+func (v *version) ProviderRegistrations() ProviderRegistrationInformer {
+	return &providerRegistrationInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
 // Restores returns a RestoreInformer.
 func (v *version) Restores() RestoreInformer {
 	return &restoreInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
@@ -76,11 +81,6 @@ func (v *version) Restores() RestoreInformer {
 // VolumeBackupContents returns a VolumeBackupContentInformer.
 func (v *version) VolumeBackupContents() VolumeBackupContentInformer {
 	return &volumeBackupContentInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
-// VolumeGroups returns a VolumeGroupInformer.
-func (v *version) VolumeGroups() VolumeGroupInformer {
-	return &volumeGroupInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // VolumeRestoreContents returns a VolumeRestoreContentInformer.

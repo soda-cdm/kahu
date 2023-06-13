@@ -17,68 +17,67 @@ limitations under the License.
 package server
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"io"
-	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/soda-cdm/kahu/providerframework/metaservice/app/options"
-	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver"
-	"github.com/soda-cdm/kahu/providerframework/metaservice/archiver/manager"
-	backuprepo "github.com/soda-cdm/kahu/providerframework/metaservice/backuprespository"
-	pb "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
+	"github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
+	"github.com/soda-cdm/kahu/providers/lib/go"
 	"github.com/soda-cdm/kahu/utils"
 )
 
-const (
-	archiveFileFormat = ".tar"
-)
-
 type metaServer struct {
-	ctx            context.Context
-	options        options.MetaServiceOptions
-	archiveManager archiver.ArchivalManager
-	backupRepo     backuprepo.BackupRepository
+	ctx        context.Context
+	options    options.MetaServiceOptions
+	grpcConn   *grpc.ClientConn
+	backupRepo providerservice.MetaBackupClient
+	logger     log.FieldLogger
 }
 
 func NewMetaServiceServer(ctx context.Context,
 	serviceOptions options.MetaServiceOptions,
-	backupRepo backuprepo.BackupRepository) pb.MetaServiceServer {
-	archiveManager := manager.NewArchiveManager(serviceOptions.ArchivalYard)
+	grpcConn *grpc.ClientConn) metaservice.MetaServiceServer {
 	return &metaServer{
-		ctx:            ctx,
-		options:        serviceOptions,
-		archiveManager: archiveManager,
-		backupRepo:     backupRepo,
+		ctx:        ctx,
+		options:    serviceOptions,
+		grpcConn:   grpcConn,
+		backupRepo: providerservice.NewMetaBackupClient(grpcConn),
+		logger:     log.WithField("module", "meta-service"),
 	}
 }
 
-func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
-	log.Info("Backup Called .... ")
+func (server *metaServer) Upload(service metaservice.MetaService_UploadServer) error {
+	server.logger.Info("Upload Called .... ")
 
+	uploadClient, err := server.backupRepo.Upload(service.Context())
+	if err != nil {
+		return status.Errorf(codes.Unknown, "failed to create upload client %s", err)
+	}
+
+	// TODO: Currently ignoring parameters
 	backupHandle, err := getBackupHandle(service)
 	if err != nil {
 		return status.Errorf(codes.Unknown, "failed to get backup handle during backup")
 	}
 
-	archiveFileName := backupHandle + archiveFileFormat
-
-	archiveHandler, archiveFile, err := server.archiveManager.
-		GetArchiver(archiver.CompressionType(server.options.CompressionFormat),
-			archiveFileName)
-	if archiveHandler == nil || err != nil {
-		log.Errorf("failed to create archiver %s", err)
-		return status.Errorf(codes.Internal, "failed to create archiver %s", err)
+	// send backup handle request to driver
+	err = uploadClient.Send(&providerservice.UploadRequest{
+		Request: &providerservice.UploadRequest_Bucket{
+			Bucket: &providerservice.Bucket{
+				Handle: backupHandle,
+			}}})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to send backup handle")
 	}
-	// delete the created /tmp file, incase any issues occured
-	defer deleteFile(archiveFile)
+
 	for {
-		backupRequest, err := service.Recv()
+		uploadReq, err := service.Recv()
 		// If there are no more requests
 		if err == io.EOF {
 			break
@@ -88,30 +87,30 @@ func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
 			return status.Errorf(codes.Unknown, "error receiving request")
 		}
 
-		resource := backupRequest.GetBackupResource().GetResource()
-		log.Infof("Resource Info %+v", resource)
-		resourceData := backupRequest.GetBackupResource().GetData()
-		filePath := utils.ResourceToFile(backupHandle, resource)
-		err = archiveHandler.WriteFile(filePath, resourceData)
+		resource := uploadReq.GetResource()
+		if resource == nil {
+			return status.Errorf(codes.Aborted, "expecting resource request")
+		}
+		data := resource.GetData()
+		objectKey := getObjectKey(backupHandle, resource)
+		err = uploadClient.Send(&providerservice.UploadRequest{
+			Request: &providerservice.UploadRequest_Object{
+				Object: &providerservice.Object{
+					Identifier: objectKey,
+					Data:       data,
+				}}})
 		if err != nil {
-			log.Errorf("failed to write file. %s", err)
-			return status.Errorf(codes.Internal, "failed to write file. %s", err)
+			return status.Errorf(codes.Internal, "failed to send backup handle")
 		}
 	}
 
-	err = archiveHandler.Close()
+	_, err = uploadClient.CloseAndRecv()
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to close and flush file. %s", err)
-	}
-
-	// upload backup to backup-location
-	err = server.backupRepo.Upload(archiveFile)
-	if err != nil {
-		log.Errorf("failed to upload backup. %s", err)
+		server.logger.Errorf("failed to upload backup. %s", err)
 		return status.Errorf(codes.Internal, "failed to upload backup. %s", err)
 	}
 
-	err = service.SendAndClose(&pb.Empty{})
+	err = service.SendAndClose(&metaservice.Empty{})
 	if err != nil {
 		return status.Errorf(codes.Unknown, "failed to close and flush file. %s", err)
 	}
@@ -119,94 +118,159 @@ func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
 	return nil
 }
 
-func (server *metaServer) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.Empty, error) {
-	empty := &pb.Empty{}
-	log.Info("Delete backup Called .... ")
-	backupHandle := req.GetId().BackupHandle
-	parameters := req.GetId().Parameters
-	err := server.backupRepo.Delete(backupHandle+archiveFileFormat, parameters)
-	if err != nil {
-		log.Errorf("failed to delete backup. %s", err)
-		return empty, status.Errorf(codes.Internal, "failed to delete backup. %s", err)
+func (server *metaServer) Download(req *metaservice.DownloadRequest,
+	service metaservice.MetaService_DownloadServer) error {
+	server.logger.Infof("Download backup resources ...")
+
+	backup := req.GetBackup()
+	if backup == nil {
+		server.logger.Error("empty backup info in delete call")
+		return status.Error(codes.Aborted, "empty backup info in Download call")
 	}
 
-	return empty, err
+	// TODO: Support individual file download
+
+	downloadClient, err := server.backupRepo.Download(service.Context(), &providerservice.DownloadRequest{
+		Bucket: &providerservice.Bucket{
+			Handle:     backup.GetHandle(),
+			Parameters: backup.GetParameters(),
+		}})
+	defer func() {
+		err = downloadClient.CloseSend()
+		if err != nil {
+			server.logger.Errorf("failed to close client. %s", err)
+		}
+	}()
+	if err != nil {
+		server.logger.Errorf("Failed to connect with backup driver. %s", err)
+		return status.Errorf(codes.Aborted, "Failed to connect with backup driver. %s", err)
+	}
+
+	for {
+		res, err := downloadClient.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			server.logger.Errorf("Error in driver. %s", err)
+			return status.Errorf(codes.Aborted, "Error in driver. %s", err)
+		}
+
+		object := res.GetObject()
+		if object == nil {
+			server.logger.Error("Empty response from driver")
+			return status.Error(codes.Aborted, "Empty response from driver")
+		}
+
+		identifier := object.GetIdentifier()
+		if k8sResource(backup.GetHandle(), object.GetIdentifier()) {
+			err = service.Send(&metaservice.DownloadResponse{
+				Resources: []*metaservice.Resource{
+					{
+						Identity: &metaservice.Resource_K8SResource{
+							K8SResource: getK8SResource(identifier),
+						},
+						Data: object.GetData(),
+					},
+				},
+			})
+			if err != nil {
+				server.logger.Errorf("Error in sending response. %s", err)
+				return status.Errorf(codes.Aborted, "Error in sending response. %s", err)
+			}
+			continue
+		}
+
+		err = service.Send(&metaservice.DownloadResponse{
+			Resources: []*metaservice.Resource{
+				{
+					Identity: &metaservice.Resource_Key{
+						Key: getObjectResource(identifier),
+					},
+					Data: object.GetData(),
+				},
+			},
+		})
+		if err != nil {
+			server.logger.Errorf("Error in sending response. %s", err)
+			return status.Errorf(codes.Aborted, "Error in sending response. %s", err)
+		}
+	}
+
+	return nil
 }
 
-func getBackupHandle(service pb.MetaService_BackupServer) (string, error) {
+func (server *metaServer) ObjectExists(context.Context, *metaservice.ObjectExistsRequest) (*metaservice.ObjectExistsResponse, error) {
+	return nil, nil
+}
+
+// Probe provider for availability check
+func (server *metaServer) Probe(ctx context.Context, req *metaservice.ProbeRequest) (*metaservice.ProbeResponse, error) {
+	rsp, err := providerservice.
+		NewIdentityClient(server.grpcConn).
+		Probe(ctx, &providerservice.ProbeRequest{})
+	if err != nil {
+		return &metaservice.ProbeResponse{}, err
+	}
+
+	return &metaservice.ProbeResponse{Ready: rsp.GetReady()}, nil
+}
+
+func (server *metaServer) Delete(ctx context.Context, req *metaservice.DeleteRequest) (*metaservice.Empty, error) {
+	empty := &metaservice.Empty{}
+	server.logger.Info("Delete backup Called .... ")
+	backup := req.GetBackup()
+	if backup == nil {
+		server.logger.Error("empty backup info in delete call")
+		return empty, status.Error(codes.Aborted, "empty backup info in delete call")
+	}
+
+	_, err := server.backupRepo.Delete(ctx, &providerservice.DeleteRequest{
+		Bucket: &providerservice.Bucket{
+			Handle:     backup.GetHandle(),
+			Parameters: backup.GetParameters(),
+		}})
+	if err != nil {
+		server.logger.Errorf("failed to delete backup. %s", err)
+		return empty, status.Errorf(codes.Aborted, "failed to delete backup. %s", err)
+	}
+
+	return empty, nil
+}
+
+func getBackupHandle(service metaservice.MetaService_UploadServer) (string, error) {
 	backupRequest, err := service.Recv()
 	if err != nil {
 		return "", status.Errorf(codes.Unknown, "failed with error %s", err)
 	}
 
-	identifier := backupRequest.GetIdentifier()
-	if identifier == nil {
-		return "", status.Errorf(codes.InvalidArgument, "first request is not backup identifier")
+	backup := backupRequest.GetBackup()
+	if backup == nil {
+		return "", status.Errorf(codes.Aborted, "first request is not backup identifier")
 	}
 
 	// use backup handle name for file
-	backupHandle := identifier.GetBackupHandle()
+	backupHandle := backup.GetHandle()
 	return backupHandle, nil
 }
 
-func deleteFile(filePath string) {
-	err := os.Remove(filePath)
-	if err != nil {
-		log.Warningf("Failed to delete file. %s", err)
+func getObjectKey(backupHandle string, service *metaservice.Resource) string {
+	if resource := service.GetK8SResource(); resource != nil {
+		return utils.ResourceToFile(backupHandle, resource)
 	}
+
+	return filepath.Join(backupHandle, service.GetKey())
 }
 
-func (server *metaServer) Restore(req *pb.RestoreRequest,
-	service pb.MetaService_RestoreServer) error {
-	log.Infof("Restore Called with request %+v", req)
+func getK8SResource(path string) *metaservice.K8SResource {
+	return utils.FileToResource(path)
+}
 
-	archiveFileName := req.GetId().GetBackupHandle() + archiveFileFormat
+func getObjectResource(path string) string {
+	_, file := filepath.Split(path)
+	return file
+}
 
-	// download backup file
-	filePath, err := server.backupRepo.Download(archiveFileName, req.GetId().GetParameters())
-	if err != nil {
-		log.Errorf("failed to upload backup. %s", err)
-		return status.Errorf(codes.Internal, "failed to upload backup. %s", err)
-	}
-	defer deleteFile(filePath)
-
-	archiveReader, err := server.archiveManager.
-		GetArchiveReader(archiver.CompressionType(server.options.CompressionFormat),
-			filePath)
-	if archiveReader == nil || err != nil {
-		log.Errorf("failed to create archive reader %s", err)
-		return status.Errorf(codes.Internal, "failed to create archive reader. %s", err)
-	}
-
-	var buffer bytes.Buffer
-	for {
-		header, reader, err := archiveReader.ReadNext()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to reader from archived file. %s", err)
-		}
-
-		writer := bufio.NewWriter(&buffer)
-		_, err = io.CopyN(writer, reader, header.Size)
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to form archived file. %s", err)
-		}
-
-		err = service.Send(&pb.GetResponse{
-			Restore: &pb.GetResponse_BackupResource{
-				BackupResource: &pb.BackupResource{
-					Resource: utils.FileToResource(header.Name),
-					Data:     buffer.Bytes(),
-				},
-			},
-		})
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to send back info from archived file. %s", err)
-		}
-		buffer.Reset()
-	}
-
-	return nil
+func k8sResource(backupHandle, path string) bool {
+	return filepath.Dir(path) != backupHandle
 }

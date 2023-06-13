@@ -16,9 +16,6 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.stage
-      name: Stage
-      type: string
     - jsonPath: .status.state
       name: State
       type: string
@@ -1838,10 +1835,6 @@ spec:
                 description: PreserveNodePort enable to preserve service node port
                   during restore Default behavior is to use assign fresh node port
                 type: boolean
-              resourcePrefix:
-                description: ResourcePrefix gets prepended in each restored resource
-                  name
-                type: string
             required:
             - backupName
             type: object
@@ -1888,17 +1881,17 @@ spec:
                       description: ResourceName is a one of the item of backup that
                         is backing up
                       type: string
+                    status:
+                      default: Pending
+                      description: Status is a state of the resource
+                      enum:
+                      - Pending
+                      - Processing
+                      - Failed
+                      - Completed
+                      type: string
                   type: object
                 type: array
-              stage:
-                enum:
-                - Initial
-                - PreHook
-                - Resources
-                - Volumes
-                - PostHook
-                - Finished
-                type: string
               startTimestamp:
                 format: date-time
                 nullable: true

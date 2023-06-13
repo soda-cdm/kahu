@@ -22,180 +22,45 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
-	"github.com/soda-cdm/kahu/utils"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	clientset "github.com/soda-cdm/kahu/client/clientset/versioned"
-	"github.com/soda-cdm/kahu/volume/volumegroup"
 )
 
-const (
-	LabelBackupName      = "kahu.backup.name"
-	LabelProvisionerName = "kahu.provisioner.name"
-)
-
-type Interface interface {
-	Apply() error
-	WaitForSnapshotToReady(refName string, timeout time.Duration) error
-	Delete() (*kahuapi.VolumeSnapshot, error)
-	GetSnapshots() ([]*kahuapi.VolumeSnapshot, error)
+type Wait interface {
+	WaitForSnapshotToReady(timeout time.Duration) error
 }
 
-type snapshoter struct {
-	ctx         context.Context
-	kubeClient  kubernetes.Interface
-	kahuClient  clientset.Interface
-	volumeGroup volumegroup.Interface
-	snapshotIDs sets.String
-	logger      log.FieldLogger
+type snapshotWait struct {
+	ctx          context.Context
+	kahuClient   clientset.Interface
+	snapshotName string
+	logger       log.FieldLogger
 }
 
-func newSnapshot(ctx context.Context,
-	kubeClient kubernetes.Interface,
+func newSnapshotWait(ctx context.Context,
 	kahuClient clientset.Interface,
-	volumeGroup volumegroup.Interface) (Interface, error) {
-	return &snapshoter{
-		ctx:         ctx,
-		kubeClient:  kubeClient,
-		kahuClient:  kahuClient,
-		volumeGroup: volumeGroup,
-		snapshotIDs: sets.NewString(),
-		logger:      log.WithField("module", "snapshotter"),
-	}, nil
-}
-
-func (s *snapshoter) Apply() error {
-	volumes, readyToUse := s.volumeGroup.GetVolumes()
-	if !readyToUse {
-		return fmt.Errorf("volume group not ready to use %s", s.volumeGroup.GetGroupName())
-	}
-
-	// group volumes with provisioner
-	byProvisioner := make(map[string][]kahuapi.ResourceReference)
-	for _, volume := range volumes {
-		pv, err := s.getPV(volume)
-		if err != nil {
-			return err
-		}
-
-		provisioner := utils.VolumeProvider(pv)
-		if provisioner == "" {
-			return fmt.Errorf("not able to identify provisioner for PV %s", pv.Name)
-		}
-		pvcs, ok := byProvisioner[provisioner]
-		if !ok {
-			byProvisioner[provisioner] = make([]kahuapi.ResourceReference, 0)
-		}
-		byProvisioner[provisioner] = append(pvcs, volume)
-	}
-
-	for provider, resources := range byProvisioner {
-		snapshot, err := s.kahuSnapshot(s.volumeGroup.GetBackupName(), provider, resources)
-		if err != nil {
-			// delete older kahu snapshot objects
-			return err
-		}
-		s.snapshotIDs.Insert(snapshot.Name)
-	}
-
-	return nil
-}
-
-func (s *snapshoter) getPV(volume kahuapi.ResourceReference) (*corev1.PersistentVolume, error) {
-	switch volume.Kind {
-	case utils.PVC:
-		return s.snapshotClassByPVC(volume.Name, volume.Namespace)
-	case utils.PV:
-		return s.snapshotClassByPV(volume.Name)
-	default:
-		return nil, fmt.Errorf("invalid volume kind (%s)", volume.Kind)
+	snapshotName string) Wait {
+	return &snapshotWait{ctx: ctx,
+		kahuClient:   kahuClient,
+		snapshotName: snapshotName,
+		logger:       log.WithField("module", "snapshotter-wait"),
 	}
 }
 
-func (s *snapshoter) snapshotClassByPVC(name,
-	namespace string) (*corev1.PersistentVolume, error) {
-	pvc, err := s.kubeClient.CoreV1().
-		PersistentVolumeClaims(namespace).
-		Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	if pvc.Spec.VolumeName == "" {
-		return nil, fmt.Errorf("pvc(%s/%s) is not bound", namespace, name)
-	}
-
-	pv, err := s.kubeClient.CoreV1().
-		PersistentVolumes().
-		Get(context.TODO(), pvc.Spec.VolumeName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return pv, nil
-}
-
-func (s *snapshoter) snapshotClassByPV(name string) (*corev1.PersistentVolume, error) {
-	pv, err := s.kubeClient.CoreV1().PersistentVolumes().Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return pv, nil
-}
-
-func (s *snapshoter) kahuSnapshot(backup string,
-	provisioner string, volumes []kahuapi.ResourceReference) (*kahuapi.VolumeSnapshot, error) {
-	kahuSnapshot := s.volGroupToSnapshot(backup, provisioner, volumes)
-
-	return s.kahuClient.KahuV1beta1().VolumeSnapshots().Create(context.TODO(), kahuSnapshot, metav1.CreateOptions{})
-}
-
-func (s *snapshoter) volGroupToSnapshot(backup string,
-	provisioner string,
-	vols []kahuapi.ResourceReference) *kahuapi.VolumeSnapshot {
-	return &kahuapi.VolumeSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "snapshot-" + uuid.New().String(),
-			Labels: map[string]string{
-				LabelBackupName:      backup,
-				LabelProvisionerName: provisioner,
-			},
-		},
-		Spec: kahuapi.VolumeSnapshotSpec{
-			BackupName:       &backup,
-			SnapshotProvider: &provisioner,
-			VolumeSource: kahuapi.VolumeSource{
-				List: vols,
-			},
-		},
-	}
-}
-
-func (s *snapshoter) Delete() (*kahuapi.VolumeSnapshot, error) {
-	return nil, nil
-}
-
-func (s *snapshoter) WaitForSnapshotToReady(refName string, timeout time.Duration) error {
-	for _, snapshotId := range s.snapshotIDs.List() {
-		if err := s.waitForSnapshotToReady(refName, snapshotId, timeout); err != nil {
-			return err
-		}
+func (s *snapshotWait) WaitForSnapshotToReady(timeout time.Duration) error {
+	if err := s.waitForSnapshotToReady(s.snapshotName, timeout); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *snapshoter) waitForSnapshotToReady(refName string,
-	snapshotID string, timeout time.Duration) error {
+func (s *snapshotWait) waitForSnapshotToReady(snapshotID string, timeout time.Duration) error {
 	s.logger.Infof("Probing Snapshot Status [id=%v]", snapshotID)
 
 	verifyStatus := func() (bool, error) {
@@ -219,10 +84,10 @@ func (s *snapshoter) waitForSnapshotToReady(refName string,
 		return successful, nil
 	}
 
-	return s.waitForSnapshotStatus(refName, snapshotID, timeout, verifyStatus, "Create")
+	return s.waitForSnapshotStatus(snapshotID, timeout, verifyStatus, "Create")
 }
 
-func (s *snapshoter) verifySnapshotStatus(snapshot *kahuapi.VolumeSnapshot) (bool, error) {
+func (s *snapshotWait) verifySnapshotStatus(snapshot *kahuapi.VolumeSnapshot) (bool, error) {
 	// if being deleted, fail fast
 	if snapshot.GetDeletionTimestamp() != nil {
 		s.logger.Errorf("Snapshot [%s] has deletion timestamp, will not continue to wait for volume snapshot",
@@ -245,10 +110,10 @@ func (s *snapshoter) verifySnapshotStatus(snapshot *kahuapi.VolumeSnapshot) (boo
 }
 
 func snapshotReadyToUse(snapshot *kahuapi.VolumeSnapshot) bool {
-	return snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse == true
+	return snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse
 }
 
-func (s *snapshoter) waitForSnapshotStatus(backupName, snapshotID string,
+func (s *snapshotWait) waitForSnapshotStatus(snapshotID string,
 	timeout time.Duration,
 	verifyStatus func() (bool, error),
 	operation string) error {
@@ -259,14 +124,14 @@ func (s *snapshoter) waitForSnapshotStatus(backupName, snapshotID string,
 		resetDuration = time.Minute
 		backoffFactor = 1.05
 		jitter        = 0.1
-		clock         = &clock.RealClock{}
+		waitTick      = &clock.RealClock{}
 	)
 	backoffMgr := wait.NewExponentialBackoffManager(initBackoff,
 		maxBackoff,
 		resetDuration,
 		backoffFactor,
 		jitter,
-		clock)
+		waitTick)
 
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
@@ -284,25 +149,22 @@ func (s *snapshoter) waitForSnapshotStatus(backupName, snapshotID string,
 			}
 		case <-ctx.Done():
 			t.Stop()
-			s.logger.Errorf("%s timeout for snapshot after %v [backup=%s snapshotID=%s]",
-				operation, timeout, backupName, snapshotID)
-			return fmt.Errorf("timed out waiting for external-snapshotting of %v backup ", backupName)
+			s.logger.Errorf("%s timeout for snapshot after %v [snapshotID=%s]",
+				operation, timeout, snapshotID)
+			return fmt.Errorf("timed out waiting for external-snapshotting for snapshot=%s", snapshotID)
 		}
 	}
 }
 
-func (s *snapshoter) GetSnapshots() ([]*kahuapi.VolumeSnapshot, error) {
-	kahuVolSnapshots := make([]*kahuapi.VolumeSnapshot, 0)
-	s.logger.Infof("Getting snapshot info for %s", s.snapshotIDs)
-	for _, snapshotID := range s.snapshotIDs.List() {
-		kahuVolSnapshot, err := s.kahuClient.KahuV1beta1().
-			VolumeSnapshots().
-			Get(context.TODO(), snapshotID, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		kahuVolSnapshots = append(kahuVolSnapshots, kahuVolSnapshot)
+func (s *snapshotWait) GetSnapshots() (*kahuapi.VolumeSnapshot, error) {
+	s.logger.Infof("Getting snapshot info for %s", s.snapshotName)
+
+	kahuVolSnapshot, err := s.kahuClient.KahuV1beta1().
+		VolumeSnapshots().
+		Get(context.TODO(), s.snapshotName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
 	}
 
-	return kahuVolSnapshots, nil
+	return kahuVolSnapshot, nil
 }

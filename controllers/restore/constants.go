@@ -47,15 +47,14 @@ var (
 	excludeRestoreResources = sets.NewString(
 		"CustomResourceDefinition",
 		"VolumeBackupContent",
-		utils.PV,  // Volume all ready restored
-		utils.PVC, // Volume all ready restored
+		utils.PV, // Volume all ready restored
+
 	)
 )
 
 var (
 	excludeResources = sets.NewString(
 		"Node",
-		"Namespace",
 		"Event",
 	)
 )

@@ -17,9 +17,9 @@ limitations under the License.
 package options
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"time"
+	"net"
 
 	"github.com/spf13/pflag"
 
@@ -27,70 +27,54 @@ import (
 )
 
 const (
-	defaultControllerWorkers          = 4
-	defaultLeaderElection             = false
 	defaultVolumeBackupDriverEndpoint = "/tmp/volumeservice.sock"
-	envLeaderLockNamespace            = "NAMESPACE"
-	leaseDuration                     = 8 * time.Second
-	renewDeadline                     = 6 * time.Second
-	retryPeriod                       = 2 * time.Second
+	defaultPort                       = 443
+	defaultAddress                    = "0.0.0.0"
 )
 
 type serviceOptions struct {
-	ControllerWorkers    int
-	EnableLeaderElection bool
-	DriverEndpoint       string
-	DisableControllers   []string
-	LeaderLockNamespace  string
-	LeaderLeaseDuration  time.Duration
-	LeaderRenewDeadline  time.Duration
-	LeaderRetryPeriod    time.Duration
+	DriverEndpoint string
+	Port           uint
+	Address        string
 }
 
 func NewServiceOptions() *serviceOptions {
 	return &serviceOptions{
-		ControllerWorkers:    defaultControllerWorkers,
-		EnableLeaderElection: defaultLeaderElection,
-		DriverEndpoint:       defaultVolumeBackupDriverEndpoint,
-		DisableControllers:   make([]string, 0),
+		DriverEndpoint: defaultVolumeBackupDriverEndpoint,
+		Port:           defaultPort,
+		Address:        defaultAddress,
 	}
 }
 
 func (opt *serviceOptions) AddFlags(fs *pflag.FlagSet) {
-	fs.IntVar(&opt.ControllerWorkers, "controllerWorkers", opt.ControllerWorkers,
-		"Number of worker for each controller")
-	fs.BoolVar(&opt.EnableLeaderElection, "enableLeaderElection", opt.EnableLeaderElection,
-		"Start a leader election client and gain leadership for controller-manager")
 	fs.StringVar(&opt.DriverEndpoint, "driverEndpoint", opt.DriverEndpoint,
 		"Volume backup driver endpoint")
-	fs.StringArrayVar(&opt.DisableControllers, "disableControllers", opt.DisableControllers,
-		"Disable list of controller")
-	fs.StringVar(&opt.LeaderLockNamespace, "leaderLockNamespace", os.Getenv(envLeaderLockNamespace),
-		"Configure leader election lock namespace")
-	fs.DurationVar(&opt.LeaderLeaseDuration, "leaderLeaseDuration", leaseDuration,
-		"Configure leader election lease duration")
-	fs.DurationVar(&opt.LeaderRenewDeadline, "leaderRenewDeadline", renewDeadline,
-		"Configure leader election lease renew deadline")
-	fs.DurationVar(&opt.LeaderRetryPeriod, "leaderRetryPeriod", retryPeriod,
-		"Configure leader election lease retry period")
+	fs.UintVarP(&opt.Port, "port", "p", opt.Port,
+		"Server port")
+	fs.StringVarP(&opt.Address, "address", "a",
+		opt.Address, "Server Address")
 }
 
 func (opt *serviceOptions) ApplyTo(cfg *config.Config) error {
-	cfg.ControllerWorkers = opt.ControllerWorkers
-	cfg.EnableLeaderElection = opt.EnableLeaderElection
 	cfg.DriverEndpoint = opt.DriverEndpoint
-	cfg.LeaderLockNamespace = opt.LeaderLockNamespace
-	cfg.LeaderLeaseDuration = opt.LeaderLeaseDuration
-	cfg.LeaderRenewDeadline = opt.LeaderRenewDeadline
-	cfg.LeaderRetryPeriod = opt.LeaderRetryPeriod
+	cfg.Port = opt.Port
+	cfg.Address = opt.Address
 	return nil
 }
 
 func (opt *serviceOptions) Validate() []error {
 	errs := make([]error, 0)
 
-	if opt.ControllerWorkers < 1 {
-		errs = append(errs, fmt.Errorf("invalid controller worker count [%d]", opt.ControllerWorkers))
+	if opt.Port <= 0 {
+		errs = append(errs, fmt.Errorf("invalid port %d", opt.Port))
+	}
+
+	if net.ParseIP(opt.Address) == nil {
+		errs = append(errs, fmt.Errorf("invalid address %s", opt.Address))
+	}
+
+	if opt.DriverEndpoint == "" {
+		errs = append(errs, errors.New("backup driver address can not be empty"))
 	}
 
 	// TODO(Amit Roushan): Add validation for list of controllers

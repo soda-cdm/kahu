@@ -31,6 +31,7 @@ type optionsManager struct {
 	log              *logoptions.LogOptions
 	kahuClient       *kahuClientOptions
 	backupController *BackupControllerFlags
+	framework        *FrameworkFlags
 }
 
 func NewOptionsManager() (*optionsManager, error) {
@@ -39,6 +40,7 @@ func NewOptionsManager() (*optionsManager, error) {
 		log:              logoptions.NewLogOptions(),
 		kahuClient:       NewKahuClientOptions(),
 		backupController: NewBackupControllerFlags(),
+		framework:        NewFrameworkFlags(),
 	}, nil
 }
 
@@ -47,6 +49,7 @@ func (opt *optionsManager) AddFlags(fs *pflag.FlagSet) {
 	opt.log.AddFlags(fs)
 	opt.kahuClient.AddFlags(fs)
 	opt.backupController.AddFlags(fs)
+	opt.framework.AddFlags(fs)
 }
 
 func (opt *optionsManager) ApplyTo(cfg *config.Config) error {
@@ -60,6 +63,9 @@ func (opt *optionsManager) ApplyTo(cfg *config.Config) error {
 		return err
 	}
 	if err := opt.backupController.ApplyTo(&cfg.BackupControllerConfig); err != nil {
+		return err
+	}
+	if err := opt.framework.ApplyTo(&cfg.FrameworkConfig); err != nil {
 		return err
 	}
 	return nil

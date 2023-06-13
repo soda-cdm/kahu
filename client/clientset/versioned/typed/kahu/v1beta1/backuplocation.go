@@ -25,6 +25,7 @@ import (
 	v1beta1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	scheme "github.com/soda-cdm/kahu/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 )
@@ -38,11 +39,14 @@ type BackupLocationsGetter interface {
 // BackupLocationInterface has methods to work with BackupLocation resources.
 type BackupLocationInterface interface {
 	Create(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.CreateOptions) (*v1beta1.BackupLocation, error)
+	Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (*v1beta1.BackupLocation, error)
+	UpdateStatus(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (*v1beta1.BackupLocation, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
 	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.BackupLocation, error)
 	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.BackupLocationList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error)
 	BackupLocationExpansion
 }
 
@@ -112,6 +116,34 @@ func (c *backupLocations) Create(ctx context.Context, backupLocation *v1beta1.Ba
 	return
 }
 
+// Update takes the representation of a backupLocation and updates it. Returns the server's representation of the backupLocation, and an error, if there is any.
+func (c *backupLocations) Update(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (result *v1beta1.BackupLocation, err error) {
+	result = &v1beta1.BackupLocation{}
+	err = c.client.Put().
+		Resource("backuplocations").
+		Name(backupLocation.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(backupLocation).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+func (c *backupLocations) UpdateStatus(ctx context.Context, backupLocation *v1beta1.BackupLocation, opts v1.UpdateOptions) (result *v1beta1.BackupLocation, err error) {
+	result = &v1beta1.BackupLocation{}
+	err = c.client.Put().
+		Resource("backuplocations").
+		Name(backupLocation.Name).
+		SubResource("status").
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(backupLocation).
+		Do(ctx).
+		Into(result)
+	return
+}
+
 // Delete takes name of the backupLocation and deletes it. Returns an error if one occurs.
 func (c *backupLocations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
@@ -135,4 +167,18 @@ func (c *backupLocations) DeleteCollection(ctx context.Context, opts v1.DeleteOp
 		Body(&opts).
 		Do(ctx).
 		Error()
+}
+
+// Patch applies the patch and returns the patched backupLocation.
+func (c *backupLocations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.BackupLocation, err error) {
+	result = &v1beta1.BackupLocation{}
+	err = c.client.Patch(pt).
+		Resource("backuplocations").
+		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
 }

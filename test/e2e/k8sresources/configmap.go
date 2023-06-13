@@ -17,11 +17,11 @@ limitations under the License.
 package k8sresources
 
 import (
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/soda-cdm/kahu/test/e2e/util"
 	k8s "github.com/soda-cdm/kahu/test/e2e/util/k8s"
 	kahu "github.com/soda-cdm/kahu/test/e2e/util/kahu"
 )
@@ -35,10 +35,7 @@ var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
 			ns := kahu.BackupNameSpace
 			labels := make(map[string]string)
 
-			UUIDgen, err := uuid.NewRandom()
-			Expect(err).To(BeNil())
-
-			name := "configmap" + "-" + UUIDgen.String()
+			name := util.GenerateUniqueName("configmap")
 			configMap, err := k8s.CreateConfigMap(kubeClient, ns, name, labels)
 			log.Infof("configMap:%v\n", configMap)
 			Expect(err).To(BeNil())
@@ -47,7 +44,7 @@ var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
 			Expect(err).To(BeNil())
 
 			//create backup for the configMap
-			backupName := "backup" + "configmap" + "-" + UUIDgen.String()
+			backupName := util.GenerateUniqueName("configmap")
 			includeNs := kahu.BackupNameSpace
 			resourceType := "ConfigMap"
 			_, err = kahu.CreateBackup(kahuClient, backupName, includeNs, resourceType)
@@ -57,7 +54,7 @@ var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
 			log.Infof("backup of configmap is done\n")
 
 			// create restore for the backup
-			restoreName := "restore" + "configmap" + "-" + UUIDgen.String()
+			restoreName := util.GenerateUniqueName("configmap")
 			nsRestore := kahu.RestoreNameSpace
 			restore, err := kahu.CreateRestore(kahuClient, restoreName, backupName, includeNs, nsRestore)
 			log.Debugf("restore1 is %v\n", restore)

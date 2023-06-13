@@ -60,7 +60,7 @@ func GetProviderInfo(ctx context.Context, conn *grpc.ClientConnInterface) (Provi
 }
 
 // ProviderCapabilitySet is set of provider capabilities. Only supported capabilities are in the map.
-type ProviderCapabilitySet map[string]bool
+type ProviderCapabilitySet []string
 
 // GetProviderCapabilities returns set of supported capabilities of provider.
 func GetProviderCapabilities(ctx context.Context, conn *grpc.ClientConnInterface) (ProviderCapabilitySet, error) {
@@ -81,7 +81,7 @@ func GetProviderCapabilities(ctx context.Context, conn *grpc.ClientConnInterface
 		}
 		capabilityType := int32(srv.GetType())
 		capabilityName := providerSvc.ProviderCapability_Service_Type_name[capabilityType]
-		caps[capabilityName] = true
+		caps = append(caps, capabilityName)
 	}
 	return caps, nil
 }
