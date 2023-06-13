@@ -14,17 +14,7 @@ spec:
         app: nfs-provider
     spec:
       containers:
-        - image: sodacdm/kahu-nfs-provider:v1.0.0
+        - image: sodacdm/kahu-nfs-provider:v1.0.1
           imagePullPolicy: IfNotPresent
           name: nfs-driver
           command: ["/usr/local/bin/nfs-provider"]
-          args:
-            - "-d"
-            - "/data"
-          volumeMounts:
-            - name: data
-              mountPath: "/data"
-      volumes:
-        - name: data
-          emptyDir: {}
-
