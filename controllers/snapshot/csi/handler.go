@@ -246,7 +246,7 @@ func (s *snapshoter) checkCSISnapshotStatus(csiSnapshot *kahuapi.ResourceReferen
 		return false, err
 	}
 
-	if snapshot.Status.ReadyToUse == nil {
+	if snapshot.Status == nil || snapshot.Status.ReadyToUse == nil {
 		return false, fmt.Errorf("CSI snapshot (%s) status not updated", snapshot.Name)
 	}
 

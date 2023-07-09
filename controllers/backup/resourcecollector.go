@@ -533,6 +533,9 @@ func (ctrl *controller) getEnvValueForContainers(containers []v1.Container, name
 	for _, container := range containers {
 		if container.Env != nil {
 			for _, envVar := range container.Env {
+				if envVar.ValueFrom == nil {
+					continue
+				}
 
 				if envVar.ValueFrom.ConfigMapKeyRef != nil {
 					configName := envVar.ValueFrom.ConfigMapKeyRef.Name
