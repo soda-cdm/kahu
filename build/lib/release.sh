@@ -39,6 +39,7 @@ build::get_docker_wrapped_binaries() {
     meta-service
     volume-service
     openebs-zfs
+    csi-snapshotter
     nfs-provider
   )
 

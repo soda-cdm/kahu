@@ -51,7 +51,9 @@ const (
 )
 
 var volBackupSupport = map[string]string{
-	"zfs.csi.openebs.io": "zfs.backup.openebs.io",
+	"zfs.csi.openebs.io":     "zfs.backup.openebs.io",
+	"linstor.csi.linbit.com": "snapshotter.backup.csi.io",
+	"cephfs.csi.ceph.com":    "snapshotter.backup.csi.io",
 }
 
 type controller struct {
