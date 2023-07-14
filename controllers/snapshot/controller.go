@@ -165,6 +165,7 @@ func (ctrl *controller) processQueue(key string) error {
 	}
 
 	if snapshot.DeletionTimestamp != nil {
+		//TODO: Add volume snapshot handling
 		return nil
 	}
 
@@ -221,6 +222,7 @@ func (ctrl *controller) syncSnapshotVolumes(snapshot *kahuapi.VolumeSnapshot) (*
 		ctrl.logger.Errorf("Failed to sync snapshot volumes")
 		return snapshot, err
 	}
+
 	utils.SetAnnotation(snapshot, annSnapshotVolumeSync, "true")
 
 	return ctrl.kahuClient.

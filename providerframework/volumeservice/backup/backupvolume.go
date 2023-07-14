@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -97,54 +96,35 @@ func (ctrl *VolumeBackupService) getVolumeBackup(ctx context.Context,
 }
 
 func (ctrl *VolumeBackupService) Backup(ctx context.Context,
-	backup *kahuapi.VolumeBackupContent,
+	req *volumeservice.BackupRequest,
 	stream volumeservice.VolumeService_BackupServer) error {
-	logger := ctrl.logger.WithField("backup", backup.Name)
+	backupContentName := req.GetBackupContentName()
+	logger := ctrl.logger.WithField("backup", req.GetBackupContentName())
 
 	// check and lock backup handling
-	if ctrl.manager.Exist(backup.Name) {
-		return status.Errorf(codes.OutOfRange, "Volume backup[%s] already in progress", backup.Name)
+	if ctrl.manager.Exist(backupContentName) {
+		return status.Errorf(codes.OutOfRange, "Volume backup[%s] already in progress", backupContentName)
 	}
-	ctrl.manager.Add(backup.Name)
-	defer ctrl.manager.Delete(backup.Name)
+	ctrl.manager.Add(backupContentName)
+	defer ctrl.manager.Delete(backupContentName)
 
-	switch backup.Status.Phase {
-	case "", kahuapi.VolumeBackupContentPhaseInit:
-		err := ctrl.handleBackupStart(ctx, backup, stream)
-		if err != nil {
-			if utils.CheckServerUnavailable(err) {
-				ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backup.Name)
-				return status.Errorf(codes.FailedPrecondition,
-					"Driver unavailable: Continue to retry for volume backup for %s", backup.Name)
-			}
-			return err
+	backupProgress, err := ctrl.handleBackupStart(ctx, req, stream)
+	if err != nil {
+		if utils.CheckServerUnavailable(err) {
+			logger.Errorf("Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
+			return status.Errorf(codes.FailedPrecondition,
+				"Driver unavailable: Continue to retry for volume backup for %s", backupContentName)
 		}
-
-		ctrl.sendBackupEvent(backup, stream,
-			v1.EventTypeNormal,
-			EventVolumeBackupStarted,
-			"Started volume backup")
-		fallthrough
-	case kahuapi.VolumeBackupContentPhaseInProgress:
-		ctrl.logger.Infof("Backup operation in progress for %s", backup.Name)
-		return ctrl.handleBackupProgress(backup, stream)
-	case kahuapi.VolumeBackupContentPhaseFailed:
-		logger.Infof("Volume backup[%s] failed", backup.Name)
-		return status.Errorf(codes.OutOfRange, "Volume backup[%s] failed", backup.Name)
-	case kahuapi.VolumeBackupContentPhaseCompleted:
-		logger.Infof("Volume backup successful")
-		return nil
-	case kahuapi.VolumeBackupContentPhaseDeleting:
-		return status.Errorf(codes.OutOfRange, "Volume backup[%s] getting deleted already", backup.Name)
-	default:
-		logger.Infof("Ignoring volume backup state (%s).", backup.Status.Phase)
-		return status.Errorf(codes.OutOfRange, "Volume backup[%s] is in invalid phase[%s]", backup.Name,
-			backup.Status.Phase)
+		return err
 	}
-}
 
-func (ctrl *VolumeBackupService) handleBackupProgress(backup *kahuapi.VolumeBackupContent,
-	stream volumeservice.VolumeService_BackupServer) error {
+	ctrl.sendBackupEvent(backupContentName, stream,
+		v1.EventTypeNormal,
+		EventVolumeBackupStarted,
+		"Started volume backup")
+
+	ctrl.sendBackupState(req.GetBackupContentName(), stream, backupProgress)
+
 	var t clock.Timer
 	backoff := wait.NewJitteredBackoffManager(defaultPollTime, 0.0, &clock.RealClock{})
 	for {
@@ -156,7 +136,7 @@ func (ctrl *VolumeBackupService) handleBackupProgress(backup *kahuapi.VolumeBack
 		}
 
 		// check backup progress
-		err := ctrl.processBackupProgress(backup.Name, stream)
+		err := ctrl.processBackupProgress(req, stream, backupProgress)
 		if err != nil {
 			return err
 		}
@@ -171,6 +151,35 @@ func (ctrl *VolumeBackupService) handleBackupProgress(backup *kahuapi.VolumeBack
 		}
 	}
 }
+
+// func (ctrl *VolumeBackupService) handleBackupProgress(backup *kahuapi.VolumeBackupContent,
+// 	stream volumeservice.VolumeService_BackupServer) error {
+// 	var t clock.Timer
+// 	backoff := wait.NewJitteredBackoffManager(defaultPollTime, 0.0, &clock.RealClock{})
+// 	for {
+// 		select {
+// 		case <-stream.Context().Done():
+// 			ctrl.logger.Info("Context completed")
+// 			return nil
+// 		default:
+// 		}
+
+// 		// check backup progress
+// 		err := ctrl.processBackupProgress(backup.Name, stream)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		//reset timer
+// 		t = backoff.Backoff()
+// 		select {
+// 		case <-stream.Context().Done():
+// 			ctrl.logger.Info("Context completed")
+// 			return nil
+// 		case <-t.C():
+// 		}
+// 	}
+// }
 
 //func (ctrl *VolumeBackupService) isValidDeleteWithBackup(ownerReference metav1.OwnerReference,
 //	volBackup *kahuapi.VolumeBackupContent) (bool, error) {
@@ -338,32 +347,28 @@ func validateBackupResponse(volNames sets.String,
 }
 
 func (ctrl *VolumeBackupService) constructBackupRequest(
-	volBackup *kahuapi.VolumeBackupContent) (*providerSvc.StartBackupRequest, sets.String, error) {
-	if len(volBackup.Spec.VolumeMount) != 0 {
-		// handle backup volume mount here
-		return nil, sets.NewString(), status.Error(codes.Unauthenticated,
-			"Volume mount handling not implemented")
-	}
+	req *volumeservice.BackupRequest) (*providerSvc.StartBackupRequest, sets.String, error) {
+	// if len(req.) != 0 {
+	// 	// handle backup volume mount here
+	// 	return nil, sets.NewString(), status.Error(codes.Unauthenticated,
+	// 		"Volume mount handling not implemented")
+	// }
 
-	return ctrl.getVolBackupReqByRef(volBackup)
+	return ctrl.getVolBackupReqByRef(req)
 }
 
 func (ctrl *VolumeBackupService) getVolBackupReqByRef(
-	volBackup *kahuapi.VolumeBackupContent) (*providerSvc.StartBackupRequest, sets.String, error) {
+	req *volumeservice.BackupRequest) (*providerSvc.StartBackupRequest, sets.String, error) {
 	volBackupInfos := make([]*providerSvc.VolBackup, 0)
 	volNames := sets.NewString()
-	for _, ref := range volBackup.Spec.VolumeRef {
+	for _, ref := range req.BackupInfo {
 		volBackupInfo := new(providerSvc.VolBackup)
-		pv, err := ctrl.getVolume(ref.Volume)
-		if err != nil {
-			return nil, sets.NewString(), err
-		}
-		volBackupInfo.Pv = pv
-		volNames.Insert(pv.Name)
+		volBackupInfo.Pv = ref.Pv
+		volNames.Insert(ref.Pv.Name)
 		if ref.Snapshot != nil {
 			snapshot := &providerSvc.Snapshot{
-				SnapshotAttributes: ref.Snapshot.Attribute,
-				SnapshotHandle:     ref.Snapshot.Handle,
+				SnapshotAttributes: ref.Snapshot.SnapshotAttributes,
+				SnapshotHandle:     ref.Snapshot.SnapshotHandle,
 			}
 			volBackupInfo.Snapshot = snapshot
 		}
@@ -371,9 +376,9 @@ func (ctrl *VolumeBackupService) getVolBackupReqByRef(
 	}
 
 	return &providerSvc.StartBackupRequest{
-		BackupContentName: volBackup.Name,
+		BackupContentName: req.BackupContentName,
 		BackupInfo:        volBackupInfos,
-		Parameters:        volBackup.Spec.Parameters}, volNames, nil
+		Parameters:        req.Parameters}, volNames, nil
 }
 
 //func (ctrl *VolumeBackupService) getVolBackupReqBySnapshot(backupName string,
@@ -527,13 +532,13 @@ func (ctrl *VolumeBackupService) getVolume(
 //}
 
 func (ctrl *VolumeBackupService) handleBackupStart(ctx context.Context,
-	volBackup *kahuapi.VolumeBackupContent,
-	stream volumeservice.VolumeService_BackupServer) error {
+	req *volumeservice.BackupRequest,
+	stream volumeservice.VolumeService_BackupServer) ([]*volumeservice.BackupProgress, error) {
 	volNames := sets.NewString()
 
-	backupReq, volNames, err := ctrl.constructBackupRequest(volBackup)
+	backupReq, volNames, err := ctrl.constructBackupRequest(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, defaultContextTimeout)
@@ -541,31 +546,30 @@ func (ctrl *VolumeBackupService) handleBackupStart(ctx context.Context,
 	response, err := ctrl.driver.StartBackup(ctx, backupReq)
 	if err != nil {
 		ctrl.logger.Errorf("Unable to start backup. %s", err)
-		return err
+		return nil, err
 	}
 
 	if response != nil && len(response.Errors) > 0 {
 		msg := fmt.Sprintf("Unable to start backup. err: (%s)", strings.Join(response.Errors, " ,"))
 		ctrl.logger.Error(msg)
-		return fmt.Errorf("%s", msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	if err = validateBackupResponse(volNames, response.GetBackupInfo()); err != nil {
 		ctrl.logger.Warningf("Invalid backup response from driver. %s", err)
-		return err
+		return nil, err
 	}
 
-	backupState := make([]kahuapi.VolumeBackupState, 0)
+	backupProgress := make([]*volumeservice.BackupProgress, 0)
 	for _, backupIdentifier := range response.GetBackupInfo() {
-		backupState = append(backupState, kahuapi.VolumeBackupState{
-			VolumeName:         backupIdentifier.GetPvName(),
-			BackupHandle:       backupIdentifier.GetBackupIdentity().GetBackupHandle(),
-			BackupAttributes:   backupIdentifier.GetBackupIdentity().GetBackupAttributes(),
-			LastProgressUpdate: metav1.Now().Unix(),
+		backupProgress = append(backupProgress, &volumeservice.BackupProgress{
+			Volume:          backupIdentifier.GetPvName(),
+			BackupHandle:    backupIdentifier.GetBackupIdentity().GetBackupHandle(),
+			BackupAttribute: backupIdentifier.GetBackupIdentity().GetBackupAttributes(),
 		})
 	}
 
-	return ctrl.sendBackupState(volBackup, stream, backupState)
+	return backupProgress, nil
 }
 
 func toBackupProgress(state kahuapi.VolumeBackupState) *volumeservice.BackupProgress {
@@ -577,16 +581,16 @@ func toBackupProgress(state kahuapi.VolumeBackupState) *volumeservice.BackupProg
 	}
 }
 
-func (ctrl *VolumeBackupService) sendBackupState(backup *kahuapi.VolumeBackupContent,
+func (ctrl *VolumeBackupService) sendBackupState(backupContentName string,
 	stream volumeservice.VolumeService_BackupServer,
-	states []kahuapi.VolumeBackupState) error {
-	backupProgress := make([]*volumeservice.BackupProgress, 0)
-	for _, state := range states {
-		backupProgress = append(backupProgress, toBackupProgress(state))
-	}
+	backupProgress []*volumeservice.BackupProgress) error {
+	// backupProgress := make([]*volumeservice.BackupProgress, 0)
+	// for _, state := range states {
+	// 	backupProgress = append(backupProgress, toBackupProgress(state))
+	// }
 
 	err := stream.Send(&volumeservice.BackupResponse{
-		Name: backup.Name,
+		Name: backupContentName,
 		Data: &volumeservice.BackupResponse_State{
 			State: &volumeservice.BackupState{
 				Progress: backupProgress,
@@ -609,11 +613,11 @@ func toBackupEvent(etype, event, msg string) *volumeservice.BackupResponse_Event
 	}
 }
 
-func (ctrl *VolumeBackupService) sendBackupEvent(backup *kahuapi.VolumeBackupContent,
+func (ctrl *VolumeBackupService) sendBackupEvent(backupContentName string,
 	stream volumeservice.VolumeService_BackupServer,
 	etype, event, msg string) {
 	err := stream.Send(&volumeservice.BackupResponse{
-		Name: backup.Name,
+		Name: backupContentName,
 		Data: toBackupEvent(etype, event, msg),
 	})
 	if err != nil {
@@ -635,28 +639,30 @@ func (ctrl *VolumeBackupService) skipBackupProgressProcessing(volBackup *kahuapi
 	return false
 }
 
-func (ctrl *VolumeBackupService) processBackupProgress(index string,
-	stream volumeservice.VolumeService_BackupServer) error {
-	ctrl.logger.Infof("Checking backup progress for %s", index)
-	volBackup, err := ctrl.getVolumeBackup(stream.Context(), index)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			ctrl.logger.Errorf("volume backup (%s) already deleted", index)
-			return status.Errorf(codes.NotFound, "volume backup[%s] already deleted", index)
-		}
-		ctrl.logger.Errorf("Unable to get volume backup. %s", err)
-		return nil
-	}
+func (ctrl *VolumeBackupService) processBackupProgress(
+	req *volumeservice.BackupRequest,
+	stream volumeservice.VolumeService_BackupServer,
+	backupProgress []*volumeservice.BackupProgress) error {
+	backupContentName := req.GetBackupContentName()
+	ctrl.logger.Infof("Checking backup progress for %s", backupContentName)
+	// volBackup, err := ctrl.getVolumeBackup(stream.Context(), backupContentName)
+	// if err != nil {
+	// 	if apierrors.IsNotFound(err) {
+	// 		ctrl.logger.Errorf("volume backup (%s) already deleted", backupContentName)
+	// 		return status.Errorf(codes.NotFound, "volume backup[%s] already deleted", backupContentName)
+	// 	}
+	// 	ctrl.logger.Errorf("Unable to get volume backup. %s", err)
+	// 	return nil
+	// }
 
-	if ctrl.skipBackupProgressProcessing(volBackup) {
-		return status.Errorf(codes.OutOfRange, "volume backup[%s] not in progress", index)
-	}
+	// if ctrl.skipBackupProgressProcessing(volBackup) {
+	// 	return status.Errorf(codes.OutOfRange, "volume backup[%s] not in progress", backupContentName)
+	// }
 
-	err = ctrl.syncBackupStat(volBackup, stream)
+	err := ctrl.syncBackupStat(req, stream, backupProgress)
 	if err != nil {
 		if utils.CheckServerUnavailable(err) {
-			ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup stat for %s",
-				volBackup.Name)
+			ctrl.logger.Errorf("Driver unavailable: Continue to retry for volume backup stat for %s", backupContentName)
 			return nil
 		}
 		ctrl.logger.Errorf("Failed to sync volume backup stat. %s", err)
@@ -666,37 +672,37 @@ func (ctrl *VolumeBackupService) processBackupProgress(index string,
 	return nil
 }
 
-func (ctrl *VolumeBackupService) syncBackupStat(volBackup *kahuapi.VolumeBackupContent,
-	stream volumeservice.VolumeService_BackupServer) error {
+func (ctrl *VolumeBackupService) syncBackupStat(req *volumeservice.BackupRequest,
+	stream volumeservice.VolumeService_BackupServer,
+	backupProgress []*volumeservice.BackupProgress) error {
 	backupInfo := make([]*providerSvc.BackupIdentity, 0)
-	for _, state := range volBackup.Status.BackupState {
+	for _, progress := range backupProgress {
 		backupInfo = append(backupInfo, &providerSvc.BackupIdentity{
-			BackupHandle:     state.BackupHandle,
-			BackupAttributes: state.BackupAttributes,
+			BackupHandle:     progress.BackupHandle,
+			BackupAttributes: progress.BackupAttribute,
 		})
 	}
-
+	backupContentName := req.GetBackupContentName()
 	driverCtx, cancel := context.WithTimeout(context.TODO(), defaultContextTimeout)
 	defer cancel()
 	stats, err := ctrl.driver.GetBackupStat(driverCtx, &providerSvc.GetBackupStatRequest{
 		BackupInfo: backupInfo,
-		Parameters: volBackup.Spec.Parameters,
+		Parameters: req.Parameters,
 	})
 	if err != nil {
-		ctrl.logger.Errorf("Unable to get volume backup state for %s. %s", volBackup.Name, err)
+		ctrl.logger.Errorf("Unable to get volume backup state for %s. %s", backupContentName, err)
 		return err
 	}
 
 	// update backup status
 	for _, stat := range stats.BackupStats {
-		for i, state := range volBackup.Status.BackupState {
-			if state.BackupHandle == stat.BackupHandle &&
-				stat.Progress > state.Progress {
-				volBackup.Status.BackupState[i].LastProgressUpdate = metav1.Now().Unix()
-				volBackup.Status.BackupState[i].Progress = stat.Progress
+		for i, progress := range backupProgress {
+			if progress.BackupHandle == stat.BackupHandle &&
+				stat.Progress > progress.Progress {
+				backupProgress[i].Progress = stat.Progress
 			}
 		}
 	}
 
-	return ctrl.sendBackupState(volBackup, stream, volBackup.Status.BackupState)
+	return ctrl.sendBackupState(backupContentName, stream, backupProgress)
 }

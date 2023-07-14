@@ -88,7 +88,7 @@ type controller struct {
 	collector          resourceCollector
 	backupper          backupper.Interface
 	framework          framework.Interface
-	volFactory         volume.Interface
+	//volFactory         volume.Interface
 }
 
 func NewController(
@@ -400,12 +400,12 @@ func (ctrl *controller) processBackup(key string) error {
 	if err != nil {
 		return err
 	}
+	defer blService.Done()
 	bl, err := blService.Start(ctrl.ctx)
 	if err != nil {
 		return err
 	}
 	defer bl.Close()
-	defer blService.Done()
 
 	// start backup resources and its dependencies
 	backup, err = ctrl.backupResources(resourceCache.List(), backup, resourceCache, bl)
@@ -414,7 +414,7 @@ func (ctrl *controller) processBackup(key string) error {
 	}
 
 	// backup volume
-	volumeResources, err := resourceCache.GetByGVK(k8sresource.PersistentVolumeGVK)
+	volumeResources, err := resourceCache.GetByGVK(k8sresource.PersistentVolumeClaimGVK)
 	if err != nil {
 		ctrl.logger.Errorf("Unable to get persistent volume resources from cache. %s", err)
 		return err
@@ -483,6 +483,7 @@ func (ctrl *controller) backupResource(resource k8sresource.Resource,
 	backup *kahuapi.Backup,
 	cache utilcache.Interface,
 	bl resourcebackup.Interface) (*kahuapi.Backup, error) {
+	// check if already backed up
 	if !needBackup(resource, backup) {
 		return backup, nil
 	}
@@ -591,7 +592,7 @@ func (ctrl *controller) handlePodDeps(backup *kahuapi.Backup,
 
 	var err error
 	// handle volume deps for snapshot
-	backup, podVolDeps, err := ctrl.handlePodVolumes(backup, volResources)
+	backup, podVolDeps, err := ctrl.handlePodVolumeSnapshot(backup, volResources)
 	if err != nil {
 		return backup, deps, err
 	}
@@ -602,7 +603,7 @@ func (ctrl *controller) handlePodDeps(backup *kahuapi.Backup,
 	return backup, deps, nil
 }
 
-func (ctrl *controller) handlePodVolumes(backup *kahuapi.Backup,
+func (ctrl *controller) handlePodVolumeSnapshot(backup *kahuapi.Backup,
 	volumes []k8sresource.Resource) (*kahuapi.Backup, []k8sresource.Resource, error) {
 	// get all pvcs
 	pvcs, err := ctrl.getVolumes(backup, volumes)
@@ -610,23 +611,7 @@ func (ctrl *controller) handlePodVolumes(backup *kahuapi.Backup,
 		return backup, nil, err
 	}
 
-	pvs := make([]k8sresource.Resource, 0)
-	for _, pvc := range pvcs {
-		pv, err := ctrl.kubeClient.CoreV1().
-			PersistentVolumes().
-			Get(ctrl.ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
-		if err != nil {
-			return backup, nil, err
-		}
-
-		resource, err := k8sresource.ToResource(pv)
-		if err != nil {
-			return backup, nil, err
-		}
-		pvs = append(pvs, resource)
-	}
-
-	volumeGroups, err := ctrl.volumeHandler.Group().ByPV(pvs, group.WithProvider())
+	volumeGroups, err := ctrl.volumeHandler.Group().ByPVC(pvcs, group.WithProvisioner())
 	if err != nil {
 		ctrl.logger.Errorf("Failed to ensure volume group. %s", err)
 		if _, err = ctrl.updateBackupStatusWithEvent(backup, kahuapi.BackupStatus{
@@ -674,9 +659,9 @@ func (ctrl *controller) needSnapshot(provisionerName string) (bool, error) {
 		return false, err
 	}
 
-	for _, capability := range provider.Spec.Capabilities {
-		if capability == string(kahuapi.VolumeBackupNeedSnapshotSupport) ||
-			capability == string(kahuapi.VolumeBackupNeedVolumeSupport) {
+	for _, flag := range provider.Spec.Flags {
+		if flag == kahuapi.VolumeBackupNeedSnapshotSupport ||
+			flag == kahuapi.VolumeBackupNeedVolumeSupport {
 			return true, nil
 		}
 	}
@@ -685,10 +670,10 @@ func (ctrl *controller) needSnapshot(provisionerName string) (bool, error) {
 }
 
 func (ctrl *controller) volBackupProvider(provisionerName string) (*kahuapi.Provider, error) {
-	provider, err := ctrl.volFactory.Provider().GetNameByProvisioner(provisionerName)
+	provider, err := ctrl.volumeHandler.Provider().GetNameByProvisioner(provisionerName)
 	if err != nil {
 		// try to get default volume backup provider
-		provider, err = ctrl.volFactory.Provider().DefaultProvider()
+		provider, err = ctrl.volumeHandler.Provider().DefaultProvider()
 		if err != nil {
 			return nil, fmt.Errorf("volume backup provider not available for provisioner[%s]", provisionerName)
 		}

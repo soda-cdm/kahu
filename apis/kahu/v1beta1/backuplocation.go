@@ -22,7 +22,7 @@ import (
 
 const (
 	// set annotation to set default backup location for specific provider
-	AnnDefaultBackupLocation = "kahu.io/defaultBackupLocation"
+	AnnDefaultVolumeBackupLocation = "kahu.io/is-default-volume-backup-location"
 )
 
 // BackupLocationSpec defines the desired state of BackupLocation

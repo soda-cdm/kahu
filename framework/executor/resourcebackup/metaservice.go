@@ -18,11 +18,11 @@ package resourcebackup
 
 import (
 	"context"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
 
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"

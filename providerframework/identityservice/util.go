@@ -23,7 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	apiv1 "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	kahuClient "github.com/soda-cdm/kahu/client"
 )
 
@@ -33,7 +33,7 @@ const (
 )
 
 // registerProvider creates CRD entry on behalf of the provider getting added.
-func registerProvider(ctx context.Context, conn *grpc.ClientConnInterface, providerType apiv1.ProviderType) (*apiv1.Provider, error) {
+func registerProvider(ctx context.Context, conn *grpc.ClientConnInterface, providerType kahuapi.ProviderType) (*kahuapi.Provider, error) {
 	providerInfo, err := GetProviderInfo(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -52,8 +52,8 @@ func registerProvider(ctx context.Context, conn *grpc.ClientConnInterface, provi
 // createProviderCR creates CRD entry on behalf of the provider getting added.
 func createProviderCR(
 	providerInfo ProviderInfo,
-	providerType apiv1.ProviderType,
-	providerCapabilities []string) (*apiv1.Provider, error) {
+	providerType kahuapi.ProviderType,
+	providerCapabilities []string) (*kahuapi.Provider, error) {
 	cfg := kahuClient.NewFactoryConfig()
 	clientFactory := kahuClient.NewFactory(agentBaseName, cfg)
 	client, err := clientFactory.KahuClient()
@@ -70,15 +70,14 @@ func createProviderCR(
 		return nil, err
 	}
 
-	provider = &apiv1.Provider{
+	provider = &kahuapi.Provider{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: providerInfo.provider,
 		},
-		Spec: apiv1.ProviderSpec{
-			Version:      providerInfo.version,
-			Type:         providerType,
-			Manifest:     providerInfo.manifest,
-			Capabilities: providerCapabilities,
+		Spec: kahuapi.ProviderSpec{
+			Version:  providerInfo.version,
+			Type:     providerType,
+			Manifest: providerInfo.manifest,
 		},
 	}
 
@@ -87,7 +86,7 @@ func createProviderCR(
 		return nil, err
 	}
 
-	provider.Status.State = apiv1.ProviderStateAvailable
+	provider.Status.State = kahuapi.ProviderStateAvailable
 
 	provider, err = client.KahuV1beta1().Providers().UpdateStatus(context.TODO(), provider, metav1.UpdateOptions{})
 	if err != nil {

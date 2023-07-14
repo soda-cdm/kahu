@@ -18,33 +18,50 @@ package volumebackup
 
 import (
 	"context"
+
 	log "github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
+	volumeservice "github.com/soda-cdm/kahu/providerframework/volumeservice/lib/go"
 )
 
-type Interface interface {
+type Service interface {
 	Probe(ctx context.Context) error
 	Backup(ctx context.Context, vbc *kahuapi.VolumeBackupContent) error
 	DeleteBackup(ctx context.Context, vbc *kahuapi.VolumeBackupContent) error
 	Restore(ctx context.Context, vrc *kahuapi.VolumeRestoreContent) error
-	Close() error
+
+	Cleanup(context.Context) error
+	Sync()
 }
 
-type Service interface {
-	Start(ctx context.Context) (Interface, error)
+type podTemplateCallback func(*corev1.PodTemplateSpec)
+
+type volumeServiceProvisioner interface {
+	Start(ctx context.Context, callback podTemplateCallback) (volumeService, error)
 	Done()
 	Remove() error
 	Sync()
+}
+
+type volumeService interface {
+	volumeservice.VolumeServiceClient
+	close() error
 }
 
 type printResource struct {
 	logger *log.Entry
 }
 
-func NewEmptyVolumeBackupService() Interface {
+func NewEmptyVolumeBackupService() Service {
 	return &printResource{
 		logger: log.WithField("module", "print-store"),
 	}
+}
+
+func (p *printResource) Cleanup(_ context.Context) error {
+	return nil
 }
 
 func (p *printResource) Probe(_ context.Context) error {
@@ -67,6 +84,22 @@ func (p *printResource) Restore(ctx context.Context, vrc *kahuapi.VolumeRestoreC
 	return nil
 }
 
-func (_ *printResource) Close() error {
+func (_ *printResource) close() error {
 	return nil
+}
+
+func (_ *printResource) start(ctx context.Context) error {
+	return nil
+}
+
+func (_ *printResource) done() {
+	return
+}
+
+func (_ *printResource) remove() error {
+	return nil
+}
+
+func (p *printResource) Sync() {
+	p.logger.Infof("Resource synced")
 }

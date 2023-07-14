@@ -38,8 +38,9 @@ build::get_docker_wrapped_binaries() {
     controller-manager
     meta-service
     volume-service
-    openebs-zfs
+    #openebs-zfs
     nfs-provider
+    restic-backup-driver
   )
 
   echo "${targets[@]}"
@@ -82,6 +83,8 @@ function release::build_images() {
   cp "${KAHU_IMAGE_BINARIES[@]/#/${LOCAL_OUTPUT_BINPATH}/${platform//\//_}/}" \
     "${release_stage}/bin/"
 
+  cp "${LOCAL_OUTPUT_BINPATH}/restic" "${release_stage}/bin/"
+
   release::create_docker_images "${release_stage}/bin"
 }
 
@@ -115,12 +118,17 @@ function release::create_docker_images() {
       local docker_image_tag="${docker_registry}/kahu-${binary_name}:${docker_tag}"
 
       local docker_file_path="${KAHU_ROOT}/Dockerfile"
-
+      
       log::status "Starting docker build for image: ""${docker_image_tag}"
       (
         rm -rf "${docker_build_path}"
         mkdir -p "${docker_build_path}"
         ln "${binary_file_path}" "${docker_build_path}/${binary_name}"
+
+        if [ "$binary_name" = "restic-backup-driver" ]; then 
+          local docker_file_path="${KAHU_ROOT}/Dockerfile.restic"
+          ln "${binary_dir}/restic" "${docker_build_path}/restic"
+        fi
 
         local build_log="${docker_build_path}/build.log"
         if ! docker build \

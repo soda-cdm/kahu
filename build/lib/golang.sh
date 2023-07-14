@@ -31,6 +31,7 @@ readonly KAHU_STATIC_BINARIES=(
   volume-service
   #openebs-zfs
   nfs-provider
+  restic-backup-driver
 )
 
 golang::targets() {
@@ -41,6 +42,7 @@ golang::targets() {
     cmd/volume-service
     providers/nfs/nfs-provider
     #cmd/openebs-zfs
+    cmd/restic-backup-driver
   )
   echo "${targets[@]}"
 }

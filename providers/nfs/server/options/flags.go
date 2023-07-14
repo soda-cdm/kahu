@@ -26,7 +26,7 @@ import (
 
 const (
 	// NFSService component name
-	unixSocketPath = options.DefaultBackupDriverAddress
+	unixSocketPath = options.DefaultDriverSocketDir
 	// DataPath defines directory of backup files
 	DataPath = "/data"
 )

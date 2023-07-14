@@ -3,7 +3,6 @@ kind: Backup
 metadata:
   name: backup-demo-resource
 spec:
-  excludeResources: []
   includeNamespaces: [default]
   metadataLocation: nfs
   includeResources:

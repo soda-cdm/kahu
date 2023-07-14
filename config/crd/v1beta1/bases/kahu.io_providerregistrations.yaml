@@ -46,9 +46,12 @@ spec:
           spec:
             description: Plugin specifications
             properties:
-              capabilities:
+              flags:
                 description: Capabilities is the optional set of provider capabilities
                 items:
+                  enum:
+                  - VOLUME_BACKUP_NEED_SNAPSHOT
+                  - VOLUME_BACKUP_NEED_VOLUME
                   type: string
                 type: array
               lifecycle:
@@ -72,7 +75,7 @@ spec:
                 - ResourceBackup
                 - VolumeBackup
                 type: string
-              supportedVolumeProvisioner:
+              supportedProvisioner:
                 type: string
               template:
                 description: PodTemplateSpec describes the data a pod should have

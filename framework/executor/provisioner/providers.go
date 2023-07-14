@@ -26,9 +26,9 @@ type factory struct {
 	deployment Interface
 }
 
-func NewProvisionerFactory(ctx context.Context, namespace string, kubeClient kubernetes.Interface) Factory {
+func NewProvisionerFactory(ctx context.Context, kubeClient kubernetes.Interface) Factory {
 	return &factory{
-		deployment: NewDeploymentProvider(ctx, namespace, kubeClient),
+		deployment: newDeploymentProvider(ctx, kubeClient),
 	}
 }
 

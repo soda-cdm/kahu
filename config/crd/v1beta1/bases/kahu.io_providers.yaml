@@ -48,9 +48,12 @@ spec:
           spec:
             description: ProviderSpec defines the specification of provider CRD
             properties:
-              capabilities:
+              flags:
                 description: Capabilities is the optional set of provider capabilities
                 items:
+                  enum:
+                  - VOLUME_BACKUP_NEED_SNAPSHOT
+                  - VOLUME_BACKUP_NEED_VOLUME
                   type: string
                 type: array
               manifest:
@@ -58,7 +61,7 @@ spec:
                   type: string
                 description: Manifest is the optional set of provider specific configurations
                 type: object
-              supportedVolumeProvisioner:
+              supportedProvisioner:
                 type: string
               type:
                 description: Type is type of the provider getting registered

@@ -18,7 +18,7 @@ spec:
         - image: sodacdm/kahu-controller-manager:v1.0.1
           imagePullPolicy: IfNotPresent
           name: backup
-          command: ["/usr/local/bin/controller-manager"]
+          command: [controller-manager]
           args:   
           - --metaServiceImage=sodacdm/kahu-meta-service:v1.0.1
 ---

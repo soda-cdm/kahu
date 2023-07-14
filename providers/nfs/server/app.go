@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -135,13 +136,14 @@ func validateFlags(cmd *cobra.Command, cleanFlagSet *pflag.FlagSet, args []strin
 
 // Run start and run NFS Provider service
 func Run(ctx context.Context, serviceOptions options.NFSProviderOptions) error {
-	serverAddr, err := net.ResolveUnixAddr("unix", serviceOptions.UnixSocketPath)
+	unixSocketFile := filepath.Join(serviceOptions.UnixSocketPath, componentNFSService)
+	serverAddr, err := net.ResolveUnixAddr("unix", unixSocketFile)
 	if err != nil {
 		log.Fatal("failed to resolve unix addr")
 		return errors.New("failed to resolve unix addr")
 	}
-	if _, err := os.Stat(serviceOptions.UnixSocketPath); err == nil {
-		if err := os.RemoveAll(serviceOptions.UnixSocketPath); err != nil {
+	if _, err := os.Stat(unixSocketFile); err == nil {
+		if err := os.RemoveAll(unixSocketFile); err != nil {
 			log.Fatal(err)
 			return err
 		}

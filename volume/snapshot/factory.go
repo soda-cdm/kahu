@@ -21,6 +21,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -38,7 +40,7 @@ const (
 
 type Snapshotter interface {
 	ByVolumeGroup(backupName string, volGroup group.Interface) (Wait, error)
-	GetSnapshotsByBackup(backupName string) ([]*kahuapi.VolumeSnapshot, error)
+	GetSnapshotsByBackup(backupName string) ([]kahuapi.VolumeSnapshot, error)
 	Delete(volSnapshot string) error
 	GetSnapshotsByProvisioner() ([]*kahuapi.VolumeSnapshot, error, error)
 }
@@ -76,7 +78,7 @@ func (s *snapshotter) ByVolumeGroup(backupName string, volGroup group.Interface)
 
 	volRef := make([]kahuapi.ResourceReference, 0)
 	for _, volume := range volumes {
-		apiVersion, kind := k8sresource.PersistentVolumeGVK.ToAPIVersionAndKind()
+		apiVersion, kind := k8sresource.PersistentVolumeClaimGVK.ToAPIVersionAndKind()
 		volRef = append(volRef, kahuapi.ResourceReference{
 			Kind:       kind,
 			APIVersion: apiVersion,
@@ -94,8 +96,27 @@ func (s *snapshotter) ByVolumeGroup(backupName string, volGroup group.Interface)
 	return newSnapshotWait(s.ctx, s.kahuClient, snapshot.Name), nil
 }
 
-func (s *snapshotter) GetSnapshotsByBackup(backupName string) ([]*kahuapi.VolumeSnapshot, error) {
-	return nil, nil
+func (s *snapshotter) GetSnapshotsByBackup(backupName string) ([]kahuapi.VolumeSnapshot, error) {
+	labels := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			labelBackupName: backupName,
+		},
+	}
+	selector, err := metav1.LabelSelectorAsSelector(labels)
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf("invalid label selector %s", labels.String()))
+	}
+
+	volSnapshots, err := s.kahuClient.
+		KahuV1beta1().
+		VolumeSnapshots().
+		List(context.TODO(), metav1.ListOptions{
+			LabelSelector: selector.String()})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, errors.Wrap(err, "unable to get volume snapshots")
+	}
+
+	return volSnapshots.Items, nil
 }
 func (s *snapshotter) Delete(volSnapshot string) error {
 	return nil

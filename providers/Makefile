@@ -20,7 +20,7 @@ all: build
 PROVIDER_SERVICE_PROTO := proto/providerservice.proto
 PROVIDER_SERVICE_GO := providerservice.pb.go
 PROVIDER_SERVICE_INTERFACE := $(shell pwd)/lib/go/$(PROVIDER_SERVICE_GO)
-GOPATH :=$(shell pwd)/../_output/go
+GOPATH :=$(shell pwd)/..
 
 # This recipe generates the go language bindings to a temp area.
 $(PROVIDER_SERVICE_INTERFACE): HERE := $(shell pwd)
@@ -33,7 +33,7 @@ $(PROVIDER_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/runt
 $(PROVIDER_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/apis/meta/v1/generated.proto=k8s.io/apimachinery/pkg/apis/meta/v1
 $(PROVIDER_SERVICE_INTERFACE): GO_OUT := $(GO_OUT),Mk8s.io/apimachinery/pkg/util/intstr/generated.proto=k8s.io/apimachinery/pkg/util/intstr
 $(PROVIDER_SERVICE_INTERFACE): GO_OUT := $(GO_OUT):"$(HERE)"
-$(PROVIDER_SERVICE_INTERFACE): INCLUDE := -I$(GOPATH)/src:$(shell pwd)
+$(PROVIDER_SERVICE_INTERFACE): INCLUDE := -I$(GOPATH)/vendor:$(shell pwd)
 $(PROVIDER_SERVICE_INTERFACE): $(PROVIDER_SERVICE_PROTO)
 	($(PROTOC) $(INCLUDE) --go_out=$(GO_OUT) --plugin=protoc-gen-go=$(PROTOC_GEN_GO) $(PROVIDER_SERVICE_PROTO))
 

@@ -17,7 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -64,10 +64,10 @@ type RegistrationSpec struct {
 
 	// Capabilities is the optional set of provider capabilities
 	// +optional
-	Capabilities []string `json:"capabilities,omitempty"`
+	Flags []Support `json:"flags,omitempty"`
 
 	// +optional
-	SupportedVolumeProvisioner *string `json:"supportedVolumeProvisioner,omitempty"`
+	SupportedProvisioner *string `json:"supportedProvisioner,omitempty"`
 
 	// +required
 	Template *v1.PodTemplateSpec `json:"template,omitempty"`

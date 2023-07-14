@@ -25,38 +25,25 @@ import (
 )
 
 const (
-	DefaultPort    = 443
-	DefaultAddress = "0.0.0.0"
-	//DefaultCompressionFormat   = string(compressors.GZipType)
-	DefaultArchivalYard        = "/tmp"
-	DefaultBackupDriverAddress = "/tmp/service.sock"
-	// DefaultDeployNamespace     = "default"
-	DefaultServiceName = "metadata-service"
-	// namespaceEnv               = "NAMESPACE"
-	// serviceNamesEnv            = "NAME"
+	DefaultPort            = 443
+	DefaultAddress         = "0.0.0.0"
+	DefaultServiceName     = "metadata-service"
+	DefaultDriverSocketDir = "/tmp"
 )
 
 type CompressionType string
 
 type MetaServiceFlags struct {
-	Port                uint
-	Address             string
-	CompressionFormat   string
-	ArchivalYard        string
-	BackupDriverAddress string
-	//DeployedNamespace   string
-	//ServiceName         string
+	Port            uint
+	Address         string
+	DriverSocketDir string
 }
 
 func NewMetaServiceFlags() *MetaServiceFlags {
 	return &MetaServiceFlags{
-		Port:    DefaultPort,
-		Address: DefaultAddress,
-		//CompressionFormat:   DefaultCompressionFormat,
-		ArchivalYard:        DefaultArchivalYard,
-		BackupDriverAddress: DefaultBackupDriverAddress,
-		//DeployedNamespace:   DefaultDeployNamespace,
-		//ServiceName:         DefaultServiceName,
+		Port:            DefaultPort,
+		Address:         DefaultAddress,
+		DriverSocketDir: DefaultDriverSocketDir,
 	}
 }
 
@@ -66,17 +53,8 @@ func (options *MetaServiceFlags) AddFlags(fs *pflag.FlagSet) {
 		"Server port")
 	fs.StringVarP(&options.Address, "address", "a",
 		options.Address, "Server Address")
-	//fs.StringVarP(&options.CompressionFormat, "compression-format", "f",
-	//	options.CompressionFormat, fmt.Sprintf("Archival format. options(%s)",
-	//		strings.Join(manager.GetCompressionPluginsNames(), ",")))
-	//fs.StringVarP(&options.ArchivalYard, "compression-dir", "d",
-	//	options.ArchivalYard, "A directory for temporarily maintaining backup")
-	fs.StringVarP(&options.BackupDriverAddress, "driver-address", "D",
-		options.BackupDriverAddress, "The grpc address of target backup driver")
-	//fs.StringVarP(&options.DeployedNamespace, "namespace", "n",
-	//	os.Getenv(namespaceEnv), "Namespace where metadata service is deployed")
-	//fs.StringVarP(&options.ServiceName, "name", "s",
-	//	os.Getenv(serviceNamesEnv), "Name of the metadata service being deployed")
+	fs.StringVarP(&options.DriverSocketDir, "socket-dir", "D",
+		options.DriverSocketDir, "The unix socket directory")
 }
 
 // Apply checks validity of available command line options
@@ -89,25 +67,9 @@ func (options *MetaServiceFlags) Validate() error {
 		return fmt.Errorf("invalid address %s", options.Address)
 	}
 
-	//if ok := manager.CheckWriterCompressor(options.CompressionFormat); !ok {
-	//	return fmt.Errorf("invalid compression type %s", options.CompressionFormat)
-	//}
-
-	//if _, err := os.Stat(options.ArchivalYard); err != nil && os.IsNotExist(err) {
-	//	return fmt.Errorf("archival temporary directory(%s) does not exist", options.ArchivalYard)
-	//}
-
-	if options.BackupDriverAddress == "" {
-		return errors.New("backup driver address can not be empty")
+	if options.DriverSocketDir == "" {
+		return errors.New("backup driver directory can not be empty")
 	}
-
-	//if options.DeployedNamespace == "" {
-	//	return errors.New("namespace can not be empty")
-	//}
-	//
-	//if options.ServiceName == "" {
-	//	return errors.New("name can not be empty")
-	//}
 
 	return nil
 }

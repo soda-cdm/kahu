@@ -18,7 +18,9 @@ package volume
 
 import (
 	"context"
+
 	"github.com/soda-cdm/kahu/client"
+	"github.com/soda-cdm/kahu/framework"
 	"github.com/soda-cdm/kahu/volume/backup"
 	"github.com/soda-cdm/kahu/volume/group"
 	"github.com/soda-cdm/kahu/volume/location"
@@ -70,7 +72,7 @@ type volume struct {
 	location location.Interface
 }
 
-func NewVolumeHandler(ctx context.Context, clientFactory client.Factory) (Interface, error) {
+func NewVolumeHandler(ctx context.Context, clientFactory client.Factory, frmWork framework.Interface) (Interface, error) {
 	groupFactory, err := group.NewFactory(clientFactory)
 	if err != nil {
 		return nil, err
@@ -79,11 +81,11 @@ func NewVolumeHandler(ctx context.Context, clientFactory client.Factory) (Interf
 	if err != nil {
 		return nil, err
 	}
-	backupFactory, err := backup.NewFactory(clientFactory)
+	backupFactory, err := backup.NewFactory(clientFactory, frmWork)
 	if err != nil {
 		return nil, err
 	}
-	restoreFactory, err := restore.NewFactory(clientFactory)
+	restoreFactory, err := restore.NewFactory(clientFactory, frmWork)
 	if err != nil {
 		return nil, err
 	}

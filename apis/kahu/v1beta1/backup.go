@@ -27,7 +27,6 @@ import (
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="MetadataLocation",type=string,JSONPath=`.spec.metadataLocation`
-// +kubebuilder:printcolumn:name="VolumeBackupLocations",type=string,JSONPath=`.spec.volumeBackupLocations`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Backup struct {
 	metav1.TypeMeta `json:",inline"`

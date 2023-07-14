@@ -193,6 +193,7 @@ message RestoreVolumeIdentity {
 message VolBackup {
   k8s.io.api.core.v1.PersistentVolume pv = 1;
   Snapshot snapshot = 2;
+  string mount_path = 3;
 }
 
 message Snapshot {
@@ -201,12 +202,10 @@ message Snapshot {
 }
 
 message StartBackupRequest {
-  // Required field
-  repeated k8s.io.api.core.v1.PersistentVolume pv = 1;
-
   // Backup content name
   string backup_content_name = 2;
 
+  // Required field
   repeated VolBackup backupInfo = 3;
 
   // optional

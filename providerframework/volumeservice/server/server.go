@@ -18,9 +18,10 @@ package server
 
 import (
 	"context"
+	"time"
+
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/app/config"
 	"github.com/soda-cdm/kahu/providerframework/volumeservice/backup"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
@@ -80,33 +81,33 @@ func NewServer(config *config.CompletedConfig,
 
 func (server *volServer) Backup(req *volumeservice.BackupRequest,
 	stream volumeservice.VolumeService_BackupServer) error {
-	vbcName := req.GetName()
-	vbc, err := server.kahuClient.KahuV1beta1().
-		VolumeBackupContents().
-		Get(stream.Context(), vbcName, metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		server.logger.Errorf("Unable to get VolumeBackupContent[%s]", vbcName)
-		return status.Errorf(codes.Aborted, "Unable to get VolumeBackupContent[%s]", vbcName)
-	}
+	// vbcName := req.GetName()
+	// vbc, err := server.kahuClient.KahuV1beta1().
+	// 	VolumeBackupContents().
+	// 	Get(stream.Context(), vbcName, metav1.GetOptions{})
+	// if err != nil && !apierrors.IsNotFound(err) {
+	// 	server.logger.Errorf("Unable to get VolumeBackupContent[%s]", vbcName)
+	// 	return status.Errorf(codes.Aborted, "Unable to get VolumeBackupContent[%s]", vbcName)
+	// }
 
-	if apierrors.IsNotFound(err) {
-		server.logger.Errorf("VolumeBackupContent[%s] not available for backup", vbcName)
-		return status.Errorf(codes.NotFound, "VolumeBackupContent[%s] not available for backup", vbcName)
-	}
+	// if apierrors.IsNotFound(err) {
+	// 	server.logger.Errorf("VolumeBackupContent[%s] not available for backup", vbcName)
+	// 	return status.Errorf(codes.NotFound, "VolumeBackupContent[%s] not available for backup", vbcName)
+	// }
 
 	// check volume backup driver
-	volBackupDriver, ok := checkVolumeBackupDriver(vbc)
-	if !ok {
-		server.logger.Infof("Volume backup driver not assigned for vbc[%s]", vbcName)
-		return status.Error(codes.Aborted, "Volume backup driver not assigned")
-	}
+	// volBackupDriver, ok := checkVolumeBackupDriver(vbc)
+	// if !ok {
+	// 	server.logger.Infof("Volume backup driver not assigned for vbc[%s]", vbcName)
+	// 	return status.Error(codes.Aborted, "Volume backup driver not assigned")
+	// }
 
-	if volBackupDriver != server.providerName {
-		server.logger.Infof("Skipping volume backup processing for %s driver", volBackupDriver)
-		return status.Errorf(codes.Aborted, "Skipping volume backup processing for %s driver", volBackupDriver)
-	}
+	// if volBackupDriver != server.providerName {
+	// 	server.logger.Infof("Skipping volume backup processing for %s driver", volBackupDriver)
+	// 	return status.Errorf(codes.Aborted, "Skipping volume backup processing for %s driver", volBackupDriver)
+	// }
 
-	return server.backupService.Backup(stream.Context(), vbc, stream)
+	return server.backupService.Backup(stream.Context(), req, stream)
 }
 
 func (server *volServer) DeleteBackup(ctx context.Context,

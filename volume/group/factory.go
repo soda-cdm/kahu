@@ -19,6 +19,7 @@ package group
 import (
 	"context"
 	"fmt"
+
 	log "github.com/sirupsen/logrus"
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
 	"github.com/soda-cdm/kahu/utils"
@@ -36,8 +37,8 @@ const (
 )
 
 type Factory interface {
-	ByPV([]k8sresource.Resource, ...groupFunc) ([]Interface, error)
-	BySnapshot(snapshots []*kahuapi.VolumeSnapshot, groupings ...groupFunc) ([]Interface, error)
+	ByPVC([]*corev1.PersistentVolumeClaim, ...groupFunc) ([]Interface, error)
+	BySnapshot(snapshots []kahuapi.VolumeSnapshot, groupings ...groupFunc) ([]Interface, error)
 }
 
 type factory struct {
@@ -63,18 +64,18 @@ func NewFactory(clientFactory client.Factory) (Factory, error) {
 	}, nil
 }
 
-type groupFunc func(pvs []k8sresource.Resource) []Interface
+type groupFunc func(kubernetes.Interface, []k8sresource.Resource) []Interface
 
-func WithProvider() groupFunc {
-	return withProvider
+func WithProvisioner() groupFunc {
+	return withProvisioner
 }
 
-func withProvider(resources []k8sresource.Resource) []Interface {
+func withProvisioner(kubeCli kubernetes.Interface, resources []k8sresource.Resource) []Interface {
 	groupByProvisioner := make(map[string][]k8sresource.Resource)
 
 	// group volumes by provisioner
 	for _, resource := range resources {
-		provisioner, err := getProvisioner(resource)
+		provisioner, err := getProvisioner(kubeCli, resource)
 		if err != nil {
 			log.Warningf("unable to group. %s", err)
 		}
@@ -96,7 +97,7 @@ func withProvider(resources []k8sresource.Resource) []Interface {
 	return groups
 }
 
-func getProvisioner(resource k8sresource.Resource) (string, error) {
+func getProvisioner(kubeCli kubernetes.Interface, resource k8sresource.Resource) (string, error) {
 	switch resource.GetKind() {
 	case k8sresource.PersistentVolumeGVK.Kind:
 		pv := new(corev1.PersistentVolume)
@@ -114,20 +115,41 @@ func getProvisioner(resource k8sresource.Resource) (string, error) {
 				resource.GetName())
 		}
 		return *snapshot.Spec.SnapshotProvider, nil
+	case k8sresource.PersistentVolumeClaimGVK.Kind:
+		pvc := new(corev1.PersistentVolumeClaim)
+		err := k8sresource.FromResource(resource, pvc)
+		if err != nil {
+			return "", fmt.Errorf("unable to translate resource[%s] to PersistentVolumeClaim",
+				resource.GetName())
+		}
+		pv, err := kubeCli.CoreV1().PersistentVolumes().Get(context.TODO(), pvc.Spec.VolumeName, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+
+		return utils.VolumeProvisioner(pv), nil
 	default:
 		log.Warningf("Invalid kind[%s] for volume grouping", resource.GetKind())
 		return "", fmt.Errorf("invalid kind[%s] for volume grouping", resource.GetKind())
 	}
 }
 
-func (f *factory) ByPV(resources []k8sresource.Resource, groupings ...groupFunc) ([]Interface, error) {
+func (f *factory) ByPVC(pvcs []*corev1.PersistentVolumeClaim, groupings ...groupFunc) ([]Interface, error) {
+	resources := make([]k8sresource.Resource, 0)
+	for _, pvc := range pvcs {
+		resource, err := k8sresource.ToResource(pvc)
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, resource)
+	}
 	return f.group(resources, groupings...)
 }
 
-func (f *factory) BySnapshot(snapshots []*kahuapi.VolumeSnapshot, groupings ...groupFunc) ([]Interface, error) {
+func (f *factory) BySnapshot(snapshots []kahuapi.VolumeSnapshot, groupings ...groupFunc) ([]Interface, error) {
 	resources := make([]k8sresource.Resource, 0)
 	for _, snapshot := range snapshots {
-		resource, err := k8sresource.ToResource(snapshot)
+		resource, err := k8sresource.ToResource(&snapshot)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +165,7 @@ func (f *factory) group(resources []k8sresource.Resource, groupings ...groupFunc
 	for _, grouping := range groupings {
 		newGroup := make([]Interface, 0)
 		for _, group := range groups {
-			newGroup = append(newGroup, grouping(group.GetResources())...)
+			newGroup = append(newGroup, grouping(f.kubeClient, group.GetResources())...)
 		}
 		groups = newGroup
 	}

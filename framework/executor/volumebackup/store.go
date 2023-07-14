@@ -56,7 +56,7 @@ func (collection *StoreCollection) Add(location string, svc Service) error {
 	defer collection.Unlock()
 	service, ok := collection.store[location]
 	if ok && service != nil {
-		return fmt.Errorf("service alrady available for %s", location)
+		return fmt.Errorf("service already available for %s", location)
 	}
 	collection.store[location] = svc
 	return nil

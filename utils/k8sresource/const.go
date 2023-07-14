@@ -19,6 +19,7 @@ package k8sresource
 import (
 	"sync"
 
+	snapshotapiv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	appv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1api "k8s.io/api/core/v1"
@@ -53,6 +54,7 @@ const (
 	kindKahuVolumeSnapshot       = "VolumeSnapshot"
 	kindKahuVolumeGroup          = "VolumeGroup"
 	kindKahuProviderRegistration = "ProviderRegistration"
+	kindVolumeSnapshot           = "VolumeSnapshot"
 )
 
 var kindSync sync.Once
@@ -82,6 +84,7 @@ var RestoreGVK schema.GroupVersionKind
 var KahuVolumeSnapshotGVK schema.GroupVersionKind
 var KahuVolumeGroupGVK schema.GroupVersionKind
 var KahuProviderRegistrationGVK schema.GroupVersionKind
+var CSIVolumeSnapshotGVK schema.GroupVersionKind
 
 func init() {
 	kindSync.Do(func() {
@@ -109,5 +112,6 @@ func init() {
 		KahuVolumeSnapshotGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuVolumeSnapshot)
 		KahuVolumeGroupGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuVolumeGroup)
 		KahuProviderRegistrationGVK = kahuapi.SchemeGroupVersion.WithKind(kindKahuProviderRegistration)
+		CSIVolumeSnapshotGVK = snapshotapiv1.SchemeGroupVersion.WithKind(kindVolumeSnapshot)
 	})
 }

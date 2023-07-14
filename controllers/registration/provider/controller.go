@@ -18,15 +18,18 @@ package provider
 
 import (
 	"context"
-	"fmt"	
+	"encoding/json"
+	"fmt"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -143,8 +146,15 @@ func (ctrl *controller) processQueue(key string) error {
 	}
 
 	if registration.DeletionTimestamp != nil {
-		// no op
-		// Provider gets delete event because of registration owner reference
+		if utils.ContainsFinalizer(registration, finalizerProviderRegProtection) {
+			clone := registration.DeepCopy()
+			utils.RemoveFinalizer(clone, finalizerProviderRegProtection)
+			registration, err = ctrl.patchProviderRegistration(registration, clone)
+			if err != nil {
+				ctrl.logger.Errorf("Unable to remove finalizer for registration(%s)", name)
+				return errors.Wrap(err, "Unable to remove finalizer")
+			}
+		}
 		return nil
 	}
 
@@ -239,11 +249,11 @@ func (ctrl *controller) createProvider(
 			},
 		},
 		Spec: kahuapi.ProviderSpec{
-			Version:                    *registration.Spec.Version,
-			Type:                       providerType,
-			Manifest:                   registration.Spec.Parameters,
-			Capabilities:               registration.Spec.Capabilities,
-			SupportedVolumeProvisioner: registration.Spec.SupportedVolumeProvisioner,
+			Version:              *registration.Spec.Version,
+			Type:                 providerType,
+			Manifest:             registration.Spec.Parameters,
+			Flags:                registration.Spec.Flags,
+			SupportedProvisioner: registration.Spec.SupportedProvisioner,
 		},
 	}
 
@@ -257,4 +267,33 @@ func (ctrl *controller) createProvider(
 
 func getProviderName(reg *kahuapi.ProviderRegistration) string {
 	return *reg.Spec.ProviderName
+}
+
+func (ctrl *controller) patchProviderRegistration(oldProvider,
+	newProvider *kahuapi.ProviderRegistration) (*kahuapi.ProviderRegistration, error) {
+	origBytes, err := json.Marshal(oldProvider)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling original backup")
+	}
+
+	updatedBytes, err := json.Marshal(newProvider)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshalling updated backup")
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(origBytes, updatedBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating json merge patch for backup")
+	}
+
+	updatedProvider, err := ctrl.kahuClient.KahuV1beta1().ProviderRegistrations().Patch(context.TODO(),
+		oldProvider.Name,
+		types.MergePatchType,
+		patchBytes,
+		metav1.PatchOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "error patching backup")
+	}
+
+	return updatedProvider, nil
 }

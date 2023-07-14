@@ -118,7 +118,7 @@ ifeq ($(PRINT_HELP),y)
 generated_files:
 	@echo "$$GENERATED_FILES_HELP_INFO"
 else
-generated_files: verify
+generated_files: 
 	$(MAKE) -f Makefile.generate_proto $@
 endif
 

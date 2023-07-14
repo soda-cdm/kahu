@@ -17,8 +17,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -29,7 +31,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -39,7 +42,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	kahuapi "github.com/soda-cdm/kahu/apis/kahu/v1beta1"
-	kahulister "github.com/soda-cdm/kahu/client/listers/kahu/v1beta1"
 	metaservice "github.com/soda-cdm/kahu/providerframework/metaservice/lib/go"
 	providerservice "github.com/soda-cdm/kahu/providers/lib/go"
 )
@@ -101,23 +103,6 @@ func GetgrpcConn(address string, port uint) (*grpc.ClientConn, error) {
 func GetMetaserviceClient(grpcConnection *grpc.ClientConn) metaservice.MetaServiceClient {
 	return metaservice.NewMetaServiceClient(grpcConnection)
 }
-
-//func GetMetaserviceBackupClient(address string, port uint) metaservice.MetaService_BackupClient {
-//
-//	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
-//	if err != nil {
-//		log.Errorf("error getting grpc connection %s", err)
-//		return nil
-//	}
-//	metaClient := metaservice.NewMetaServiceClient(grpcconn)
-//
-//	backupClient, err := metaClient.Backup(context.Background())
-//	if err != nil {
-//		log.Errorf("error getting backupclient %s", err)
-//		return nil
-//	}
-//	return backupClient
-//}
 
 func GetGRPCConnection(endpoint string, dialOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions = append(dialOptions,
@@ -194,16 +179,6 @@ func Probe(conn grpc.ClientConnInterface, timeout time.Duration) error {
 	}
 }
 
-func GetMetaserviceDeleteClient(address string, port uint) metaservice.MetaServiceClient {
-
-	grpcconn, err := metaservice.NewLBDial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
-	if err != nil {
-		log.Errorf("error getting grpc connection %s", err)
-		return nil
-	}
-	return metaservice.NewMetaServiceClient(grpcconn)
-}
-
 func GetSubItemStrings(allList []string, input string, isRegex bool) []string {
 	var subItemList []string
 	if isRegex {
@@ -247,42 +222,6 @@ func FindMatchedStrings(kind string, allList []string, includeList, excludeList 
 	}
 
 	return collectAllIncludeds
-}
-
-func GetBackupLocation(
-	logger log.FieldLogger,
-	locationName string,
-	backupLocationLister kahulister.BackupLocationLister) (*kahuapi.BackupLocation, error) {
-	// fetch backup location
-	backupLocation, err := backupLocationLister.Get(locationName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Errorf("Backup location(%s) do not exist", locationName)
-			return nil, err
-		}
-		logger.Errorf("Failed to get backup location. %s", err)
-		return nil, err
-	}
-
-	return backupLocation, err
-}
-
-func GetProvider(
-	logger log.FieldLogger,
-	providerName string,
-	providerLister kahulister.ProviderLister) (*kahuapi.Provider, error) {
-	// fetch provider
-	provider, err := providerLister.Get(providerName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Errorf("Metadata Provider(%s) do not exist", providerName)
-			return nil, err
-		}
-		logger.Errorf("Failed to get metadata provider. %s", err)
-		return nil, err
-	}
-
-	return provider, nil
 }
 
 // CheckBackupSupport checks if PV is t be considered for backup or not
@@ -335,4 +274,31 @@ func ToResourceID(apiVersion, kind, namespace, name string) string {
 		return fmt.Sprintf("%s.%s/%s", kind, apiVersion, name)
 	}
 	return fmt.Sprintf("%s.%s/%s/%s", kind, apiVersion, namespace, name)
+}
+
+func FindUnixSocket(dir string) (string, error) {
+	unixSocketFile := ""
+	err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			// prevent panic by handling failure accessing a path
+			return err
+		}
+		if info.IsDir() && path != dir {
+			// skipping a dir without errors
+			return fs.SkipDir
+		}
+		if (info.Mode() & fs.ModeSocket) == fs.ModeSocket {
+			if unixSocketFile == "" {
+				unixSocketFile = path
+			}
+			return nil
+		}
+
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("error walking the path %q: %v", dir, err)
+	}
+
+	return unixSocketFile, nil
 }

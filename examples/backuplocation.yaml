@@ -3,7 +3,7 @@ kind: BackupLocation
 metadata:
    name: nfs
 spec:
-   providerName: nfs-provider
+   providerName: nfs-provider.meta.backup.kahu.io
    location:
      path: "/data"
      sourceRef:
