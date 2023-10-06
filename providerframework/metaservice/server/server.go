@@ -59,12 +59,12 @@ func NewMetaServiceServer(ctx context.Context,
 }
 
 func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
-	log.Info("Backup Called .... ")
-
-	backupHandle, err := getBackupHandle(service)
+	log.Info("Backup Called .... ******")
+	backupHandle, parameters, err := getBackupHandleAndParameters(service)
 	if err != nil {
-		return status.Errorf(codes.Unknown, "failed to get backup handle during backup")
+		return status.Errorf(codes.Unknown, "failed to get backupHandle and parameters during backup")
 	}
+	log.Infof("***parameters are******%v", parameters)
 
 	archiveFileName := backupHandle + archiveFileFormat
 
@@ -105,7 +105,7 @@ func (server *metaServer) Backup(service pb.MetaService_BackupServer) error {
 	}
 
 	// upload backup to backup-location
-	err = server.backupRepo.Upload(archiveFile)
+	err = server.backupRepo.Upload(archiveFile, parameters)
 	if err != nil {
 		log.Errorf("failed to upload backup. %s", err)
 		return status.Errorf(codes.Internal, "failed to upload backup. %s", err)
@@ -133,20 +133,20 @@ func (server *metaServer) Delete(ctx context.Context, req *pb.DeleteRequest) (*p
 	return empty, err
 }
 
-func getBackupHandle(service pb.MetaService_BackupServer) (string, error) {
+func getBackupHandleAndParameters(service pb.MetaService_BackupServer) (string, map[string]string, error) {
 	backupRequest, err := service.Recv()
 	if err != nil {
-		return "", status.Errorf(codes.Unknown, "failed with error %s", err)
+		return "", map[string]string{}, status.Errorf(codes.Unknown, "failed with error %s", err)
 	}
 
 	identifier := backupRequest.GetIdentifier()
 	if identifier == nil {
-		return "", status.Errorf(codes.InvalidArgument, "first request is not backup identifier")
+		return "", map[string]string{}, status.Errorf(codes.InvalidArgument, "first request is not backup identifier")
 	}
-
 	// use backup handle name for file
+	parameters := identifier.GetParameters()
 	backupHandle := identifier.GetBackupHandle()
-	return backupHandle, nil
+	return backupHandle, parameters, nil
 }
 
 func deleteFile(filePath string) {
