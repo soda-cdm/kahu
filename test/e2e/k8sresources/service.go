@@ -29,7 +29,7 @@ import (
 //testcase for E2E service backup and restore
 var _ = Describe("ServiceBackup", Label("service"), func() {
 	Context("Create backup of service and restore", func() {
-		It("service", func() {
+		It("service", Label("testcase20"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create service to test
 			ns := kahu.BackupNameSpace

@@ -29,7 +29,7 @@ import (
 //testcase for E2E secret backup and restore
 var _ = Describe("SecretBackup", Label("secret"), func() {
 	Context("Create backup of secret and restore", func() {
-		It("secret with replicas and pods", func() {
+		It("secret with replicas and pods", Label("testcase19"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create secret to test

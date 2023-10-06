@@ -31,7 +31,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("roleBackup", Label("role"), func() {
 	Context("Create backup of role and restore", func() {
-		It("role", func() {
+		It("role", Label("testcase18"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create role to test
 			ns := kahu.BackupNameSpace

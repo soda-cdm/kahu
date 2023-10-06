@@ -31,7 +31,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
 	Context("Create backup of Daemonset and restore", func() {
-		It("Daemonset", Label("Basic"), func() {
+		It("Daemonset", Label("Basic", "testcase02"), func() {
 
 			kubeClient, kahuClient := kahu.Clients()
 			//Create Daemonset to test
@@ -95,7 +95,7 @@ var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
 			log.Infof("backup of %v is deleted\n", name)
 		})
 
-		It("daemonfulset with configmap envFrom", Label("configmap", "envfrom"), func() {
+		It("daemonfulset with configmap envFrom", Label("configmap", "envfrom", "testcase03"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create daemonfulset to test
 			ns := kahu.BackupNameSpace
@@ -169,7 +169,7 @@ var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("daemonset with secret envFrom", Label("secret", "envfrom"), func() {
+		It("daemonset with secret envFrom", Label("secret", "envfrom", "testcase04"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create daemonset to test
 			ns := kahu.BackupNameSpace
@@ -243,7 +243,7 @@ var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("daemonset with configmap envVal", Label("configmap", "environment-variable"), func() {
+		It("daemonset with configmap envVal", Label("configmap", "environment-variable", "testcase05"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create daemonset to test
 			ns := kahu.BackupNameSpace
@@ -317,7 +317,7 @@ var _ = Describe("DaemonsetBackup", Label("Daemonset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("daemonset with secret envVal", Label("secret", "environment-variable"), func() {
+		It("daemonset with secret envVal", Label("secret", "environment-variable", "testcase06"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create daemonset to test
 			ns := kahu.BackupNameSpace
