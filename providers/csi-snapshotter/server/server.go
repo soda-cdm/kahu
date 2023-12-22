@@ -26,7 +26,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"strings"
 
 	"github.com/soda-cdm/kahu/client"
 	"github.com/soda-cdm/kahu/providers/csi-snapshotter/server/options"
@@ -169,11 +168,7 @@ func (server *volBackupServer) CreateVolumeFromBackup(ctx context.Context,
 	restoreIDs := make([]*pb.RestoreVolumeIdentifier, 0)
 	for _, restoreInfo := range restoreReq.RestoreInfo {
 		log.Infof("CreateVolumeFromBackup ....%+v", restoreInfo)
-		backupHandle := restoreInfo.GetBackupIdentity().BackupHandle
-		log.Infof("CreateVolumeFromBackup backupHandle....%+v", backupHandle)
-		//bacjupHandleSplit := strings.Split(backupHandle, "@")
-		//snapshotHandle := bacjupHandleSplit[1]
-		snapshotContentName := strings.ReplaceAll(backupHandle, "snapshot", "snapcontent")
+		snapshotContentName := restoreInfo.GetBackupIdentity().BackupHandle
 		log.Infof("CreateVolumeFromBackup snapshotContentName....%+v", snapshotContentName)
 		snapshotContent, err := server.snapshotCli.SnapshotV1().
 			VolumeSnapshotContents().

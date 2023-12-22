@@ -476,7 +476,7 @@ func (ctrl *controller) getSnapshotBySnapshotState(
 	}
 
 	return &providerSvc.Snapshot{
-		SnapshotHandle: *csiVolSnapshotContent.Status.SnapshotHandle,
+		SnapshotHandle: csiVolSnapshotContent.Name,
 	}, nil
 }
 

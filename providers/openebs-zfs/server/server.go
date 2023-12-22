@@ -19,7 +19,6 @@ package server
 
 import (
 	"context"
-	"strings"
 
 	snapshotapi "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
@@ -168,11 +167,7 @@ func (server *volBackupServer) CreateVolumeFromBackup(ctx context.Context,
 
 	restoreIDs := make([]*pb.RestoreVolumeIdentifier, 0)
 	for _, restoreInfo := range restoreReq.RestoreInfo {
-		backupHandle := restoreInfo.GetBackupIdentity().BackupHandle
-		bacjupHandleSplit := strings.Split(backupHandle, "@")
-		snapshotHandle := bacjupHandleSplit[1]
-		snapshotContentName := strings.ReplaceAll(snapshotHandle, "snapshot", "snapcontent")
-
+		snapshotContentName := restoreInfo.GetBackupIdentity().BackupHandle
 		snapshotContent, err := server.snapshotCli.SnapshotV1().
 			VolumeSnapshotContents().
 			Get(context.TODO(), snapshotContentName, metav1.GetOptions{})
