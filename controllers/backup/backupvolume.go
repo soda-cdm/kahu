@@ -142,8 +142,25 @@ func (ctrl *controller) ensureVolumeBackupParameters(backup *kahuapi.Backup) (ma
 }
 
 func (ctrl *controller) removeVolumeBackup(
-	backup *kahuapi.Backup) error {
+	backup *kahuapi.Backup, resources Resources) error {
 
+	pvcs, err := ctrl.getVolumes(backup, resources)
+	if err != nil {
+		ctrl.logger.Errorf("Volume backup validation failed. %s", err)
+
+		return err
+	}
+
+	volumeGroup, err := ctrl.volumeHandler.Group().ByPVCs(backup.Name, pvcs)
+	if err != nil {
+		ctrl.logger.Errorf("Failed to ensure volume group. %s", err)
+		return err
+	}
+
+	snapshotter, err := ctrl.volumeHandler.Snapshot().ByVolumeGroup(volumeGroup)
+	if err != nil {
+		return err
+	}
 	vbcList, err := ctrl.volumeBackupClient.List(context.TODO(), metav1.ListOptions{
 		LabelSelector: labels.Set{
 			volumeContentBackupLabel: backup.Name,
@@ -155,6 +172,13 @@ func (ctrl *controller) removeVolumeBackup(
 	}
 
 	for _, vbc := range vbcList.Items {
+
+		snapName := vbc.Spec.BackupSourceRef.Name
+		err = snapshotter.Delete(snapName)
+		if err != nil {
+			return err
+		}
+
 		if vbc.DeletionTimestamp != nil { // ignore deleting volume backup content
 			continue
 		}

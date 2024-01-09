@@ -39,14 +39,15 @@ import (
 )
 
 const (
-	LabelBackupName      = "kahu.backup.name"
-	LabelProvisionerName = "kahu.provisioner.name"
+	LabelBackupName         = "kahu.backup.name"
+	LabelProvisionerName    = "kahu.provisioner.name"
+	volumeSnapshotFinalizer = "kahu.io/volume-snapshot-done"
 )
 
 type Interface interface {
 	Apply() error
 	WaitForSnapshotToReady(refName string, timeout time.Duration) error
-	Delete() (*kahuapi.VolumeSnapshot, error)
+	Delete(snapName string) error
 	GetSnapshots() ([]*kahuapi.VolumeSnapshot, error)
 }
 
@@ -156,7 +157,9 @@ func (s *snapshoter) snapshotClassByPV(name string) (*corev1.PersistentVolume, e
 func (s *snapshoter) kahuSnapshot(backup string,
 	provisioner string, volumes []kahuapi.ResourceReference) (*kahuapi.VolumeSnapshot, error) {
 	kahuSnapshot := s.volGroupToSnapshot(backup, provisioner, volumes)
-
+	if !utils.ContainsFinalizer(kahuSnapshot, volumeSnapshotFinalizer) {
+		utils.SetFinalizer(kahuSnapshot, volumeSnapshotFinalizer)
+	}
 	return s.kahuClient.KahuV1beta1().VolumeSnapshots().Create(context.TODO(), kahuSnapshot, metav1.CreateOptions{})
 }
 
@@ -181,8 +184,10 @@ func (s *snapshoter) volGroupToSnapshot(backup string,
 	}
 }
 
-func (s *snapshoter) Delete() (*kahuapi.VolumeSnapshot, error) {
-	return nil, nil
+func (s *snapshoter) Delete(snapName string) error {
+	s.logger.Infof("Deleting kahu snapshots(%v):", snapName)
+	err := s.kahuClient.KahuV1beta1().VolumeSnapshots().Delete(context.TODO(), snapName, metav1.DeleteOptions{})
+	return err
 }
 
 func (s *snapshoter) WaitForSnapshotToReady(refName string, timeout time.Duration) error {
