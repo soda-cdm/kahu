@@ -33,14 +33,14 @@ spec:
     spec:
       serviceAccountName: kahu-csi-snapshotter-provider
       containers:
-      - image: sodacdm/kahu-csi-snapshotter-provider:v1.0.0
+      - image: sodacdm/kahu-csi-snapshotter-provider:v1.1.1
         imagePullPolicy: IfNotPresent
         name: csi-snapshotter-driver
         command: ["/usr/local/bin/csi-snapshotter"]
         volumeMounts:
         - name: socket
           mountPath: "/tmp"
-      - image: sodacdm/kahu-volume-service:v1.0.0
+      - image: sodacdm/kahu-volume-service:v1.1.1
         imagePullPolicy: IfNotPresent
         name: volume-service
         command: ["/usr/local/bin/volume-service"]
