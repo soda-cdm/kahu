@@ -29,7 +29,6 @@ readonly KAHU_STATIC_BINARIES=(
   controller-manager
   meta-service
   volume-service
-  openebs-zfs
   csi-snapshotter
   nfs-provider
 )
@@ -41,7 +40,6 @@ golang::targets() {
     cmd/meta-service
     cmd/volume-service
     providers/nfs/nfs-provider
-    cmd/openebs-zfs
     cmd/csi-snapshotter
   )
   echo "${targets[@]}"

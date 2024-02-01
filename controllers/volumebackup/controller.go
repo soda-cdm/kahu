@@ -51,7 +51,7 @@ const (
 )
 
 var volBackupSupport = map[string]string{
-	"zfs.csi.openebs.io":         "zfs.backup.openebs.io",
+	"zfs.csi.openebs.io":         "snapshotter.backup.csi.io",
 	"linstor.csi.linbit.com":     "snapshotter.backup.csi.io",
 	"cephfs.csi.ceph.com":        "snapshotter.backup.csi.io",
 	"hostpath.csi.k8s.io":        "snapshotter.backup.csi.io",
