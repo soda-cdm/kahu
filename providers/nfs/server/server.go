@@ -117,6 +117,8 @@ func (server *nfsServer) Upload(service pb.MetaBackup_UploadServer) error {
 	if fileId == "" {
 		return status.Error(codes.Internal, "upload failed, invalid file identifier")
 	}
+	attributes := fileInfo.GetAttributes()
+	log.Infof("attributes are %v", attributes)
 
 	fileName := server.options.DataPath + "/" + fileId
 	file, err := os.Create(fileName)
@@ -165,8 +167,11 @@ func (server *nfsServer) Download(request *pb.DownloadRequest,
 	if fileId == "" {
 		return status.Error(codes.InvalidArgument, "download file id is empty")
 	}
+	attributes := request.GetAttributes()
+	log.Infof("******attributes  in Download are***** %v", attributes)
 
 	log.Printf("Download file id %v", fileId)
+
 	fileName := filepath.Join(server.options.DataPath, fileId)
 	file, err := os.Open(fileName)
 	if err != nil {
@@ -226,6 +231,10 @@ func (server *nfsServer) Delete(ctxt context.Context,
 	log.Info("Delete Called ...")
 
 	fileId := request.GetFileIdentifier()
+
+	attributes := request.GetAttributes()
+	log.Infof("******attributes  in Delete are***** %v", attributes)
+
 	empty := pb.Empty{}
 	log.Printf("file to delete %v", fileId)
 	fileName := server.options.DataPath + "/" + fileId

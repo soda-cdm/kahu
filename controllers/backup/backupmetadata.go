@@ -51,6 +51,7 @@ func (ctrl *controller) processMetadataBackup(backup *kahuapi.Backup) (*kahuapi.
 	}
 
 	provider := metaLocation.Spec.ProviderName
+	parameters := metaLocation.Spec.Config
 	ctrl.logger.Infof("Preparing backup request for Provider:%s", provider)
 	prepareBackupReq := ctrl.prepareBackupRequest(backup)
 
@@ -71,7 +72,7 @@ func (ctrl *controller) processMetadataBackup(backup *kahuapi.Backup) (*kahuapi.
 	}
 
 	// Initialize hooks
-	err = ctrl.runBackup(prepareBackupReq, backupClient)
+	err = ctrl.runBackup(prepareBackupReq, backupClient, parameters)
 	if err != nil {
 		prepareBackupReq.Status.State = kahuapi.BackupStateFailed
 	} else {
@@ -127,7 +128,7 @@ func (ctrl *controller) getResultant(backup *PrepareBackup) []string {
 }
 
 func (ctrl *controller) runBackup(backup *PrepareBackup,
-	backupClient metaservice.MetaService_BackupClient) (returnErr error) {
+	backupClient metaservice.MetaService_BackupClient, paramteres map[string]string) (returnErr error) {
 	ctrl.logger.Infoln("Starting to run backup")
 	var backupStatus = []string{}
 
@@ -135,6 +136,7 @@ func (ctrl *controller) runBackup(backup *PrepareBackup,
 		Backup: &metaservice.BackupRequest_Identifier{
 			Identifier: &metaservice.BackupIdentifier{
 				BackupHandle: backup.Name,
+				Parameters:   paramteres,
 			},
 		},
 	})
@@ -277,11 +279,23 @@ func (ctrl *controller) deleteMetadataBackup(backup *kahuapi.Backup) error {
 		return nil
 	}
 
+	// Validate the Metadatalocation
+	locationName := backup.Spec.MetadataLocation
+	backup.Status.ValidationErrors = []string{}
+	ctrl.logger.Infof("Preparing backup for backup location: %s ", locationName)
+	metaLocation, err := ctrl.backupLocationLister.Get(locationName)
+	if err != nil {
+		ctrl.logger.Errorf("failed to validate backup location, reason: %s", err)
+		return err
+	}
+	parameters := metaLocation.Spec.Config
 	deleteRequest := &metaservice.DeleteRequest{
 		Id: &metaservice.BackupIdentifier{
 			BackupHandle: backup.Name,
+			Parameters:   parameters,
 		},
 	}
+	ctrl.logger.Infof("paramteres in deleteMetadataBackup:%v", parameters)
 
 	metaservice, grpcConn, err := ctrl.fetchMetaServiceClient(backup.Spec.MetadataLocation)
 	if err != nil {

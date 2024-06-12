@@ -33,7 +33,7 @@ import (
 )
 
 type BackupRepository interface {
-	Upload(filePath string) error
+	Upload(filePath string, attributes map[string]string) error
 	Download(fileID string, attributes map[string]string) (string, error)
 	Delete(filePath string, attributes map[string]string) error
 }
@@ -68,7 +68,7 @@ func NewBackupRepository(backupRepositoryAddress string) (BackupRepository, grpc
 	}, grpcConnection, nil
 }
 
-func (repo *backupRepository) Upload(filePath string) error {
+func (repo *backupRepository) Upload(filePath string, attributes map[string]string) error {
 	log.Infof("Archive file path %s", filePath)
 
 	file, err := os.Open(filePath)
@@ -87,12 +87,14 @@ func (repo *backupRepository) Upload(filePath string) error {
 		Data: &pb.UploadRequest_Info{
 			Info: &pb.UploadRequest_FileInfo{
 				FileIdentifier: path.Base(filePath),
+				Attributes:     attributes,
 			},
 		},
 	})
 	if err != nil {
 		return err
 	}
+	log.Infof("attributes in upload are: %v", attributes)
 
 	reader := bufio.NewReader(file)
 	buffer := make([]byte, 1024)
@@ -130,7 +132,7 @@ func (repo *backupRepository) Download(fileID string, attributes map[string]stri
 		FileIdentifier: fileID,
 		Attributes:     attributes,
 	}
-
+	log.Infof("attributes are in Download : %v", attributes)
 	repoClient, err := repo.client.Download(context.Background(), downloadReq)
 	if err != nil {
 		return "", err
@@ -187,7 +189,7 @@ func (repo *backupRepository) Delete(fileID string, attributes map[string]string
 		FileIdentifier: fileID,
 		Attributes:     attributes,
 	}
-
+	log.Infof("attributes are in Delete :%v", attributes)
 	IsBackupFileExist, err := repo.client.ObjectExists(context.Background(), objectExistsReq)
 	if err != nil || IsBackupFileExist == nil {
 		return err

@@ -120,7 +120,7 @@ func (suite *ClientTestSuite) AfterTest(suiteName, testName string) {
 }
 
 func (suite *ClientTestSuite) TestUploadInvalidPath() {
-	err := suite.repo.Upload(suite.filePath)
+	err := suite.repo.Upload(suite.filePath, map[string]string{})
 	assert.NotNil(suite.T(), err)
 }
 
@@ -131,7 +131,7 @@ func (suite *ClientTestSuite) TestDownloadFail() {
 }
 
 func (suite *ClientTestSuite) TestUploadValid() {
-	err := suite.repo.Upload(suite.filePath)
+	err := suite.repo.Upload(suite.filePath, map[string]string{})
 	assert.Nil(suite.T(), err)
 
 }
