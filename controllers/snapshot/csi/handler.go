@@ -46,6 +46,7 @@ const (
 
 type Snapshoter interface {
 	Handle(snapshot *kahuapi.VolumeSnapshot) error
+	Delete(snapshot *kahuapi.VolumeSnapshot) error
 }
 
 type snapshoter struct {
@@ -74,6 +75,28 @@ func NewSnapshotter(ctx context.Context,
 		snapshotClient:         client.SnapshotV1(),
 		logger:                 log.WithField("module", "csi-snapshotter"),
 	}, nil
+}
+
+func (s *snapshoter) Delete(snapshot *kahuapi.VolumeSnapshot) error {
+	//delete snapshot for each volumes
+	csiSnapshotClass, err := s.volSnapshotClassSyncer.SnapshotClassByProvider(*snapshot.Spec.SnapshotProvider)
+	if err != nil {
+		return err
+	}
+
+	for _, snapshotState := range snapshot.Status.SnapshotStates {
+		// ignore if already CSI object deleted
+		if snapshotState.CSISnapshotRef == nil {
+			continue
+		}
+		// delete CSI object
+		if err := s.deleteSnapshot(snapshot, csiSnapshotClass.Name, snapshotState.PVC); err != nil {
+			s.logger.Errorf("Error applying volume snapshot %s", err)
+			return err
+		}
+	}
+	return err
+
 }
 
 func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
@@ -108,7 +131,6 @@ func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
 		s.logger.Errorf("Failed to update Volume Snapshot(%s) status, %s", snapshot.Name, err)
 		return err
 	}
-
 	kahuVolSnapshot.Status.ReadyToUse = &readyToUse
 	_, err = s.kahuClient.KahuV1beta1().
 		VolumeSnapshots().
@@ -119,6 +141,19 @@ func (s *snapshoter) Handle(snapshot *kahuapi.VolumeSnapshot) error {
 	}
 
 	return err
+}
+
+func (s *snapshoter) deleteSnapshot(kahuVolSnapshot *kahuapi.VolumeSnapshot,
+	snapshotClassName string,
+	pvc kahuapi.ResourceReference) error {
+	for _, states := range kahuVolSnapshot.Status.SnapshotStates {
+		s.logger.Infof("Deleting CSI Volume Snapshot(%s)", states.CSISnapshotRef.Name)
+		err := s.snapshotClient.VolumeSnapshots(pvc.Namespace).Delete(context.TODO(), states.CSISnapshotRef.Name, metav1.DeleteOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *snapshoter) applySnapshot(kahuVolSnapshotName string,
