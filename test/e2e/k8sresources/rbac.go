@@ -31,7 +31,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("rbacBackup", Label("rbac"), func() {
 	Context("Create backup of rbac and restore", func() {
-		It("rbac", func() {
+		It("rbac", Label("testcase17"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create rbac to test
 			ns := kahu.BackupNameSpace

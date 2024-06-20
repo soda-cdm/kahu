@@ -27,7 +27,7 @@ import (
 )
 
 //testcase for E2E deployment backup and restore
-var _ = Describe("ConfigMapBackup", Label("configmap"), func() {
+var _ = Describe("ConfigMapBackup", Label("configmap", "testcase01"), func() {
 	Context("Create backup of configmap and restore", func() {
 		It("configmap", func() {
 			kubeClient, kahuClient := kahu.Clients()

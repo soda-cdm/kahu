@@ -33,7 +33,7 @@ import (
 var _ = Describe("PodBackup", Label("pod"), func() {
 	Context("Create backup of pod and restore", func() {
 
-		It("pod associated with env value configmap ", Label("configmap", "environment-variable"), func() {
+		It("pod associated with env value configmap ", Label("configmap", "environment-variable", "testcase11"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 
 			//Create pod to test
@@ -104,7 +104,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			log.Infof("backup of pod %v is deleted\n", name)
 		})
 
-		It("pod associated with env value secret ", Label("secret", "environment-variable"), func() {
+		It("pod associated with env value secret ", Label("secret", "environment-variable", "testcase12"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 
 			//Create pod to test
@@ -176,7 +176,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			log.Infof("backup of pod %v is deleted\n", name)
 		})
 
-		It("pod associated with envFrom secret", Label("secret", "envfrom"), func() {
+		It("pod associated with envFrom secret", Label("secret", "envfrom", "testcase13"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 
 			//Create pod to test
@@ -262,7 +262,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("pod associated with envFrom configmap", Label("configmap", "envfrom"), func() {
+		It("pod associated with envFrom configmap", Label("configmap", "envfrom", "testcase14"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 
 			//Create pod to test
@@ -349,7 +349,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("pod", func() {
+		It("pod", Label("pod", "testcase15"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create pod to test
 			ns := kahu.BackupNameSpace
@@ -404,7 +404,7 @@ var _ = Describe("PodBackup", Label("pod"), func() {
 			log.Infof("backup of pod %v is deleted\n", name)
 		})
 
-		It("pod with restore resourcePrefix", Label("resourcePrefix"), func() {
+		It("pod with restore resourcePrefix", Label("resourcePrefix", "testcase16"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create pod to test
 			ns := kahu.BackupNameSpace

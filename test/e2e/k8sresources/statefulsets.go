@@ -30,7 +30,7 @@ import (
 //testcase for E2E deployment backup and restore
 var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 	Context("Create backup of statefulset and restore", func() {
-		It("statefulset with replicas", Label("replicas"), func() {
+		It("statefulset with replicas", Label("replicas", "testcase21"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create statefulset to test
 			ns := kahu.BackupNameSpace
@@ -89,7 +89,7 @@ var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("statefulset with configmap envFrom", Label("configmap", "envfrom"), func() {
+		It("statefulset with configmap envFrom", Label("configmap", "envfrom", "testcase22"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create statefulset to test
 			ns := kahu.BackupNameSpace
@@ -164,7 +164,7 @@ var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("statefulset with secret envFrom", Label("secret", "envfrom"), func() {
+		It("statefulset with secret envFrom", Label("secret", "envfrom", "testcase23"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create statefulset to test
 			ns := kahu.BackupNameSpace
@@ -239,7 +239,7 @@ var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("statefulset with configmap envVal", Label("configmap", "environment-variable"), func() {
+		It("statefulset with configmap envVal", Label("configmap", "environment-variable", "testcase24"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create statefulset to test
 			ns := kahu.BackupNameSpace
@@ -314,7 +314,7 @@ var _ = Describe("statefulsetBackup", Label("statefulset"), func() {
 			log.Infof("backup of  %v is deleted\n", name)
 		})
 
-		It("statefulset with secret envVal", Label("secret", "environment-variable"), func() {
+		It("statefulset with secret envVal", Label("secret", "environment-variable", "testcase25"), func() {
 			kubeClient, kahuClient := kahu.Clients()
 			//Create statefulset to test
 			ns := kahu.BackupNameSpace
